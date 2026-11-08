@@ -7,11 +7,11 @@ SW중심대학 사업단 담당자는 같은 대회에 참가한 여러 팀의 0
 | 항목 | 현재 기준 |
 |---|---|
 | 갱신일 | 2026년 11월 8일 한국 시간 |
-| 운영 스택 | 담당자 화면은 **React**, 백엔드 API는 **Spring Boot**로 확정했다. 운영판은 구현 전이며, 전환 범위와 인수 기준은 [구현계획서](docs/IMPLEMENTATION_PLAN.md#운영판-전환)에 있다. |
+| 운영 스택 | 담당자 화면은 **React**, 백엔드 API는 **Spring Boot**, 운영 DB는 **PostgreSQL**로 확정했다. **Spring Batch는 초기 도입을 보류한다.** 운영판은 구현 전이며, 전환 범위와 인수 기준은 [구현계획서](docs/IMPLEMENTATION_PLAN.md#운영판-전환)에 있다. |
 | 1차 시연 범위 | 담당자 1명이 Windows PC 한 대에서 여러 팀의 파일을 혼합 일괄 업로드하고 자동 배정·미배정 파일 확인·팀별 검토·팀장 메일 자동 발송·보완본 재검토·HWPX와 PDF 다운로드까지 진행. 완료 기준은 10.1절 |
 | 현재 상태 | Windows 담당자 서비스에서 공식 set01·02를 혼합 접수하고, 팀별 실제 Studio 판정·담당자 원본 대조·지급정보 입력·HWPX/PDF 다운로드를 검증했다. 설정 23의 두 판정은 소속 표기 차이로 `담당자확인`이었다. [실행 안내](docs/LOCAL_SERVICE.md) |
 | 테스트 자료 | 유잇 미션2 공식 ZIP(`test case/유잇_미션2_테스트set.zip`)의 10팀·29파일. 정상 기대 케이스는 set01(Nextify)과 set02(AutoAI) 두 팀이다. |
-| 다음 단계 | React 화면과 Spring Boot API를 연결하고 10.4절의 시연 결과와 대조한다. Studio 판정은 두 정상 사례의 학부·전공·학과 표기 기준을 확정한 뒤 다시 시험한다. |
+| 다음 단계 | Spring Boot API에 PostgreSQL을 연결하고, React 화면에서 10.4절의 시연 결과를 재현한다. Studio 판정은 두 정상 사례의 학부·전공·학과 표기 기준을 확정한 뒤 다시 시험한다. |
 | 남은 검증 | set03~10의 실제 Studio 판정 대조, 외부 메일함 수신, 운영 장애 시나리오 전체 인수 시험. set04 보완 메일은 로컬 메일함과 모의 판정으로 시험했다. |
 | 구성 프롬프트 | [Studio 구성 프롬프트](docs/STUDIO_BUILD_PROMPT.txt). 최종판정은 9.4절, 판정 후 알림은 7.1절 기준 |
 | 구현계획서 | [팀별 비동기 접수·대기열·오류 처리](docs/IMPLEMENTATION_PLAN.md). 서비스 API, 재시도·재기동 규칙과 단계별 인수 시험 |
@@ -132,7 +132,7 @@ flowchart TD
 
 아래는 서비스 워커의 설계다. 사전 연동 시험에서 별도 등록한 파일 ID를 참조하면 403이 반환됐다. 10.3절의 공식 set01·set02는 팀별 PDF 3개를 `file_data`로 Job에 직접 첨부해 처리했다. [Upstage Job 파일 입력 방식](https://github.com/UpstageAI/upstage-extensions-hub/blob/main/skills/upstage-studio/references/jobs.md)
 
-1. 선택한 원본이 모두 저장되고 대회·일괄 접수번호·파일 목록·배정 작업이 DB에 기록되면 `202 Accepted`와 조회 주소를 반환한다. Windows 시연판은 SQLite를 사용한다. 배정과 AI 검토는 백그라운드에서 진행한다. 선택한 파일의 전송이 끊기면 같은 요청으로 다시 전송한다.
+1. 선택한 원본이 모두 저장되고 대회·일괄 접수번호·파일 목록·배정 작업이 DB에 기록되면 `202 Accepted`와 조회 주소를 반환한다. 운영판은 PostgreSQL, Windows 시연판은 SQLite를 사용한다. 배정과 AI 검토는 백그라운드에서 진행한다. 선택한 파일의 전송이 끊기면 같은 요청으로 다시 전송한다.
 2. 워커는 4.3절의 기준을 적용해 팀별 파일 목록을 만든다. 그 팀에 속할 수 있는 미배정 파일이 남아 있으면 해당 팀은 배정을 기다린다. 목록이 확정되면 실제로 받은 파일을 모두 담아 팀별 제출 버전을 만든다. 01·03만 접수된 것이 확인된 팀은 두 파일로 02 누락을 검사한다.
 3. `POST /v2/responses`의 `model`에 Studio Agent ID를 넣고, `input[0].content`에 해당 팀 제출 버전의 검토용 PDF만 담아 판정 Job 한 건을 생성한다. 작은 PDF 시연은 10.3절에서 성공한 원래 파일명과 `file_data` 직접 첨부 경로를 사용한다. 별도 파일 등록 경로는 `file_id` 접근 권한을 확인한 뒤 사용한다. `config_id`에는 검증한 버전을 지정하고, 응답의 `id`를 팀별 접수번호에 연결해 `job_id`로 저장한다. 생성 응답이 끊기면 실행 이력에서 기존 Job을 먼저 찾는다. [작업 생성 명세](https://console.upstage.ai/api/agents/jobs/create-job) · [Studio 실행 이력](https://console.upstage.ai/ko/docs/studio/monitoring)
 4. 워커는 `GET /v2/responses/{job_id}`로 상태를 조회해 유효한 추출값·최종판정·근거를 DB에 저장한다. 브라우저는 서비스의 `GET /api/submissions/{id}`에서 대기·처리·완료 상태와 결과를 읽는다. 창을 닫아도 처리는 계속되고 다시 열면 기존 접수로 돌아온다. 팀장 메일은 7.1절의 문서 판정과 담당자 확인 시점을 따른다. 공개 Agents API 명세에서 완료 웹훅 URL 설정은 확인되지 않아 1차 서비스는 워커의 폴링으로 동작하도록 설계한다. [작업 생성 명세](https://console.upstage.ai/api/agents/jobs/create-job) · [작업 조회 명세](https://console.upstage.ai/api/agents/jobs/retrieve-job)
