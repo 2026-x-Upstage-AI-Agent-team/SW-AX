@@ -1,0 +1,160 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  font-optical-sizing: auto;
+  color: #192922;
+  background: #f4f6f3;
+  --forest: #174d38;
+  --action: #226649;
+  --muted: #54635a;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 4rem);
+  font-size: 1rem;
+  line-height: 1.55;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  -webkit-text-size-adjust: 100%;
+}
+h1, p { margin: 0; }
+button, input { font: inherit; }
+button, a { touch-action: manipulation; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--action); outline-offset: 3px; }
+
+.access-shell {
+  width: min(100%, 30rem);
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dce4dc;
+  border-radius: 1.5rem;
+  box-shadow: 0 1.25rem 4rem -2.75rem rgb(26 61 41 / 28%);
+}
+.identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .65rem 1rem;
+  padding: 1.25rem clamp(1.375rem, 6vw, 2.5rem);
+  background: #edf2ed;
+  color: var(--forest);
+}
+.brand { display: flex; align-items: center; gap: .65rem; }
+.brand strong { font-size: 1.16rem; letter-spacing: -.045em; }
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: .7rem;
+  background: var(--forest);
+  color: #fff;
+}
+.brand-mark svg { width: 1.4rem; height: 1.4rem; }
+.product-name { font-size: .85rem; font-weight: 600; }
+.form-panel { display: grid; align-items: center; padding: 2.5rem clamp(1.375rem, 6vw, 2.5rem); }
+.form-content { width: 100%; max-width: 23rem; margin-inline: auto; }
+h1 { font-size: clamp(1.85rem, 3vw, 2.4rem); line-height: 1.22; letter-spacing: -.055em; }
+.lead { margin-top: .65rem; color: var(--muted); font-size: .95rem; line-height: 1.65; }
+form { display: grid; gap: 1.15rem; margin-top: 2.1rem; }
+.field { display: grid; gap: .5rem; }
+label { font-size: .9rem; font-weight: 650; }
+input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 3.15rem;
+  padding: .65rem .9rem;
+  border: 1px solid #98a89d;
+  border-radius: .75rem;
+  background: white;
+  color: #192922;
+  font-size: 1rem;
+}
+input:focus { border-color: var(--action); }
+.password-field { position: relative; }
+.password-field:has(.visibility:not([hidden])) input { padding-inline-end: 4.5rem; }
+.password-field:has(.visibility:not([hidden])) input::-ms-reveal { display: none; }
+.visibility {
+  position: absolute;
+  inset-inline-end: .25rem;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: .4rem .65rem;
+  border: 0;
+  border-radius: .55rem;
+  background: transparent;
+  color: var(--action);
+  font-size: .82rem;
+  font-weight: 650;
+}
+.primary {
+  min-height: 3.15rem;
+  margin-top: .45rem;
+  padding: .7rem 1rem;
+  border: 1px solid transparent;
+  border-radius: .75rem;
+  background: var(--action);
+  color: #fff;
+  font-weight: 700;
+  transition: background-color 120ms ease-out, transform 100ms ease-out;
+}
+.back-link { justify-self: center; padding: .5rem; color: var(--action); font-weight: 600; text-underline-offset: .2em; }
+.notice { padding: .8rem 1rem; border-radius: .65rem; font-size: .9rem; }
+.error { background: #fff0eb; color: #903215; }
+.success { background: #e5f2e9; color: var(--forest); }
+
+@media (hover: hover) {
+  .primary:hover { background: var(--forest); }
+  .visibility:hover { background: #edf2ed; }
+}
+.primary:active { background: #103f2c; transform: scale(.99); }
+.visibility:active { background: #dce9df; }
+@media (min-width: 48rem) {
+  .access-shell {
+    display: grid;
+    grid-template-columns: 1fr 1.04fr;
+    width: min(100%, 66rem);
+    min-height: clamp(32rem, 71svh, 39rem);
+  }
+  .identity {
+    display: block;
+    padding: clamp(2rem, 3.7vw, 3.5rem);
+    background-color: #183d31;
+    background-image: linear-gradient(155deg, rgb(12 38 28 / 28%), transparent 62%), url("folio.webp");
+    background-position: center;
+    background-size: cover;
+    color: #f6f9f1;
+  }
+  .brand-mark { background: #ebf3e8; color: var(--forest); }
+  .product-name {
+    margin-top: clamp(1.85rem, 4.5vh, 2.9rem);
+    font-size: clamp(2.5rem, 4vw, 3.65rem);
+    font-weight: 650;
+    line-height: 1.16;
+    letter-spacing: -.06em;
+  }
+  .product-name span { display: block; }
+  .form-panel { padding: clamp(2rem, 5vw, 4.5rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary { transition: none; }
+  .primary:active { transform: none; }
+}
+@media (prefers-contrast: more) {
+  .access-shell, input, .notice, .primary { border: 2px solid currentColor; }
+  .identity { background-image: none; }
+}
+@media (forced-colors: active) {
+  .identity { background-image: none; }
+  .brand-mark, .primary, .notice { border: 1px solid ButtonText; }
+}

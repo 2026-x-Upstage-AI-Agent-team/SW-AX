@@ -40,8 +40,8 @@ class StaffSecurity {
         var browserLogin = new LoginUrlAuthenticationEntryPoint("/login");
         var unauthorized = new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED);
         http.securityMatcher(new OrRequestMatcher(staffApi, paths.matcher("/"), paths.matcher("/index.html"),
-                        paths.matcher("/login"), paths.matcher("/logout"), paths.matcher("/default-ui.css")))
-                .authorizeHttpRequests(auth -> auth.requestMatchers("/api/auth/session", "/login", "/default-ui.css").permitAll()
+                        paths.matcher("/login"), paths.matcher("/logout")))
+                .authorizeHttpRequests(auth -> auth.requestMatchers("/api/auth/session", "/login", "/logout").permitAll()
                         .anyRequest().authenticated())
                 // Browsers set this forbidden header themselves. Other clients must supply the session CSRF token.
                 .csrf(csrf -> csrf.ignoringRequestMatchers(request -> staffApi.matches(request)
@@ -49,7 +49,7 @@ class StaffSecurity {
                 .requestCache(cache -> cache.disable())
                 .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(unauthorized, api)
                         .defaultAuthenticationEntryPointFor(browserLogin, new NegatedRequestMatcher(api)))
-                .formLogin(form -> form.successHandler((req, res, auth) -> {
+                .formLogin(form -> form.loginPage("/login").successHandler((req, res, auth) -> {
                     if ("application/json".equals(req.getHeader("Accept"))) res.setStatus(HttpServletResponse.SC_NO_CONTENT);
                     else res.sendRedirect(req.getContextPath() + "/");
                 }).failureHandler((req, res, ex) -> {
