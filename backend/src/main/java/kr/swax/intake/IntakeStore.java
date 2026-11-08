@@ -18,15 +18,15 @@ import org.springframework.transaction.annotation.Transactional;
 class IntakeStore {
     record Receipt(UUID batchId, String status, String statusUrl) {}
     record Summary(UUID batchId, UUID eventId, String eventName, UUID targetTeamId, String teamName,
-                   String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status) {}
-    record Item(UUID itemId, int position, String name, int size, String sha256) {}
-    record Details(Summary batch, List<Item> files) {}
+                   String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status, int revision) {}
+    record Item(UUID itemId, int position, String name, int size, String sha256, UUID team, String state, String reason) {}
+    record Details(Summary batch, List<Item> files, int revision) {}
     record Original(String name, byte[] bytes) {}
     private record Previous(UUID id, String fingerprint) {}
 
     private static final String SUMMARY = """
             SELECT b.id, b.event_id, e.name AS event_name, b.target_team_id, t.name AS team_name,
-                   t.representative, b.created_at, totals.file_count, totals.total_bytes
+                   t.representative, b.created_at, b.assignment_revision, totals.file_count, totals.total_bytes
             FROM intake_batch b JOIN award_event e ON e.id = b.event_id
             JOIN event_staff a ON a.event_id = b.event_id AND a.login = ?
             LEFT JOIN award_team t ON t.id = b.target_team_id
@@ -45,10 +45,7 @@ class IntakeStore {
     @Transactional
     Receipt receive(String login, String key, UUID event, UUID target, IntakeUpload upload) {
         catalog.requireEvent(login, event);
-        if (target != null && !Boolean.TRUE.equals(db.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM award_team WHERE id = ? AND event_id = ?)", Boolean.class, target, event))) {
-            throw ApiErrors.error(422, "선택한 대회에 등록된 팀을 지정해 주세요.");
-        }
+        if (target != null) catalog.requireTeam(event, target);
         UUID id = UUID.randomUUID();
         int inserted = db.update("""
                 INSERT INTO intake_batch(id, event_id, target_team_id, request_key, fingerprint)
@@ -95,10 +92,20 @@ class IntakeStore {
     Details details(String login, UUID id) {
         Summary batch = db.query(SUMMARY + " WHERE b.id = ?", IntakeStore::summary, login, id).stream().findFirst()
                 .orElseThrow(() -> ApiErrors.error(404, "접수번호를 찾을 수 없습니다."));
-        List<Item> files = db.query("SELECT id, position, name, size_bytes, sha256 FROM intake_file WHERE batch_id = ? ORDER BY position",
-                (rs, n) -> new Item(rs.getObject("id", UUID.class), rs.getInt("position"), rs.getString("name"),
-                        rs.getInt("size_bytes"), rs.getString("sha256")), id);
-        return new Details(batch, files);
+        List<Item> files = db.query("""
+                SELECT f.id, f.position, f.name, f.size_bytes, f.sha256, latest.after_team_id, latest.reason
+                FROM intake_file f LEFT JOIN LATERAL (
+                    SELECT after_team_id, reason FROM intake_file_assignment
+                    WHERE file_id = f.id ORDER BY revision DESC LIMIT 1
+                ) latest ON true
+                WHERE f.batch_id = ? ORDER BY f.position
+                """, (rs, n) -> {
+            UUID team = rs.getObject("after_team_id", UUID.class);
+            return new Item(rs.getObject("id", UUID.class), rs.getInt("position"), rs.getString("name"),
+                    rs.getInt("size_bytes"), rs.getString("sha256"), team, team == null ? "unassigned" : "assigned",
+                    rs.getString("reason"));
+        }, id);
+        return new Details(batch, files, batch.revision());
     }
 
     Original original(String login, UUID batch, UUID file) {
@@ -115,7 +122,7 @@ class IntakeStore {
         return new Summary(rs.getObject("id", UUID.class), rs.getObject("event_id", UUID.class),
                 rs.getString("event_name"), rs.getObject("target_team_id", UUID.class), rs.getString("team_name"),
                 rs.getString("representative"), rs.getObject("created_at", OffsetDateTime.class),
-                rs.getInt("file_count"), rs.getLong("total_bytes"), "received");
+                rs.getInt("file_count"), rs.getLong("total_bytes"), "received", rs.getInt("assignment_revision"));
     }
 
     private static Receipt receipt(UUID id) {

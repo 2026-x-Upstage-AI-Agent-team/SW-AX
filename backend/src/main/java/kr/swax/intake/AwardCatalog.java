@@ -68,6 +68,13 @@ class AwardCatalog {
         }
     }
 
+    void requireTeam(UUID event, UUID team) {
+        if (db.queryForList("SELECT id FROM award_team WHERE event_id = ? AND id = ? FOR KEY SHARE",
+                UUID.class, event, team).isEmpty()) {
+            throw ApiErrors.error(422, "선택한 대회에 등록된 팀을 지정해 주세요.");
+        }
+    }
+
     private static String label(String value, int max, boolean required) {
         String text = value == null ? "" : value.strip();
         if ((required && text.isEmpty()) || text.length() > max || text.chars().anyMatch(Character::isISOControl)) {

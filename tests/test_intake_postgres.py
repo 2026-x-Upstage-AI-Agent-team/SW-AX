@@ -4,6 +4,7 @@ import json
 import os
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -138,6 +139,81 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual([], self.history())
         self.assertEqual(202, self.send([source] * 100).status_code)
         self.assertEqual(100, self.history()[0]["file_count"])
+
+    def test_manual_assignment_and_reassignment_keep_an_audit(self):
+        first = self.team(self.event, "A팀", "대표 가")
+        second = self.team(self.event, "B팀", "대표 나")
+        receipt = self.send(self.sets["set01"][:2], target=first).raise_for_status().headers["location"]
+        detail = self.http.get(receipt).raise_for_status().json()
+        item, sibling = detail["files"]
+        self.assertEqual((first, 0, None, "unassigned"),
+                         (detail["batch"]["target_team_id"], detail["revision"], item["team"], item["state"]))
+        url = f"{receipt}/files/{item['item_id']}/assignment"
+        self.assertEqual([], self.http.get(url + "/history").raise_for_status().json())
+        initial = {"action": "assign", "team": first, "reason": "팀 제출 목록 대조", "revision": 0}
+        corrected = {"action": "assign", "team": second, "reason": "대표자 서명 재확인", "revision": 1}
+        for body, revision in ((initial, 1), (initial, 1), (corrected, 2), (corrected, 2)):
+            response = self.http.put(url, json=body, headers={"X-Staff": os.environ["INTAKE_TEST_LOGIN_B"]})
+            self.assertEqual({"saved": True, "revision": revision}, response.raise_for_status().json())
+        self.assertEqual(409, self.http.put(url, json=initial).status_code)
+        self.assertEqual(2, self.http.put(url, json={**corrected, "revision": 2}).raise_for_status().json()["revision"])
+        history = self.http.get(url + "/history").raise_for_status().json()
+        self.assertEqual([(None, first, initial["reason"], 1), (first, second, corrected["reason"], 2)],
+                         [(h["before_team_id"], h["after_team_id"], h["reason"], h["revision"]) for h in history])
+        self.assertEqual({os.environ["INTAKE_TEST_LOGIN_A"]}, {h["actor"] for h in history})
+        self.assertEqual({item["item_id"]}, {h["item_id"] for h in history})
+        timestamps = [datetime.fromisoformat(h["changed_at"]) for h in history]
+        self.assertTrue(all(t.utcoffset() is not None for t in timestamps))
+        self.assertLessEqual(timestamps[0], timestamps[1])
+        updated = self.http.get(receipt).raise_for_status().json()
+        self.assertEqual((2, second, "assigned", corrected["reason"]),
+                         (updated["revision"], updated["files"][0]["team"], updated["files"][0]["state"],
+                          updated["files"][0]["reason"]))
+        self.assertEqual(sibling, updated["files"][1])
+        sibling_url = f"{receipt}/files/{sibling['item_id']}/assignment"
+        self.assertEqual(409, self.http.put(sibling_url, json=initial).status_code)
+        self.assertEqual([], self.http.get(sibling_url + "/history").json())
+        self.assertEqual(item["sha256"], hashlib.sha256(self.http.get(
+            f"{receipt}/files/{item['item_id']}/original").raise_for_status().content).hexdigest())
+
+    def test_assignment_rejects_foreign_resources_and_invalid_edits(self):
+        team = self.team(self.event, "대회 팀", "")
+        foreign_event = self.http.post("/api/events", json={"name": uuid4().hex}).raise_for_status().json()["id"]
+        foreign_team = self.team(foreign_event, "다른 대회 팀", "")
+        inputs = self.sets["set02"][:1]
+        receipt = self.send(inputs).raise_for_status().headers["location"]
+        other = self.send(inputs, event=foreign_event).raise_for_status().headers["location"]
+        item = self.http.get(receipt).json()["files"][0]["item_id"]
+        suffix = f"/files/{item}/assignment"
+        url = receipt + suffix
+        valid = {"action": "assign", "team": team, "reason": "원본 명단 대조", "revision": 0}
+        with httpx.Client(base_url=URL, trust_env=False) as anonymous:
+            self.assertEqual(401, anonymous.get(url + "/history").status_code)
+        for client, path in ((self.peer, url), (self.http, other + suffix)):
+            self.assertEqual(404, client.put(path, json=valid).status_code)
+            self.assertEqual(404, client.get(path + "/history").status_code)
+        for invalid in ({"team": foreign_team}, {"team": None}, {"reason": "  "}, {"reason": "가" * 501},
+                        {"revision": None}, {"revision": -1}):
+            self.assertEqual(422, self.http.put(url, json={**valid, **invalid}).status_code)
+        self.assertEqual(409, self.http.put(url, json={**valid, "revision": 1}).status_code)
+        self.assertEqual(0, self.http.get(receipt).json()["revision"])
+        self.assertEqual([], self.http.get(url + "/history").json())
+
+    def test_concurrent_assignments_do_not_overwrite_each_other(self):
+        teams = [self.team(self.event, name, "") for name in ("동시 배정 A", "동시 배정 B")]
+        receipt = self.send(self.sets["set01"][:1]).raise_for_status().headers["location"]
+        item = self.http.get(receipt).json()["files"][0]["item_id"]
+        url = f"{receipt}/files/{item}/assignment"
+
+        def assign(team):
+            return self.http.put(url, json={"action": "assign", "team": team, "revision": 0, "reason": "제출 출처 확인"})
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(assign, teams))
+        self.assertEqual([200, 409], sorted(r.status_code for r in outcomes))
+        winner = teams[[r.status_code for r in outcomes].index(200)]
+        changes = self.http.get(url + "/history").raise_for_status().json()
+        self.assertEqual([(None, winner, 1)], [(c["before_team_id"], c["after_team_id"], c["revision"]) for c in changes])
 
     def test_two_staff_direct_downloads_and_event_isolation(self):
         event_b = self.peer.post("/api/events", json={"name": "담당 B " + uuid4().hex}).raise_for_status().json()["id"]

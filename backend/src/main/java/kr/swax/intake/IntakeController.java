@@ -16,10 +16,12 @@ import tools.jackson.databind.ObjectMapper;
 @RequestMapping("/api/intake-batches")
 class IntakeController {
     private final IntakeStore store;
+    private final FileAssignments assignments;
     private final ObjectMapper mapper;
 
-    IntakeController(IntakeStore store, ObjectMapper mapper) {
+    IntakeController(IntakeStore store, FileAssignments assignments, ObjectMapper mapper) {
         this.store = store;
+        this.assignments = assignments;
         this.mapper = mapper;
     }
 
@@ -39,6 +41,17 @@ class IntakeController {
 
     @GetMapping("/{id}")
     IntakeStore.Details details(Principal staff, @PathVariable UUID id) { return store.details(staff.getName(), id); }
+
+    @PutMapping("/{batch}/files/{file}/assignment")
+    FileAssignments.Saved assign(Principal staff, @PathVariable UUID batch, @PathVariable UUID file,
+                                 @RequestBody FileAssignments.Command command) {
+        return assignments.assign(staff.getName(), batch, file, command);
+    }
+
+    @GetMapping("/{batch}/files/{file}/assignment/history")
+    List<FileAssignments.Change> assignmentHistory(Principal staff, @PathVariable UUID batch, @PathVariable UUID file) {
+        return assignments.history(staff.getName(), batch, file);
+    }
 
     @GetMapping("/{batch}/files/{file}/original")
     ResponseEntity<byte[]> original(Principal staff, @PathVariable UUID batch, @PathVariable UUID file) {
