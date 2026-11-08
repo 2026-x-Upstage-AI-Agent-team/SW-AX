@@ -20,7 +20,7 @@ Spring Boot가 `dist/`를 정적 파일로 내보내므로 해시 라우팅(`/#/
 | `dev` | Spring Boot 접수 API (`backend/`) | 원본 접수, 접수 내역·상세·원본 받기, 대회·팀 관리. 판정·검토 화면은 예시 데이터 |
 | `dev:service` | 검토 서비스 (`service/app.py`, `start-service.ps1`) | 전부. 원본 접수(보완본 포함), Studio 판정 현황, 팀 배정, 담당자 검토·결론 기록, 팀장 이메일, 메일 본문·재시도, Gmail 연결, 보고서 생성·확정·HWPX/PDF 다운로드·편집본 업로드 |
 
-검토 서비스는 상태를 바꾸는 요청에 `X-Award-Client: staff` 헤더와 같은 출처를 요구한다. 클라이언트는 헤더를 항상 붙이고, `dev:service` 프록시는 `Origin` 헤더를 떼어 보낸다.
+검토 서비스는 상태를 바꾸는 요청에 `X-Award-Client: staff` 헤더와 같은 출처를 요구한다. 클라이언트는 헤더를 항상 붙이고, `dev:service` 프록시는 `Origin`을 검토 서비스 주소로 맞춰 보낸다.
 
 ## 화면과 API
 
