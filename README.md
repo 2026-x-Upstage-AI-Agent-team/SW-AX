@@ -2,19 +2,29 @@
 
 유잇 팀의 SW중심대학 사업단 시상금 증빙 자동화 프로젝트입니다. 사업단 담당자가 접수한 신청서·동의서·대표 증빙을 팀별로 대조하고, 확인된 정보로 지급내역서와 증빙을 담은 한글 보고서 및 PDF를 작성하는 과정을 다룹니다.
 
-운영판의 첫 단계로 **React · Spring Boot · PostgreSQL** 기반의 원본 접수 화면을 구현했습니다. 대회·팀을 등록하고 여러 팀의 한글 원본을 한 번에 접수한 뒤 접수번호로 다시 열거나 원본을 내려받을 수 있습니다. Windows 시연판은 HTML·CSS·JavaScript, FastAPI, SQLite로 구성되어 있으며, 공식 두 팀의 Studio 검토부터 HWPX·PDF 다운로드까지 검증했습니다. 운영판 워커는 별도 세션에서 구현 중입니다.
+운영판은 **React · Spring Boot · PostgreSQL**을 사용합니다. 담당자가 혼합 원본을 접수하면 워커가 파일별 검토 PDF와 팀 배정 근거를 준비합니다. 담당자는 Studio 판정과 원본을 대조하고 보완본·메일·지급 정보를 같은 제출 이력에서 관리합니다. 확정한 팀의 증빙은 편집 가능한 HWPX로 편철한 뒤 Windows 한글에서 같은 버전의 PDF로 출력합니다.
 
 ## 운영판 원본 접수 실행
 
-Windows에서 Docker Desktop, JDK 21, Node.js 22.12 이상(또는 24 LTS), PowerShell 7.2 이상을 준비하고 프로젝트 루트에서 실행합니다.
+Windows에서 Docker Desktop, JDK 21, Node.js 22.12 이상(또는 24 LTS), PowerShell 7.2 이상, Python 3.12 이상과 한글을 준비하고 프로젝트 루트에서 실행합니다.
 
 ```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r operations/requirements.txt
 ./start-intake.ps1
 ```
 
 전용 PostgreSQL 컨테이너가 준비되면 Spring Boot가 접수 화면과 API를 제공합니다. 아래 절차로 만든 담당자 계정으로 로그인해 **대회·팀 관리 → 대회 등록**에서 대회를 만듭니다. **원본 접수**에서 올린 서류는 **접수 내역**에서 다시 받을 수 있습니다. [담당자 로그인](http://127.0.0.1:18765/login)
 
 API는 이 PC의 루프백 주소에 바인딩합니다. PostgreSQL은 로컬 포트 `55432`와 Compose 볼륨 `swax-intake_intake_data`를 사용합니다. 기본 개발 DB 비밀번호는 첫 실행 때 `var/intake-postgres.key`에 생성합니다. 다른 DB를 사용할 때는 `AWARDS_DB_URL`, `AWARDS_DB_USER`, `AWARDS_DB_PASSWORD`를 같은 환경에 설정합니다. `./start-service.ps1`은 Windows 시연판 실행 명령입니다.
+
+### 판정, 메일과 보고서 출력
+
+Studio 실행에는 서버의 환경 변수 또는 프로젝트의 `.env.local`에 `UPSTAGE_API_KEY`, `UPSTAGE_AGENT_ID`, `UPSTAGE_CONFIG_ID`를 설정합니다. 공식 시험에는 설정 버전 23을 사용합니다. `MAIL_MODE=local`은 로컬 수신함을 사용합니다. 실제 발송은 `#/gmail`에서 담당자 계정을 연결하고 검토 화면에서 팀별 수신 주소를 확인해 저장합니다.
+
+단일 PC에서는 `start-intake.ps1`이 접수 서버, 문서 판독·판정·메일·편철 워커와 PDF 워커를 실행합니다. 00 지급내역서 원본을 팀 자료 폴더에 두거나 `AWARDS_REPORT_TEMPLATE`에 경로를 지정합니다. 처음 실행할 때 한글 경로 확인 모듈을 빌드하고 현재 Windows 사용자에 등록합니다. 이 모듈은 변환 작업별 폴더의 입력 한글 파일과 출력 PDF 경로를 검사합니다.
+
+출력 PC를 따로 두려면 서버는 `./start-intake.ps1 -RemotePrinter`로 실행합니다. 전용 Windows PC에 한글, 같은 코드와 가상환경을 준비하고 `./start-output-printer.ps1 -Prepare`에서 서버의 HTTPS 주소와 출력 전용 토큰을 입력합니다. 서버 토큰은 환경 변수 `AWARDS_OUTPUT_WORKER_TOKEN` 또는 첫 실행 때 생성한 `var/output-worker.key`에 있습니다. `./start-output-printer.ps1`이 작업을 받습니다. 전용 계정으로 부팅 시 시작하도록 등록하는 명령은 `./start-output-printer.ps1 -InstallAtStartup`입니다. 출력 PC의 토큰은 그 Windows 계정으로 암호화합니다. 원격 접속에는 Spring Boot 앞에 HTTPS 리버스 프록시를 두거나 서버에 HTTPS를 설정하고, 출력 PC가 신뢰하는 인증서를 사용합니다. 원본의 검토용 PDF를 만드는 처리 호스트에도 한글이 필요합니다. [운영판 API와 인수 시험](docs/IMPLEMENTATION_PLAN.md)
 
 ### 담당자 계정과 대회 권한
 
