@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -27,6 +28,7 @@ class IntakeStore {
             SELECT b.id, b.event_id, e.name AS event_name, b.target_team_id, t.name AS team_name,
                    t.representative, b.created_at, totals.file_count, totals.total_bytes
             FROM intake_batch b JOIN award_event e ON e.id = b.event_id
+            JOIN event_staff a ON a.event_id = b.event_id AND a.login = ?
             LEFT JOIN award_team t ON t.id = b.target_team_id
             CROSS JOIN LATERAL (
                 SELECT count(*) AS file_count, sum(size_bytes) AS total_bytes FROM intake_file WHERE batch_id = b.id
@@ -41,8 +43,8 @@ class IntakeStore {
     }
 
     @Transactional
-    Receipt receive(String key, UUID event, UUID target, IntakeUpload upload) {
-        catalog.requireEvent(event);
+    Receipt receive(String login, String key, UUID event, UUID target, IntakeUpload upload) {
+        catalog.requireEvent(login, event);
         if (target != null && !Boolean.TRUE.equals(db.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM award_team WHERE id = ? AND event_id = ?)", Boolean.class, target, event))) {
             throw ApiErrors.error(422, "선택한 대회에 등록된 팀을 지정해 주세요.");
@@ -83,13 +85,15 @@ class IntakeStore {
         return receipt(id);
     }
 
-    List<Summary> history(UUID event) {
-        catalog.requireEvent(event);
-        return db.query(SUMMARY + " WHERE b.event_id = ? ORDER BY b.created_at DESC, b.id", IntakeStore::summary, event);
+    @Transactional
+    List<Summary> history(String login, UUID event) {
+        catalog.requireEvent(login, event);
+        return db.query(SUMMARY + " WHERE b.event_id = ? ORDER BY b.created_at DESC, b.id", IntakeStore::summary, login, event);
     }
 
-    Details details(UUID id) {
-        Summary batch = db.query(SUMMARY + " WHERE b.id = ?", IntakeStore::summary, id).stream().findFirst()
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    Details details(String login, UUID id) {
+        Summary batch = db.query(SUMMARY + " WHERE b.id = ?", IntakeStore::summary, login, id).stream().findFirst()
                 .orElseThrow(() -> ApiErrors.error(404, "접수번호를 찾을 수 없습니다."));
         List<Item> files = db.query("SELECT id, position, name, size_bytes, sha256 FROM intake_file WHERE batch_id = ? ORDER BY position",
                 (rs, n) -> new Item(rs.getObject("id", UUID.class), rs.getInt("position"), rs.getString("name"),
@@ -97,9 +101,13 @@ class IntakeStore {
         return new Details(batch, files);
     }
 
-    Original original(UUID batch, UUID file) {
-        return db.query("SELECT name, original FROM intake_file WHERE batch_id = ? AND id = ?",
-                (rs, n) -> new Original(rs.getString("name"), rs.getBytes("original")), batch, file)
+    Original original(String login, UUID batch, UUID file) {
+        return db.query("""
+                SELECT f.name, f.original FROM intake_file f
+                JOIN intake_batch b ON b.id = f.batch_id
+                JOIN event_staff a ON a.event_id = b.event_id
+                WHERE a.login = ? AND b.id = ? AND f.id = ?
+                """, (rs, n) -> new Original(rs.getString("name"), rs.getBytes("original")), login, batch, file)
                 .stream().findFirst().orElseThrow(() -> ApiErrors.error(404, "해당 접수의 원본을 찾을 수 없습니다."));
     }
 

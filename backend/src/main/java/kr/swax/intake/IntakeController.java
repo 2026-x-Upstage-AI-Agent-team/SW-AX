@@ -3,6 +3,7 @@ package kr.swax.intake;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,23 +25,24 @@ class IntakeController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     ResponseEntity<IntakeStore.Receipt> upload(
+            Principal staff,
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
             @RequestParam UUID event, @RequestParam(required = false) UUID target, @RequestParam String manifest,
             @RequestParam(required = false) List<MultipartFile> files) throws IOException {
         IntakeUpload upload = IntakeUpload.read(event, target, key, manifest, files, mapper);
-        IntakeStore.Receipt receipt = store.receive(key, event, target, upload);
+        IntakeStore.Receipt receipt = store.receive(staff.getName(), key, event, target, upload);
         return ResponseEntity.accepted().location(URI.create(receipt.statusUrl())).body(receipt);
     }
 
     @GetMapping
-    List<IntakeStore.Summary> history(@RequestParam UUID event) { return store.history(event); }
+    List<IntakeStore.Summary> history(Principal staff, @RequestParam UUID event) { return store.history(staff.getName(), event); }
 
     @GetMapping("/{id}")
-    IntakeStore.Details details(@PathVariable UUID id) { return store.details(id); }
+    IntakeStore.Details details(Principal staff, @PathVariable UUID id) { return store.details(staff.getName(), id); }
 
     @GetMapping("/{batch}/files/{file}/original")
-    ResponseEntity<byte[]> original(@PathVariable UUID batch, @PathVariable UUID file) {
-        IntakeStore.Original original = store.original(batch, file);
+    ResponseEntity<byte[]> original(Principal staff, @PathVariable UUID batch, @PathVariable UUID file) {
+        IntakeStore.Original original = store.original(staff.getName(), batch, file);
         ContentDisposition attachment = ContentDisposition.attachment().filename(original.name(), StandardCharsets.UTF_8).build();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachment.toString())

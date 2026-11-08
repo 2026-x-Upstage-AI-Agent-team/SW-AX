@@ -12,11 +12,24 @@ Windows에서 Docker Desktop, JDK 21, Node.js 22.12 이상(또는 24 LTS), Power
 ./start-intake.ps1
 ```
 
-전용 PostgreSQL 컨테이너가 준비되면 Gradle 래퍼가 React를 빌드하고 Spring Boot가 같은 주소에서 화면과 API를 제공합니다. 처음에는 **대회·팀 관리 → 대회 등록**을 선택한 뒤 **원본 접수**에서 서류를 올립니다. **접수 내역**에서 접수번호를 열면 원본을 다시 받을 수 있습니다. [담당자 접수 화면](http://127.0.0.1:18765)
+전용 PostgreSQL 컨테이너가 준비되면 Spring Boot가 접수 화면과 API를 제공합니다. 아래 절차로 만든 담당자 계정으로 로그인해 **대회·팀 관리 → 대회 등록**에서 대회를 만듭니다. **원본 접수**에서 올린 서류는 **접수 내역**에서 다시 받을 수 있습니다. [담당자 로그인](http://127.0.0.1:18765/login)
 
-API는 이 PC의 루프백 주소에 바인딩합니다. 여러 담당자의 인증·권한과 원격 배포는 후속 단계입니다. PostgreSQL은 로컬 포트 `55432`와 Compose 볼륨 `swax-intake_intake_data`를 사용합니다. 기본 개발 DB 비밀번호는 첫 실행 때 `var/intake-postgres.key`에 생성합니다. 기존 DB에 직접 연결할 때는 `AWARDS_DB_URL`, `AWARDS_DB_USER`, `AWARDS_DB_PASSWORD`를 지정한 후 `backend`에서 `.\gradlew.bat bootRun`을 실행합니다. `./start-service.ps1`은 Windows 시연판 실행 명령입니다.
+API는 이 PC의 루프백 주소에 바인딩합니다. PostgreSQL은 로컬 포트 `55432`와 Compose 볼륨 `swax-intake_intake_data`를 사용합니다. 기본 개발 DB 비밀번호는 첫 실행 때 `var/intake-postgres.key`에 생성합니다. 다른 DB를 사용할 때는 `AWARDS_DB_URL`, `AWARDS_DB_USER`, `AWARDS_DB_PASSWORD`를 같은 환경에 설정합니다. `./start-service.ps1`은 Windows 시연판 실행 명령입니다.
 
-접수 API의 회귀 시험은 공식 ZIP과 `httpx`를 사용합니다. 별도 테스트 DB에 연결한 Spring Boot 인스턴스의 로컬 주소를 `INTAKE_TEST_URL`에 설정하고 아래 명령을 실행합니다. 시험은 그 DB에 대회와 테스트 접수를 생성합니다.
+### 담당자 계정과 대회 권한
+
+서비스를 한 번 시작해 DB 마이그레이션을 적용한 뒤, 운영자가 프로젝트 루트의 PowerShell에서 계정을 만듭니다. 비밀번호는 숨김 입력으로 받고 DB에는 bcrypt 해시를 저장합니다. 새 대회는 생성한 계정에 배정합니다. 기존 대회와 공동 담당자는 운영자가 대회 ID로 지정합니다.
+
+```powershell
+./manage-staff.ps1 -Action create -Login staff01
+./manage-staff.ps1 -Action events
+$eventId = Read-Host '배정할 대회 UUID'
+./manage-staff.ps1 -Action grant -Login staff01 -EventId $eventId
+```
+
+권한 회수는 같은 인자에 `-Action revoke`를 사용합니다. 이미 로그인한 담당자의 다음 요청에도 반영됩니다. 로그인은 `/login`, 로그아웃은 `/logout`이며 세션은 30분 미사용 시 만료됩니다. [인증 API와 권한 범위](docs/IMPLEMENTATION_PLAN.md#담당자-인증과-대회-권한)
+
+접수 API 회귀 시험은 공식 ZIP과 `httpx`를 사용합니다. 별도 테스트 DB에 두 계정을 만든 뒤 로컬 API 주소를 `INTAKE_TEST_URL`에, 계정과 비밀번호를 `INTAKE_TEST_LOGIN_A`, `INTAKE_TEST_PASSWORD_A`, `INTAKE_TEST_LOGIN_B`, `INTAKE_TEST_PASSWORD_B`에 설정합니다. 시험은 그 DB에 대회와 테스트 접수를 생성합니다.
 
 ```powershell
 python -m unittest discover -s tests -p test_intake_postgres.py -v
