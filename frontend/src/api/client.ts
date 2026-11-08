@@ -8,22 +8,37 @@ export class ApiError extends Error {
   }
 }
 
+/** 검토 서비스는 상태를 바꾸는 요청에 이 헤더가 있어야 받는다. Spring Boot는 무시한다. */
+export const STAFF_HEADER = { 'X-Award-Client': 'staff' } as const;
+
+/** FastAPI 검증 오류(detail 배열)와 일반 오류 문구를 한 줄로 만든다. */
+export function errorText(data: unknown, fallback: string): string {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  if (typeof detail === 'string' && detail) return detail;
+  if (Array.isArray(detail) && detail.length) return '입력값을 확인해 주세요. (' + detail.map((d) => d?.loc?.slice(-1)[0] ?? '').join(', ') + ')';
+  return fallback;
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { cache: 'no-store', ...options });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new ApiError(data.detail || '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.', response.status);
+  const method = (options.method ?? 'GET').toUpperCase();
+  const headers = method === 'GET' || method === 'HEAD' ? options.headers : { ...STAFF_HEADER, ...options.headers };
+  let response: Response;
+  try {
+    response = await fetch(path, { cache: 'no-store', ...options, headers });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err;
+    throw new ApiError('서버에 연결하지 못했습니다. API 서버가 실행 중인지 확인해 주세요.', 0);
   }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(errorText(data, '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'), response.status);
   return data as T;
 }
 
-export function postJson<T>(path: string, body: unknown): Promise<T> {
-  return api<T>(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+export function sendJson<T>(path: string, body: unknown, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
+  return api<T>(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
+
+export const postJson = <T,>(path: string, body: unknown) => sendJson<T>(path, body, 'POST');
 
 export type Loadable<T> = { data?: T; error?: string };
 
@@ -44,16 +59,18 @@ export function useApi<T>(path: string | null, revision = 0): Loadable<T> {
   return result?.path === path && result.revision === revision ? result : {};
 }
 
-/** 비동기 함수(mock 계층 포함)를 화면에서 읽을 때 쓰는 훅. */
+/**
+ * 비동기 함수를 화면에서 읽을 때 쓰는 훅. deps가 바뀌면 다시 부른다.
+ * 다시 불러오는 동안에는 이전 data를 유지해 화면이 깜빡이지 않게 한다.
+ */
 export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): Loadable<T> & { reload: () => void } {
   const [tick, setTick] = useState(0);
   const [state, setState] = useState<Loadable<T>>({});
   useEffect(() => {
     let alive = true;
-    setState({});
     load().then(
       (data) => alive && setState({ data }),
-      (err: Error) => alive && setState({ error: err.message }),
+      (err: Error) => alive && setState((prev) => ({ data: prev.data, error: err.message })),
     );
     return () => {
       alive = false;
@@ -61,6 +78,15 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): Loadable<T
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
   return { ...state, reload: () => setTick((v) => v + 1) };
+}
+
+/** busy인 동안 ms마다 refresh를 부른다. */
+export function usePolling(busy: boolean, refresh: () => void, ms = 4000) {
+  useEffect(() => {
+    if (!busy) return;
+    const id = setInterval(refresh, ms);
+    return () => clearInterval(id);
+  }, [busy, refresh, ms]);
 }
 
 export function bytes(size: number): string {

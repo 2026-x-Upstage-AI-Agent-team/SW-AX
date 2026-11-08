@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:service": "vite --mode service",
     "typecheck": "tsc --noEmit",
     "prebuild": "node -e \"require('node:fs/promises').rm('dist', { recursive: true, force: true })\"",
     "build": "tsc --noEmit && vite build",

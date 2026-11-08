@@ -1,5 +1,5 @@
 // Spring Boot 접수 API (backend/src/main/java/kr/swax/intake)와 연결되는 실제 호출.
-import { ApiError, postJson } from './client';
+import { ApiError, STAFF_HEADER, errorText, postJson } from './client';
 
 export type AwardEvent = { id: string; name: string };
 export type AwardTeam = { id: string; name: string; rep: string };
@@ -26,7 +26,7 @@ export type BatchDetails = {
   files: BatchFile[];
 };
 
-export type Receipt = { batch_id: string };
+export type Receipt = { batch_id: string; status?: string; status_url?: string };
 
 export const paths = {
   events: '/api/events',
@@ -43,7 +43,10 @@ export const createEvent = (name: string) => postJson<AwardEvent>(paths.events, 
 export const createTeam = (event: string, name: string, rep: string) =>
   postJson<AwardTeam>(paths.teams(event), { name, rep });
 
-/** 원본 일괄 업로드. 같은 선택을 다시 보내면 같은 Idempotency-Key로 기존 접수번호를 받는다. */
+/**
+ * 원본 일괄 업로드. 같은 선택을 다시 보내면 같은 Idempotency-Key로 기존 접수번호를 받는다.
+ * Spring Boot는 202, 검토 서비스는 202(새 접수) 또는 200(이미 배정까지 끝난 같은 접수)을 돌려준다.
+ */
 export function uploadBatch(form: FormData, key: string, onProgress: (percent: number) => void): Promise<Receipt> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -54,6 +57,7 @@ export function uploadBatch(form: FormData, key: string, onProgress: (percent: n
     };
     xhr.open('POST', '/api/intake-batches');
     xhr.setRequestHeader('Idempotency-Key', key);
+    for (const [name, value] of Object.entries(STAFF_HEADER)) xhr.setRequestHeader(name, value);
     xhr.responseType = 'json';
     xhr.upload.onprogress = (event) => {
       armTimeout();
@@ -62,11 +66,8 @@ export function uploadBatch(form: FormData, key: string, onProgress: (percent: n
     xhr.onerror = xhr.onabort = () =>
       reject(new ApiError('전송 결과를 받지 못했습니다. 같은 파일로 다시 접수해 주세요.', 0));
     xhr.onload = () => {
-      if (xhr.status === 202 && xhr.response?.batch_id) resolve(xhr.response as Receipt);
-      else
-        reject(
-          new ApiError(xhr.response?.detail || '원본을 접수하지 못했습니다. 파일 목록을 확인해 주세요.', xhr.status),
-        );
+      if ((xhr.status === 202 || xhr.status === 200) && xhr.response?.batch_id) resolve(xhr.response as Receipt);
+      else reject(new ApiError(errorText(xhr.response, '원본을 접수하지 못했습니다. 파일 목록을 확인해 주세요.'), xhr.status));
     };
     xhr.onloadend = () => clearTimeout(timeout);
     armTimeout();

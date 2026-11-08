@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
+import { backend } from '../api/backend';
 import { useEvent } from '../context/EventContext';
 import { cx } from './ui';
 
@@ -59,6 +60,12 @@ export default function Layout() {
                 ))}
               </select>
             </label>
+            <span
+              className="hidden rounded-full bg-canvas px-2.5 py-1 text-[11px] text-muted lg:inline"
+              title={backend === 'service' ? '검토 서비스(FastAPI, 127.0.0.1:8765)에 연결해 판정·검토·메일·보고서까지 실제로 처리합니다.' : '접수 API(Spring Boot, 127.0.0.1:18765)에 연결합니다. 판정·검토 화면은 예시 데이터입니다.'}
+            >
+              {backend === 'service' ? '검토 서비스' : '접수 API'}
+            </span>
             <NavLink to="/manage" className={({ isActive }) => cx('inline-flex min-h-11 items-center px-2 text-[13px]', isActive ? 'font-bold text-ink' : 'text-brand-strong hover:text-brand-deep')}>
               대회·팀 관리
             </NavLink>

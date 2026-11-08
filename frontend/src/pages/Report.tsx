@@ -1,31 +1,65 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router';
-import { useAsync } from '../api/client';
-import { listReportTeams, listSubmissions, type Submission } from '../api/review';
+import { reviewLive } from '../api/backend';
+import { useAsync, usePolling } from '../api/client';
+import { when } from '../api/labels';
+import {
+  confirmReport,
+  createReport,
+  getDraft,
+  getReport,
+  getSubmission,
+  reportFileUrl,
+  reviewBody,
+  saveReview,
+  uploadEditedReport,
+  type DraftTeam,
+  type ReportView,
+} from '../api/service';
 import { Page } from '../components/Layout';
-import { Notice, PageHeader, buttonStyles, cx } from '../components/ui';
+import { Feedback, Notice, PageHeader, PdfFrame, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
+import { useEvent } from '../context/EventContext';
 
-type Payment = { award: string; support: string; gross: string; tax: string };
-const FIELDS: Array<[keyof Payment, string, boolean]> = [
-  ['award', '시상구분', false],
-  ['support', '지원액(원)', true],
-  ['gross', '지급총액', true],
-  ['tax', '세액 · 차인지급액', true],
+type Pay = { award_type: string; support_amount: string; gross_amount: string; tax_amount: string; net_amount: string };
+const PAY_FIELDS: Array<[keyof Pay, string, boolean]> = [
+  ['award_type', '시상구분', false],
+  ['support_amount', '지원액(원)', true],
+  ['gross_amount', '지급총액', true],
+  ['tax_amount', '세액', true],
+  ['net_amount', '차인지급액', true],
 ];
-const emptyPayment: Payment = { award: '', support: '', gross: '', tax: '' };
+
+const payOf = (t: DraftTeam): Pay => ({
+  award_type: t.award_type ?? '',
+  support_amount: t.support_amount ?? '',
+  gross_amount: t.recipient?.gross_amount ?? '',
+  tax_amount: t.recipient?.tax_amount ?? '',
+  net_amount: t.recipient?.net_amount ?? '',
+});
 
 export default function Report() {
-  const ready = useAsync(listReportTeams, []);
-  const all = useAsync(listSubmissions, []);
-  const [order, setOrder] = useState<Submission[]>([]);
-  const [pay, setPay] = useState<Record<string, Payment>>({});
+  const { dashboard, revision, refresh } = useEvent();
+  const event = dashboard?.event ?? '';
+  const draft = useAsync(() => (event ? getDraft(event) : Promise.resolve({ teams: [] as DraftTeam[] })), [event, revision]);
+  const teams = useMemo(() => (draft.data?.teams ?? []).filter((t) => t.submission), [draft.data]);
+  const ready = teams.filter((t) => t.pending.length === 0);
+  const [order, setOrder] = useState<string[]>([]);
+  const [rid, setRid] = useState<string>();
 
+  // 처음에는 준비된 팀을 모두 현황 순서로 넣는다. 새로 준비된 팀은 뒤에 붙인다.
   useEffect(() => {
-    if (ready.data) setOrder(ready.data);
-  }, [ready.data]);
+    setOrder((prev) => {
+      const ids = ready.map((t) => t.submission!);
+      const kept = prev.filter((id) => ids.includes(id));
+      return prev.length ? [...kept, ...ids.filter((id) => !prev.includes(id) && !kept.includes(id))] : ids;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready.map((t) => t.submission).join()]);
 
-  const held = (all.data?.length ?? 0) - order.length;
-  const blanks = order.reduce((n, t) => n + FIELDS.filter(([k]) => !(pay[t.id]?.[k] ?? '').trim()).length, 0);
+  const latest = dashboard?.reports[0];
+  const activeRid = rid ?? latest?.id;
+  const chosen = order.map((id) => teams.find((t) => t.submission === id)).filter((t): t is DraftTeam => !!t);
+  const held = teams.filter((t) => t.pending.length > 0);
 
   const move = (index: number, delta: number) =>
     setOrder((list) => {
@@ -34,146 +68,410 @@ export default function Report() {
       next.splice(index + delta, 0, item);
       return next;
     });
-  const update = (id: string, key: keyof Payment, value: string) =>
-    setPay((p) => ({ ...p, [id]: { ...emptyPayment, ...p[id], [key]: value } }));
-
-  let serial = 0;
-  const rows = order.flatMap((t) =>
-    Array.from({ length: t.memberCount ?? 1 }, (_, i) => ({
-      n: ++serial,
-      name: i === 0 ? '○○○ (대표)' : '○○○',
-      team: t.teamName,
-      award: pay[t.id]?.award.trim() || '미확인',
-      support: pay[t.id]?.support.trim() || '미확인',
-      first: i === 0,
-    })),
-  );
+  const toggle = (sid: string, on: boolean) => setOrder((list) => (on ? [...list, sid] : list.filter((x) => x !== sid)));
 
   return (
     <Page tone="gray">
-      <PageHeader title="보고서 확정" demo lead="성공 판정을 받은 제출본만 묶습니다. 시상구분과 금액은 서류에서 추측하지 않고 직접 입력합니다." />
+      <PageHeader
+        title="보고서 확정"
+        demo
+        lead="담당자가 승인하고 시상구분·지원액을 넣은 팀만 편철합니다. 00 지급내역서의 두 표를 채우고 팀별 01→02→03 원본을 한 번씩 붙인 HWPX와 PDF를 만듭니다."
+      />
 
-      <ol aria-label="진행 단계" className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
-        {['팀 순서·금액 입력', '미리보기 확인', 'HWPX · PDF 내려받기'].map((label, i) => (
-          <li key={label} className={cx('flex items-center gap-3 rounded-2xl bg-white px-[18px] py-4', i === 0 && 'outline-2 outline-brand outline')}>
-            <span className={cx('flex size-7 items-center justify-center rounded-full text-[13px] font-bold', i === 0 ? 'bg-brand-strong text-white' : 'bg-line text-ink-2')}>{i + 1}</span>
-            <span className={cx('text-sm', i === 0 ? 'font-bold' : 'text-ink-2')}>{label}</span>
-          </li>
-        ))}
-      </ol>
-
-      {!ready.data ? (
-        <Notice error={ready.error} onRetry={ready.reload} />
+      {!draft.data ? (
+        <Notice error={draft.error} onRetry={draft.reload} />
       ) : (
         <div className="flex flex-wrap items-start gap-6">
-          <section aria-labelledby="teams-h" className="flex min-w-0 flex-[1_1_400px] flex-col gap-3.5">
+          <section aria-labelledby="teams-h" className="flex min-w-0 flex-[1_1_420px] flex-col gap-3.5">
             <h2 id="teams-h" className="text-xl font-extrabold">
-              팀 순서와 지급 정보
+              ① 팀 순서와 지급 정보
             </h2>
-            {order.map((t, index) => (
-              <div key={t.id} className="flex flex-col gap-3.5 rounded-[20px] bg-white p-5">
-                <div className="flex items-center gap-3">
-                  <span className="w-7 text-2xl font-extrabold text-brand-strong">{index + 1}</span>
-                  <div className="flex flex-1 flex-col">
-                    <strong className="text-base">{t.teamName}</strong>
-                    <span className="font-mono text-xs text-subtle">
-                      {t.id} · v{t.version} · 성공
-                    </span>
-                  </div>
-                  <MoveButton label={`${t.teamName} 위로`} disabled={index === 0} onClick={() => move(index, -1)} dir="up" />
-                  <MoveButton label={`${t.teamName} 아래로`} disabled={index === order.length - 1} onClick={() => move(index, 1)} dir="down" />
-                </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {FIELDS.map(([key, label, numeric]) => (
-                    <label key={key} className="flex flex-col gap-1.5 text-xs text-muted">
-                      {label}
-                      <input
-                        type="text"
-                        inputMode={numeric ? 'numeric' : undefined}
-                        placeholder="미확인"
-                        value={pay[t.id]?.[key] ?? ''}
-                        onChange={(e) => update(t.id, key, e.target.value)}
-                        className={cx('h-11 rounded-xl border border-line-2 bg-white px-3 text-sm text-ink', numeric && 'font-mono')}
-                      />
-                    </label>
-                  ))}
-                </div>
+            {teams.length === 0 && <p className="rounded-[20px] bg-white px-5 py-6 text-sm text-muted">판정이 끝난 팀이 없습니다.</p>}
+            {ready.map((t) => {
+              const index = order.indexOf(t.submission!);
+              return (
+                <TeamCard
+                  key={t.submission}
+                  t={t}
+                  index={index}
+                  count={order.length}
+                  onToggle={(on) => toggle(t.submission!, on)}
+                  onMove={(d) => move(index, d)}
+                  onSaved={refresh}
+                />
+              );
+            })}
+            {held.length > 0 && (
+              <div className="flex flex-col gap-2.5 rounded-[20px] border border-dashed border-[#cdcfcf] px-5 py-[18px]">
+                <strong className="text-sm">편철 전에 할 일 {held.length}팀</strong>
+                {held.map((t) => (
+                  <HeldTeam key={t.submission} t={t} onSaved={refresh} />
+                ))}
               </div>
-            ))}
-            <div className="flex flex-col gap-1.5 rounded-[20px] border border-dashed border-[#cdcfcf] px-5 py-[18px]">
-              <strong className="text-sm">보류 {held}팀</strong>
-              <span className="text-[13px] leading-relaxed text-muted">재제출요청·담당자확인 팀은 보완본이 성공하면 여기에 추가됩니다.</span>
-              <Link to="/" className="text-[13px] font-bold text-brand-strong">
-                업무 현황에서 보기 →
-              </Link>
-            </div>
+            )}
           </section>
 
           <section aria-labelledby="preview-h" className="flex min-w-0 flex-[999_1_580px] flex-col gap-3.5">
             <h2 id="preview-h" className="text-xl font-extrabold">
-              미리보기
+              ② 미리보기와 생성
             </h2>
-
-            <div className="flex flex-col gap-3 rounded-[20px] bg-white p-5">
-              <span className="text-[13px] text-muted">편철 순서 · 00 → 팀별 01 → 02 → 03</span>
-              <ol aria-label="편철 순서" className="flex flex-wrap gap-2.5">
-                <PageThumb code="00" label="지급내역서" accent />
-                {order.flatMap((t) => (['01', '02', '03'] as const).map((c) => <PageThumb key={t.id + c} code={c} label={t.teamName} />))}
-              </ol>
-            </div>
-
-            <div className="flex flex-col gap-3 rounded-[20px] bg-white p-[22px]">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <strong className="text-base">00 상금 지급내역서 · 지급상세</strong>
-                <span className="text-xs text-subtle">학생 한 명당 한 행 · 대표 먼저</span>
+            <Tables teams={chosen} />
+            <Generate event={event} order={order} disabled={chosen.length === 0} onCreated={(id) => { setRid(id); refresh(); }} />
+            {activeRid && <ReportPanel key={activeRid} rid={activeRid} onChanged={(id) => { if (id) setRid(id); refresh(); }} />}
+            {dashboard && dashboard.reports.length > 0 && (
+              <div className="flex flex-col gap-2 rounded-[20px] bg-white p-5">
+                <strong className="text-sm">생성한 버전</strong>
+                <ul className="flex flex-col gap-1">
+                  {dashboard.reports.map((r) => (
+                    <li key={r.id}>
+                      <button
+                        type="button"
+                        onClick={() => setRid(r.id)}
+                        className={cx('flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm', r.id === activeRid ? 'bg-brand-tint font-bold' : 'hover:bg-canvas')}
+                      >
+                        <span className="font-mono">v{r.version}</span>
+                        <StateBadge state={r.state} />
+                        <span className="text-xs text-subtle">{when(r.created)}</span>
+                        {r.error && <span className="truncate text-xs text-alert-strong">{r.error}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[620px] border-collapse text-[13px]">
-                  <thead>
-                    <tr className="text-left text-muted">
-                      {['연번', '성명', '학번(학교)', '전공', '팀명', '시상구분', '지원액(원)'].map((h) => (
-                        <th key={h} scope="col" className="border-b border-line px-2 py-2.5 font-medium">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr key={r.n} className="border-b border-line-soft">
-                        <td className="px-2 py-2.5 font-mono">{r.n}</td>
-                        <td className="px-2 py-2.5">{r.name}</td>
-                        <td className="px-2 py-2.5 text-subtle">[학번] ([학교])</td>
-                        <td className="px-2 py-2.5 text-subtle">[전공]</td>
-                        <td className="px-2 py-2.5">{r.team}</td>
-                        <td className={cx('px-2 py-2.5', r.award === '미확인' && 'text-caution')}>{r.first ? r.award : ''}</td>
-                        <td className={cx('px-2 py-2.5', r.support === '미확인' && 'text-caution')}>{r.first ? r.support : ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <span className="text-xs text-subtle">
-                팀 지원액은 팀당 한 번만 합산해 대표 행에만 표시합니다. 학생 {rows.length}행 · 대표 {order.length}행.
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3.5 rounded-[20px] bg-white p-[22px]">
-              <div className="flex flex-[1_1_260px] flex-col gap-1">
-                <strong className="text-[15px]">{blanks > 0 ? `입력 대기 ${blanks}칸` : '입력 완료'}</strong>
-                <span className="text-[13px] text-muted">보고서 생성 API가 연결되면 HWPX와 같은 내용의 PDF를 받을 수 있습니다.</span>
-              </div>
-              <button type="button" disabled className={buttonStyles.primary}>
-                HWPX 내려받기
-              </button>
-              <button type="button" disabled className={cx(buttonStyles.secondary, 'min-h-12 px-[22px] text-[15px] font-bold')}>
-                PDF 내려받기
-              </button>
-            </div>
+            )}
           </section>
         </div>
       )}
     </Page>
+  );
+}
+
+function TeamCard({
+  t,
+  index,
+  count,
+  onToggle,
+  onMove,
+  onSaved,
+}: {
+  t: DraftTeam;
+  index: number;
+  count: number;
+  onToggle: (on: boolean) => void;
+  onMove: (delta: number) => void;
+  onSaved: () => void;
+}) {
+  const included = index >= 0;
+  return (
+    <div className={cx('flex flex-col gap-3.5 rounded-[20px] bg-white p-5', !included && 'opacity-60')}>
+      <div className="flex items-center gap-3">
+        <label className="flex items-center">
+          <input type="checkbox" checked={included} onChange={(e) => onToggle(e.target.checked)} className="size-5 accent-brand" aria-label={`${t.team} 편철에 포함`} />
+        </label>
+        <span className="w-7 text-2xl font-extrabold text-brand-strong">{included ? index + 1 : '–'}</span>
+        <div className="flex flex-1 flex-col">
+          <strong className="text-base">{t.team}</strong>
+          <span className="text-xs text-subtle">
+            {t.rep && `대표 ${t.rep} · `}v{t.version} · 학생 {t.members.length}명
+          </span>
+        </div>
+        <MoveButton label={`${t.team} 위로`} disabled={!included || index === 0} onClick={() => onMove(-1)} dir="up" />
+        <MoveButton label={`${t.team} 아래로`} disabled={!included || index === count - 1} onClick={() => onMove(1)} dir="down" />
+      </div>
+      <PayForm t={t} onSaved={onSaved} />
+    </div>
+  );
+}
+
+function HeldTeam({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const onlyPay = t.pending.every((p) => p === '시상구분·지원액 입력');
+  return (
+    <div className="flex flex-col gap-2 rounded-xl bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <strong>{t.team}</strong>
+        <span className="text-xs text-caution">{t.pending.join(' · ')}</span>
+        <span className="flex-auto" />
+        {onlyPay || t.pending.includes('시상구분·지원액 입력') ? (
+          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="text-xs font-bold text-brand-strong">
+            {open ? '접기' : '지급 정보 입력'}
+          </button>
+        ) : null}
+        {t.submission && (
+          <Link to={`/teams/${t.submission}`} className="text-xs font-bold text-brand-strong">
+            검토 화면 →
+          </Link>
+        )}
+      </div>
+      {open && <PayForm t={t} onSaved={onSaved} />}
+    </div>
+  );
+}
+
+/** 팀별 시상구분·지원액·지급액 입력. 검토 저장 API에 기존 검토 내용과 함께 보낸다. */
+function PayForm({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
+  const [pay, setPay] = useState<Pay>(payOf(t));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const dirty = JSON.stringify(pay) !== JSON.stringify(payOf(t));
+
+  async function save() {
+    if (!t.submission) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const s = await getSubmission(t.submission);
+      const clean = (v: string) => v.replace(/\s/g, '');
+      await saveReview(
+        s.id,
+        reviewBody(s, {
+          award_type: pay.award_type.trim(),
+          support_amount: clean(pay.support_amount),
+          recipient: { ...s.fields.recipient, gross_amount: clean(pay.gross_amount), tax_amount: clean(pay.tax_amount), net_amount: clean(pay.net_amount) },
+        }),
+      );
+      setMessage('저장했습니다.');
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="grid grid-cols-2 gap-2.5">
+        {PAY_FIELDS.map(([key, label, numeric]) => (
+          <label key={key} className={cx('flex flex-col gap-1.5 text-xs text-muted', key === 'award_type' && 'col-span-2')}>
+            {label}
+            <input
+              type="text"
+              inputMode={numeric ? 'numeric' : undefined}
+              placeholder="미확인"
+              value={pay[key]}
+              disabled={!reviewLive || busy}
+              onChange={(e) => setPay((p) => ({ ...p, [key]: e.target.value }))}
+              className={cx(inputStyle, numeric && 'font-mono')}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={save} disabled={!reviewLive || busy || !dirty} className={cx(buttonStyles.secondary, 'min-h-10')}>
+          지급 정보 저장
+        </button>
+        <span className="text-[11px] text-subtle">금액은 원 단위 정수. 세액은 자동 계산하지 않습니다.</span>
+      </div>
+      <Feedback error={error} message={message} />
+    </div>
+  );
+}
+
+function Tables({ teams }: { teams: DraftTeam[] }) {
+  let serial = 0;
+  const rows = teams.flatMap((t) =>
+    [...t.members].sort((a, b) => (a.role === '대표' ? -1 : b.role === '대표' ? 1 : 0)).map((m, i) => ({ n: ++serial, m, t, first: i === 0 })),
+  );
+  const head = 'border-b border-line px-2 py-2.5 font-medium';
+  const cell = 'px-2 py-2.5';
+  const unknown = (v?: string) => (v ? v : <span className="text-caution">미확인</span>);
+  return (
+    <>
+      <div className="flex flex-col gap-3 rounded-[20px] bg-white p-5">
+        <span className="text-[13px] text-muted">편철 순서 · 00 → 팀별 01 → 02 → 03</span>
+        <ol aria-label="편철 순서" className="flex flex-wrap gap-2.5">
+          <PageThumb code="00" label="지급내역서" accent />
+          {teams.flatMap((t) => (['01', '02', '03'] as const).map((c) => <PageThumb key={t.submission + c} code={c} label={t.team} />))}
+        </ol>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-[20px] bg-white p-[22px]">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <strong className="text-base">지급상세 (학생 전체)</strong>
+          <span className="text-xs text-subtle">
+            학생 {rows.length}행 · 팀 지원액은 대표 행에만 표시
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] border-collapse text-[13px]">
+            <thead>
+              <tr className="text-left text-muted">
+                {['연번', '성명', '학번(학교)', '전공', '팀명', '시상구분', '지원액(원)'].map((h) => (
+                  <th key={h} scope="col" className={head}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-2 py-6 text-center text-muted">
+                    편철할 팀을 선택하세요.
+                  </td>
+                </tr>
+              )}
+              {rows.map(({ n, m, t, first }) => (
+                <tr key={n} className="border-b border-line-soft">
+                  <td className={cx(cell, 'font-mono')}>{n}</td>
+                  <td className={cell}>
+                    {m.name}
+                    {m.role === '대표' && <span className="text-muted"> (대표)</span>}
+                  </td>
+                  <td className={cell}>
+                    <span className="font-mono">{m.student_id || '—'}</span>
+                    {m.school && <span className="text-muted"> ({m.school})</span>}
+                  </td>
+                  <td className={cell}>{m.major}</td>
+                  <td className={cell}>{t.team}</td>
+                  <td className={cell}>{first ? unknown(t.award_type) : ''}</td>
+                  <td className={cx(cell, 'font-mono')}>{first ? unknown(t.support_amount) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-[20px] bg-white p-[22px]">
+        <strong className="text-base">지급대상자 상세 (팀 대표)</strong>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse text-[13px]">
+            <thead>
+              <tr className="text-left text-muted">
+                {['연번', '성명', '주민번호', '은행', '계좌번호', '예금주', '지급총액', '세액', '차인지급액'].map((h) => (
+                  <th key={h} scope="col" className={head}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {teams.map((t, i) => {
+                const rep = t.members.find((m) => m.role === '대표');
+                const r = t.recipient ?? {};
+                return (
+                  <tr key={t.submission} className="border-b border-line-soft">
+                    <td className={cx(cell, 'font-mono')}>{i + 1}</td>
+                    <td className={cell}>{rep?.name ?? t.rep}</td>
+                    <td className={cx(cell, 'font-mono')}>{unknown(r.rrn_display)}</td>
+                    <td className={cell}>{unknown(r.bank_name)}</td>
+                    <td className={cx(cell, 'font-mono')}>{unknown(r.account_number)}</td>
+                    <td className={cell}>{unknown(r.account_holder)}</td>
+                    <td className={cx(cell, 'font-mono')}>{unknown(r.gross_amount)}</td>
+                    <td className={cx(cell, 'font-mono')}>{unknown(r.tax_amount)}</td>
+                    <td className={cx(cell, 'font-mono')}>{unknown(r.net_amount)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <span className="text-xs text-subtle">주민번호는 원본의 마스킹 표기 그대로이며 가려진 숫자를 복원하지 않습니다.</span>
+      </div>
+    </>
+  );
+}
+
+function Generate({ event, order, disabled, onCreated }: { event: string; order: string[]; disabled: boolean; onCreated: (rid: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function run() {
+    setBusy(true);
+    setError('');
+    try {
+      const r = await createReport(event, order);
+      onCreated(r.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex flex-col gap-3 rounded-[20px] bg-white p-[22px]">
+      <div className="flex flex-wrap items-center gap-3.5">
+        <div className="flex flex-[1_1_260px] flex-col gap-1">
+          <strong className="text-[15px]">선택한 {order.length}팀으로 보고서 생성</strong>
+          <span className="text-[13px] text-muted">같은 내용이면 기존 버전을 다시 씁니다. 지급 정보나 제출본이 바뀌면 새 버전을 만듭니다.</span>
+        </div>
+        <button type="button" onClick={run} disabled={!reviewLive || disabled || busy} className={buttonStyles.primary}>
+          미리보기 생성
+        </button>
+      </div>
+      {!reviewLive && <p className="text-xs text-subtle">예시 데이터에서는 보고서를 만들 수 없습니다. 검토 서비스에 연결해 실행해 주세요.</p>}
+      <Feedback error={error} />
+    </div>
+  );
+}
+
+function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: string) => void }) {
+  const [tick, setTick] = useState(0);
+  const report = useAsync<ReportView>(() => getReport(rid), [rid, tick]);
+  const r = report.data;
+  usePolling(!!r && (r.state === 'queued' || r.state === 'building'), () => setTick((v) => v + 1), 2500);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function act(task: () => Promise<string | void>) {
+    setBusy(true);
+    setError('');
+    try {
+      const next = await task();
+      setTick((v) => v + 1);
+      onChanged(next || undefined);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const onEdited = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) act(async () => (await uploadEditedReport(rid, file)).id);
+  };
+
+  if (!r) return <Notice error={report.error} onRetry={report.reload} />;
+  const ready = r.state === 'preview' || r.state === 'confirmed';
+  return (
+    <div className="flex flex-col gap-3.5 rounded-[20px] bg-white p-[22px]">
+      <div className="flex flex-wrap items-center gap-3">
+        <strong className="text-base">보고서 v{r.version}</strong>
+        <StateBadge state={r.state} />
+        {r.parent && <span className="text-xs text-muted">편집본 반영</span>}
+        <span className="text-xs text-subtle">{r.teams.join(' → ')}</span>
+      </div>
+      {r.stale && <Feedback error="생성 뒤 지급 정보나 제출본이 바뀌었습니다. 새 보고서를 생성해 주세요." />}
+      {r.error && <Feedback error={r.error} />}
+      {(r.state === 'queued' || r.state === 'building') && <p className="text-sm text-muted">한글 문서를 만드는 중입니다. 완료되면 미리보기가 열립니다.</p>}
+      {ready && <PdfFrame url={reportFileUrl(r.id, 'preview')} title={`보고서 v${r.version} 미리보기`} height={720} />}
+      <div className="flex flex-wrap items-center gap-2.5">
+        {r.state === 'preview' && (
+          <button type="button" disabled={busy || r.stale} onClick={() => act(() => confirmReport(r.id).then(() => undefined))} className={buttonStyles.primary}>
+            이 버전으로 확정
+          </button>
+        )}
+        {r.state === 'confirmed' && !r.stale && (
+          <>
+            <a href={reportFileUrl(r.id, 'hwpx')} download className={buttonStyles.primary}>
+              HWPX 내려받기
+            </a>
+            <a href={reportFileUrl(r.id, 'pdf')} download className={cx(buttonStyles.secondary, 'min-h-12 px-[22px] text-[15px] font-bold')}>
+              PDF 내려받기
+            </a>
+            <label className={cx(buttonStyles.text, 'cursor-pointer')}>
+              한글에서 고친 HWPX 올리기
+              <input type="file" accept=".hwpx" onChange={onEdited} disabled={busy} className="sr-only" />
+            </label>
+          </>
+        )}
+      </div>
+      <Feedback error={error} />
+    </div>
   );
 }
 

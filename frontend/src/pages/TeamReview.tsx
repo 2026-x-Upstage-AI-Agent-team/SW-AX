@@ -1,21 +1,43 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { useAsync } from '../api/client';
-import { getSubmission, type DocCode, type Submission } from '../api/review';
+import { reviewLive } from '../api/backend';
+import { useAsync, usePolling } from '../api/client';
+import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
+import {
+  filePreviewUrl,
+  getSubmission,
+  retrySubmission,
+  reviewBody,
+  saveReview,
+  setTeamEmail,
+  type Decision,
+  type DocKey,
+  type SubmissionDetail,
+} from '../api/service';
 import { Page } from '../components/Layout';
-import { CheckIcon, DemoBadge, MailBadge, Notice, VerdictBadge, buttonStyles, cx } from '../components/ui';
+import MailItem from '../components/MailItem';
+import {
+  CheckIcon,
+  DemoBadge,
+  Feedback,
+  Notice,
+  PdfFrame,
+  StateBadge,
+  VerdictBadge,
+  buttonStyles,
+  checkState,
+  cx,
+  inputStyle,
+} from '../components/ui';
+import { useEvent } from '../context/EventContext';
 
-const docTitles: Record<DocCode, string> = { '01': '01 신청서', '02': '02 동의서', '03': '03 신분증·통장' };
-
-/** "02 p1" 같은 위치 표기에서 서류 번호를 꺼낸다. */
-function toDoc(location?: string): DocCode | undefined {
-  const code = location?.slice(0, 2);
-  return code === '01' || code === '02' || code === '03' ? code : undefined;
-}
+const DOC_KEYS: DocKey[] = ['01', '02', '03', '?'];
 
 export default function TeamReview() {
   const { id = '' } = useParams();
-  const result = useAsync(() => getSubmission(id), [id]);
+  const { revision, refresh } = useEvent();
+  const result = useAsync(() => getSubmission(id), [id, revision]);
+  usePolling(reviewLive && !!result.data && busyStates.has(result.data.state), refresh);
 
   return (
     <Page tone="gray">
@@ -23,209 +45,478 @@ export default function TeamReview() {
         <Link to="/" className="text-sm text-brand-strong hover:text-brand-deep">
           ← 업무 현황
         </Link>
-        {!result.data ? <Notice error={result.error} onRetry={result.reload} /> : <Review key={result.data.id} s={result.data} />}
+        {!result.data ? <Notice error={result.error} onRetry={result.reload} /> : <Review key={result.data.id} s={result.data} onSaved={refresh} />}
       </div>
     </Page>
   );
 }
 
-function Review({ s }: { s: Submission }) {
-  const firstIssue = s.checks.find((c) => c.state === 'fail' || c.state === 'check');
-  const [doc, setDoc] = useState<DocCode>(s.highlight?.doc ?? toDoc(firstIssue?.location) ?? '01');
-  const openDoc = (location: string) => {
-    const code = toDoc(location);
-    if (code) setDoc(code);
-  };
+function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
+  const res = s.result;
+  const docs = res?.documents;
+  const firstIssue = res?.checks.find((c) => c.passed !== true && c.refs.length);
+  const initialRef = firstIssue?.refs[0] ?? DOC_KEYS.map((k) => docs?.[k]?.[0]).find(Boolean);
+  const [view, setView] = useState<{ file?: string; page?: number }>({ file: initialRef?.id ?? s.files[0]?.id, page: initialRef?.page });
+  const file = s.files.find((f) => f.id === view.file);
+  const fileDoc = (fid?: string) => DOC_KEYS.find((k) => docs?.[k]?.some((r) => r.id === fid)) ?? (s.files.find((f) => f.id === fid)?.kind as DocKey | undefined);
+  const activeDoc = fileDoc(view.file);
+  const outdated = s.current !== s.id;
 
   return (
     <>
+      {outdated && (
+        <p className="rounded-2xl border border-caution-line bg-caution-bg px-5 py-3 text-sm">
+          이전 제출 버전입니다.{' '}
+          {s.current && (
+            <Link to={`/teams/${s.current}`} className="font-bold text-brand-strong underline underline-offset-2">
+              최신 버전 보기
+            </Link>
+          )}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{s.teamName}</h1>
-        <span className="font-mono text-[13px] text-subtle">
-          {s.id} · 제출 v{s.version}
+        <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{s.team_name}</h1>
+        <span className="text-[13px] text-subtle">
+          {s.rep && `대표 ${s.rep} · `}
+          <span className="font-mono">제출 v{s.version}</span> · 원본 {s.count}개
         </span>
-        <VerdictBadge verdict={s.verdict} size="md" />
+        {s.state === 'done' && s.verdict ? <VerdictBadge verdict={s.verdict} size="md" /> : <StateBadge state={s.state} size="md" />}
+        {s.decision && (
+          <span className={cx('rounded-full border px-3 py-1.5 text-[13px] font-bold', s.decision === '승인' ? 'border-brand text-brand-strong' : 'border-alert-strong text-alert-strong')}>
+            담당자 {s.decision}
+          </span>
+        )}
         <DemoBadge />
         <div className="flex-auto" />
-        <button type="button" className={buttonStyles.secondary} disabled title="원본 파일 API 연결 후 사용">
-          원본 내려받기
-        </button>
-        <Link to="/intake" className={cx(buttonStyles.primary, 'min-h-11 px-5 text-sm')}>
-          보완본 접수
-        </Link>
+        {!outdated && (
+          <Link to={`/intake?base=${s.id}`} className={cx(buttonStyles.primary, 'min-h-11 px-5 text-sm')}>
+            보완본 접수
+          </Link>
+        )}
       </div>
-      <p className="max-w-4xl text-[17px] leading-relaxed text-ink-2">{s.reason}</p>
-      {s.verdict !== '성공' && <p className="text-sm text-muted">어느 원본값이 맞는지는 자동으로 고르지 않습니다.</p>}
+      {res?.reason && <p className="max-w-4xl text-[17px] leading-relaxed text-ink-2">{res.reason}</p>}
+      {s.held && <Feedback error="이 팀에 속할 수 있는 미배정 파일이 있어 검토 저장과 안내가 보류됩니다. 팀 배정 확인에서 먼저 정리해 주세요." />}
+      {s.state !== 'done' && <StatusCard s={s} onSaved={onSaved} />}
 
       <div className="mt-4 flex flex-wrap items-start gap-6">
         <section aria-label="원문 미리보기" className="min-w-0 flex-[999_1_560px] overflow-hidden rounded-[22px] border border-line bg-white">
           <div role="tablist" aria-label="서류" className="flex flex-wrap gap-1 border-b border-line px-4 py-3">
-            {(Object.keys(docTitles) as DocCode[]).map((code) => (
-              <button
-                key={code}
-                type="button"
-                role="tab"
-                aria-selected={doc === code}
-                onClick={() => setDoc(code)}
-                className={cx('min-h-10 rounded-[10px] px-3.5 text-[13px]', doc === code ? 'bg-ink font-bold text-white' : 'text-muted hover:bg-canvas')}
-              >
-                {docTitles[code]}
-                {s.docs[code] === 'missing' && ' · 없음'}
-                {s.docs[code] === 'duplicate' && ' · 2건'}
-              </button>
-            ))}
+            {DOC_KEYS.filter((k) => k !== '?' || (docs?.['?']?.length ?? 0) > 0).map((k) => {
+              const refs = docs?.[k] ?? s.files.filter((f) => f.kind === k).map((f) => ({ id: f.id, page: f.page }));
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeDoc === k}
+                  disabled={refs.length === 0}
+                  onClick={() => setView({ file: refs[0]?.id, page: refs[0]?.page })}
+                  className={cx(
+                    'min-h-10 rounded-[10px] px-3.5 text-[13px] disabled:cursor-not-allowed',
+                    activeDoc === k ? 'bg-ink font-bold text-white' : refs.length ? 'text-muted hover:bg-canvas' : 'text-alert-strong',
+                  )}
+                >
+                  {k === '?' ? '기타' : k} {docLabels[k]}
+                  {refs.length === 0 && ' · 없음'}
+                  {refs.length > 1 && ` · ${refs.length}건`}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex justify-center bg-paper p-3 sm:p-8">
-            <DocPreview s={s} doc={doc} />
+          {activeDoc && (docs?.[activeDoc]?.length ?? 0) > 1 && (
+            <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2">
+              {docs![activeDoc].map((r, i) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setView({ file: r.id, page: r.page })}
+                  className={cx('min-h-9 rounded-lg px-3 text-xs', view.file === r.id ? 'bg-alert-tint font-bold text-alert-strong' : 'bg-canvas text-ink-2')}
+                >
+                  {i + 1}번째 · {s.files.find((f) => f.id === r.id)?.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-col gap-2 bg-paper p-3 sm:p-5">
+            {file && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+                <span className="break-all">
+                  {file.name} {view.page ? `· ${view.page}쪽` : ''}
+                </span>
+                {file.url && (
+                  <a href={filePreviewUrl(file, view.page)} target="_blank" rel="noreferrer" className="font-bold text-brand-strong">
+                    새 창으로 열기
+                  </a>
+                )}
+              </div>
+            )}
+            <PdfFrame key={(file?.id ?? '') + (view.page ?? '')} url={file ? filePreviewUrl(file, view.page) : ''} title={file?.name ?? '원본 미리보기'} />
           </div>
         </section>
 
-        <aside aria-label="검토 체크리스트" className="flex min-w-0 flex-[1_1_360px] flex-col gap-4">
+        <aside aria-label="검토 체크리스트" className="flex min-w-0 flex-[1_1_380px] flex-col gap-4">
           <div className="rounded-[22px] border border-line bg-white py-2">
-            <h2 className="px-[22px] pb-2 pt-4 text-[17px] font-extrabold">검토 체크리스트</h2>
-            <ul>
-              {s.checks.map((c) => (
-                <li key={c.title} className="border-t border-line-soft">
-                  <button
-                    type="button"
-                    onClick={() => openDoc(c.location)}
-                    className={cx('flex min-h-[52px] w-full items-center gap-3 px-[22px] py-3 text-left hover:bg-canvas', c.state === 'fail' && 'bg-alert-soft', c.state === 'check' && 'bg-caution-bg')}
-                  >
-                    <CheckIcon state={c.state} />
-                    <span className="flex flex-1 flex-col gap-0.5">
-                      <span className="text-sm font-medium text-ink">{c.title}</span>
-                      <span className="text-xs text-subtle">{c.detail}</span>
-                    </span>
-                    <span className="font-mono text-[11px] text-subtle">{c.location}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <h2 className="px-[22px] pb-2 pt-4 text-[17px] font-extrabold">검토 항목</h2>
+            {!res ? (
+              <p className="px-[22px] pb-4 text-sm text-muted">Studio 판정이 끝나면 항목이 표시됩니다.</p>
+            ) : (
+              <ul>
+                {[...res.checks]
+                  .sort((a, b) => rank(a.passed) - rank(b.passed))
+                  .map((c, i) => {
+                    const st = checkState(c.passed);
+                    const ref = c.refs[0];
+                    return (
+                      <li key={c.label + i} className="border-t border-line-soft">
+                        <button
+                          type="button"
+                          disabled={!ref}
+                          onClick={() => ref && setView({ file: ref.id, page: ref.page })}
+                          className={cx('flex min-h-[52px] w-full items-center gap-3 px-[22px] py-3 text-left hover:bg-canvas disabled:cursor-default', st === 'fail' && 'bg-alert-soft', st === 'check' && 'bg-caution-bg')}
+                        >
+                          <CheckIcon state={st} />
+                          <span className="flex-1 text-sm font-medium text-ink">{c.label}</span>
+                          <span className="font-mono text-[11px] text-subtle">
+                            {c.refs
+                              .map((r) => `${fileDoc(r.id) ?? '?'}${r.row ? ` ${r.row}행` : ''}`)
+                              .filter((v, j, a) => a.indexOf(v) === j)
+                              .join(' · ')}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
           </div>
-          <MailCard s={s} />
+          {typeof res?.staff_report === 'string' && res.staff_report.trim() && (
+            <details className="rounded-[22px] border border-line bg-white px-[22px] py-4">
+              <summary className="cursor-pointer text-[15px] font-extrabold">Studio 검토보고서</summary>
+              <p className="mt-3 whitespace-pre-line text-[13px] leading-relaxed text-ink-2">{res.staff_report}</p>
+            </details>
+          )}
+          <DecisionCard s={s} onSaved={onSaved} />
+          <LeaderCard s={s} onSaved={onSaved} />
         </aside>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-start gap-6">
+        <MembersCard s={s} />
+        <HistoryCard s={s} />
       </div>
     </>
   );
 }
 
-function MailCard({ s }: { s: Submission }) {
-  const [decision, setDecision] = useState<'이상 없음' | '보완 필요' | null>(null);
+/** 결론을 기록했을 때 실제로 일어나는 일 (service/app.py save_review 기준) */
+function decidedMessage(s: SubmissionDetail, d: Decision) {
+  if (s.verdict === '담당자확인') return `‘${d}’으로 기록했습니다. 팀장에게 ${d === '승인' ? '검토 완료' : '보완 요청'} 안내 한 통이 발송됩니다.`;
+  if (d === '보완 필요') return '‘보완 필요’로 기록했습니다. 선택한 항목으로 팀장에게 보완 요청 메일이 발송됩니다.';
+  return '승인했습니다. 시상구분·지원액을 넣으면 보고서에 편철할 수 있습니다.';
+}
+
+const rank = (p: boolean | null) => (p === false ? 0 : p === null ? 1 : 2);
+
+/** 판정 전·실패 상태 안내와 재개 */
+function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
+  const [job, setJob] = useState('');
+  const [absent, setAbsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const recoverable = recoverableStates.has(s.state);
+
+  async function retry() {
+    setBusy(true);
+    setError('');
+    try {
+      await retrySubmission(s.id, s.state === 'uncertain' ? { job: job.trim(), confirmed_absent: absent } : {});
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={cx('flex flex-col gap-3 rounded-[18px] border px-6 py-4', recoverable || s.state === 'ownership' ? 'border-alert-strong/30 bg-alert-soft' : 'border-line bg-white')}>
+      <div className="flex flex-wrap items-center gap-3">
+        <StateBadge state={s.state} />
+        <span className="text-sm text-ink-2">{s.error || (busyStates.has(s.state) ? 'Studio 판정을 기다리는 중입니다. 화면이 자동으로 새로고침됩니다.' : stateLabel(s.state))}</span>
+        {s.job && <span className="font-mono text-xs text-subtle">{s.job}</span>}
+      </div>
+      {s.state === 'ownership' && (
+        <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>
+          팀 배정 확인으로
+        </Link>
+      )}
+      {recoverable && (
+        <div className="flex flex-wrap items-end gap-3">
+          {s.state === 'uncertain' && (
+            <>
+              <label className="flex flex-[1_1_240px] flex-col gap-1.5 text-xs text-muted">
+                Studio 실행 이력에서 찾은 Job ID
+                <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="job_..." className={cx(inputStyle, 'font-mono')} />
+              </label>
+              <label className="flex min-h-11 items-center gap-2 text-sm">
+                <input type="checkbox" checked={absent} onChange={(e) => setAbsent(e.target.checked)} className="size-4 accent-brand" />
+                이력에 Job이 없음을 확인함
+              </label>
+            </>
+          )}
+          <button type="button" disabled={busy || (s.state === 'uncertain' && !job.trim() && !absent)} onClick={retry} className={buttonStyles.outline}>
+            처리 재개
+          </button>
+        </div>
+      )}
+      <Feedback error={error} />
+    </div>
+  );
+}
+
+/** 담당자 검토 결론 기록 */
+function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
+  const [decision, setDecision] = useState<Decision | ''>(s.decision ?? '');
+  const [note, setNote] = useState(s.note);
+  const [issues, setIssues] = useState<string[]>(s.result?.issues ?? []);
+  const [award, setAward] = useState(s.fields.award_type ?? '');
+  const [support, setSupport] = useState(s.fields.support_amount ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const locked = !!s.decision;
+  const canSave = reviewLive && s.state === 'done' && !s.held && s.current === s.id;
+  const needsNote = s.verdict === '담당자확인' && !!decision;
+
+  async function save(final: boolean) {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await saveReview(
+        s.id,
+        reviewBody(s, {
+          decision: final && decision ? decision : s.decision ?? '작성 중',
+          note,
+          issues: decision === '보완 필요' ? issues : s.result?.issues ?? [],
+          award_type: award,
+          support_amount: support.replace(/\s/g, ''),
+        }),
+      );
+      setMessage(final && decision && !locked ? decidedMessage(s, decision) : '저장했습니다.');
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3.5 rounded-[22px] border border-line bg-white p-[22px]">
+      <h2 className="text-[17px] font-extrabold">담당자 검토</h2>
+      <fieldset disabled={!canSave || busy} className="flex flex-col gap-3.5">
+        <div role="radiogroup" aria-label="검토 결론" className="grid grid-cols-2 gap-2">
+          {(['승인', '보완 필요'] as Decision[]).map((d) => (
+            <label
+              key={d}
+              className={cx(
+                'flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm',
+                decision === d ? (d === '승인' ? 'border-brand bg-brand-tint font-bold text-brand-deep' : 'border-alert-strong bg-alert-soft font-bold text-alert-strong') : 'border-line-2',
+                (locked ? decision !== d : d === '승인' && s.verdict === '재제출요청') && 'cursor-not-allowed opacity-40',
+              )}
+            >
+              <input
+                type="radio"
+                name="decision"
+                value={d}
+                checked={decision === d}
+                disabled={locked || (d === '승인' && s.verdict === '재제출요청')}
+                onChange={() => setDecision(d)}
+                className="sr-only"
+              />
+              {d}
+            </label>
+          ))}
+        </div>
+        {s.verdict === '재제출요청' && !locked && <p className="text-xs text-muted">재제출요청 판정은 보완본을 받아 다시 검토한 뒤 승인할 수 있습니다.</p>}
+        {locked && <p className="text-xs text-muted">이미 안내한 결론은 바꿀 수 없습니다. 바꾸려면 보완본을 접수하세요.</p>}
+        {decision === '보완 필요' && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-xs text-muted">팀장에게 안내할 보완 항목</legend>
+            <div className="grid grid-cols-2 gap-1.5">
+              {Object.entries(issueLabels).map(([key, label]) => (
+                <label key={key} className="flex min-h-9 items-center gap-2 text-[13px]">
+                  <input
+                    type="checkbox"
+                    disabled={locked}
+                    checked={issues.includes(key)}
+                    onChange={(e) => setIssues((list) => (e.target.checked ? [...list, key] : list.filter((k) => k !== key)))}
+                    className="size-4 accent-brand"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+        <label className="flex flex-col gap-1.5 text-xs text-muted">
+          확인 메모{needsNote && <span className="text-caution"> · 원본과 대조한 결과를 한 줄로 기록해 주세요</span>}
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000} className={cx(inputStyle, 'h-auto py-2.5 leading-relaxed')} />
+        </label>
+        <div className="grid grid-cols-2 gap-2.5">
+          <label className="flex flex-col gap-1.5 text-xs text-muted">
+            시상구분
+            <input value={award} onChange={(e) => setAward(e.target.value)} placeholder="미확인" maxLength={60} className={inputStyle} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs text-muted">
+            지원액(원)
+            <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="미확인" inputMode="numeric" className={cx(inputStyle, 'font-mono')} />
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!locked && (
+            <button type="button" disabled={!decision} onClick={() => save(true)} className={cx(buttonStyles.primary, 'min-h-11 text-sm')}>
+              결론 기록
+            </button>
+          )}
+          <button type="button" onClick={() => save(false)} className={buttonStyles.secondary}>
+            {locked ? '지급 정보 저장' : '임시 저장'}
+          </button>
+        </div>
+      </fieldset>
+      {!reviewLive && <p className="text-xs text-subtle">예시 데이터에서는 저장할 수 없습니다.</p>}
+      {reviewLive && s.state !== 'done' && <p className="text-xs text-subtle">Studio 판정이 끝난 뒤 기록할 수 있습니다.</p>}
+      <Feedback error={error} message={message} />
+    </div>
+  );
+}
+
+/** 팀장 이메일과 안내 메일 */
+function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
+  const [email, setEmail] = useState(s.email);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  useEffect(() => setEmail(s.email), [s.email]);
+
+  async function saveEmail() {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await setTeamEmail(s.team, email.trim());
+      setMessage('팀장 이메일을 저장했습니다. 대기 중인 안내가 이 주소로 발송됩니다.');
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3 rounded-[22px] border border-line bg-white p-[22px]">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[17px] font-extrabold">팀장 안내 메일</h2>
-        <MailBadge state={s.mail.state} />
+      <h2 className="text-[17px] font-extrabold">팀장 안내</h2>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-xs text-muted">
+          팀장 이메일 (원접수에서 확인한 주소 한 개)
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!reviewLive || busy} className={inputStyle} />
+        </label>
+        <button type="button" onClick={saveEmail} disabled={!reviewLive || busy || email.trim() === s.email} className={buttonStyles.secondary}>
+          저장
+        </button>
       </div>
-      {s.mail.state === 'sent' && s.mail.subject ? (
-        <>
-          <div className="text-xs text-subtle">받는 사람 · 01 팀 대표 E-mail (담당자 확인) · [발송 시각]</div>
-          <div className="flex flex-col gap-2 rounded-[14px] bg-canvas p-4">
-            <strong className="text-sm">{s.mail.subject}</strong>
-            <p className="text-[13px] leading-relaxed text-ink-2">{s.mail.body}</p>
-          </div>
-        </>
-      ) : s.mail.state === 'waiting' ? (
-        decision ? (
-          <p role="status" className="rounded-[14px] bg-brand-tint p-4 text-sm leading-relaxed text-brand-deep">
-            ‘{decision}’으로 기록했습니다. 결과 안내 한 통이 팀장에게 발송됩니다. (발송 API 연결 전)
-            <button type="button" onClick={() => setDecision(null)} className="ml-2 font-bold underline underline-offset-2">
-              되돌리기
-            </button>
-          </p>
-        ) : (
-          <>
-            <p className="text-sm leading-relaxed text-ink-2">원본을 대조한 뒤 결과를 기록하면 팀장에게 한 통이 발송됩니다.</p>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className={buttonStyles.secondary} onClick={() => setDecision('이상 없음')}>이상 없음</button>
-              <button type="button" className={buttonStyles.secondary} onClick={() => setDecision('보완 필요')}>보완 필요</button>
-            </div>
-          </>
-        )
+      <Feedback error={error} message={message} />
+      {s.mail.length === 0 ? (
+        <p className="text-sm text-muted">{s.verdict === '성공' && s.version === 1 ? '최초 정상 제출이라 보낼 안내가 없습니다.' : '아직 만들어진 안내가 없습니다.'}</p>
       ) : (
-        <p className="text-sm text-muted">최초 정상 제출이라 보낼 안내가 없습니다.</p>
+        <ul className="flex flex-col gap-2">
+          {s.mail.map((m) => (
+            <MailItem key={m.id} m={m} onSaved={onSaved} />
+          ))}
+        </ul>
       )}
       <p className="text-xs text-subtle">원본 첨부, 주민번호·계좌번호·학번, 다른 팀 정보는 메일에 넣지 않습니다.</p>
     </div>
   );
 }
 
-const cell = 'border-[#cdcfcf] p-2';
-
-function DocPreview({ s, doc }: { s: Submission; doc: DocCode }) {
-  if (s.docs[doc] === 'missing') {
-    return (
-      <div className="flex w-full max-w-[560px] flex-col items-center gap-2 rounded-xl border-2 border-dashed border-alert-strong bg-white px-8 py-16 text-center">
-        <strong className="text-alert-strong">{docTitles[doc]}이(가) 접수되지 않았습니다</strong>
-        <span className="text-sm text-muted">이 팀의 확정 접수 목록에 해당 서류가 없습니다.</span>
-      </div>
-    );
-  }
-  const highlightAccount = s.highlight?.doc === doc && s.highlight.field === 'account';
+function MembersCard({ s }: { s: SubmissionDetail }) {
+  const members = s.fields.members;
+  const r = s.fields.recipient;
   return (
-    <div className="flex w-full max-w-[560px] flex-col gap-[18px] bg-white px-4 py-6 text-xs sm:px-9 sm:py-10 text-ink-2 shadow-[0_6px_24px_rgba(0,0,0,0.08)]">
-      {s.docs[doc] === 'duplicate' && (
-        <p className="rounded-lg bg-alert-tint px-3 py-2 text-alert-strong">같은 서류가 파일명만 다르게 2건 접수되었습니다.</p>
+    <section className="min-w-0 flex-[2_1_560px] rounded-[22px] border border-line bg-white p-[22px]">
+      <h2 className="mb-3 text-[17px] font-extrabold">추출된 명단과 대표 지급 정보</h2>
+      {members.length === 0 ? (
+        <p className="text-sm text-muted">추출된 명단이 없습니다.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] border-collapse text-[13px]">
+            <thead>
+              <tr className="text-left text-muted">
+                {['구분', '성명', '학번', '전공', '학교'].map((h) => (
+                  <th key={h} scope="col" className="border-b border-line px-2 py-2 font-medium">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((m, i) => (
+                <tr key={i} className="border-b border-line-soft">
+                  <td className="px-2 py-2">{m.role}</td>
+                  <td className="px-2 py-2">{m.name}</td>
+                  <td className={cx('px-2 py-2 font-mono', !m.student_id && 'text-alert-strong')}>{m.student_id || '비어 있음'}</td>
+                  <td className="px-2 py-2">{m.major}</td>
+                  <td className="px-2 py-2">{m.school}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      {doc === '01' && (
-        <>
-          <div className="text-center text-[15px] font-bold text-ink">SW수혜학생 신청 및 시상금 지급 확의서</div>
-          <div className="grid grid-cols-[90px_1fr] border border-[#cdcfcf]">
-            <div className={cx(cell, 'border-b border-r bg-canvas')}>프로그램명</div>
-            <div className={cx(cell, 'border-b')}>[프로그램명]</div>
-            <div className={cx(cell, 'border-r bg-canvas')}>팀명</div>
-            <div className={cell}>{s.placeholderName ? '[팀명]' : s.teamName}</div>
-          </div>
-          <div className="grid grid-cols-4 border border-[#cdcfcf]">
-            {['구분', '성명', '학번', '전공'].map((h, i) => (
-              <div key={h} className={cx(cell, 'bg-canvas', i < 3 && 'border-r')}>{h}</div>
-            ))}
-            {['팀 대표', '팀원'].flatMap((role) =>
-              [role, '○○○', '[학번]', '[전공]'].map((v, i) => (
-                <div key={role + i} className={cx(cell, 'border-t', i < 3 && 'border-r')}>{v}</div>
-              )),
-            )}
-          </div>
-          <div className="grid grid-cols-[90px_1fr] border border-[#cdcfcf]">
-            <div className={cx(cell, 'border-b border-r bg-canvas')}>은행명</div>
-            <div className={cx(cell, 'border-b')}>[은행명]</div>
-            <div className={cx(cell, 'border-r bg-canvas')}>계좌번호</div>
-            <div className={cx(cell, 'font-mono', highlightAccount && 'bg-info-tint outline-[3px] -outline-offset-2 outline-info outline')}>
-              ••••-••-••••{highlightAccount && <strong className="text-alert-strong">12</strong>}
-            </div>
-          </div>
-          <div className="flex h-16 items-center justify-center border border-dashed border-[#cdcfcf] text-subtle">지급 확인 및 서명 영역</div>
-        </>
+      <dl className="mt-4 grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+        <dt className="text-muted">은행·계좌</dt>
+        <dd className="font-mono">{[r.bank_name, r.account_number].filter(Boolean).join(' ') || '—'}</dd>
+        <dt className="text-muted">예금주</dt>
+        <dd>{r.account_holder || '—'}</dd>
+        <dt className="text-muted">주민번호 표기</dt>
+        <dd className="font-mono">{r.rrn_display || '—'}</dd>
+      </dl>
+      <p className="mt-3 text-xs text-subtle">명단·계좌는 원본에서 읽은 값입니다. 원본이 틀렸다면 보완본을 받아 교체해 주세요.</p>
+    </section>
+  );
+}
+
+function HistoryCard({ s }: { s: SubmissionDetail }) {
+  return (
+    <section className="min-w-0 flex-[1_1_320px] rounded-[22px] border border-line bg-white p-[22px]">
+      <h2 className="mb-3 text-[17px] font-extrabold">제출 버전과 기록</h2>
+      <ol className="flex flex-col gap-1.5">
+        {s.history.map((h) => (
+          <li key={h.id}>
+            <Link
+              to={`/teams/${h.id}`}
+              className={cx('flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm', h.id === s.id ? 'bg-brand-tint font-bold' : 'hover:bg-canvas')}
+            >
+              <span className="font-mono">v{h.version}</span>
+              <StateBadge state={h.state} />
+              {h.decision && <span className="text-xs text-muted">{h.decision}</span>}
+              {h.id === s.current && <span className="ml-auto text-xs text-brand-strong">현재</span>}
+            </Link>
+          </li>
+        ))}
+      </ol>
+      {s.audit.length > 0 && (
+        <ul className="mt-4 flex flex-col gap-1 border-t border-line-soft pt-3 text-xs text-muted">
+          {s.audit.slice(0, 8).map((a, i) => (
+            <li key={i}>
+              {when(a.ts)} · {a.action} · {a.actor}
+            </li>
+          ))}
+        </ul>
       )}
-      {doc === '02' && (
-        <>
-          <div className="text-center text-[15px] font-bold text-ink">수혜학생 개인정보 수집·이용·제공 동의서</div>
-          <div className="h-20 rounded bg-canvas p-3 text-subtle">개인정보 수집·이용 안내문</div>
-          <div className="grid grid-cols-6 border border-[#cdcfcf]">
-            {['성명', '학과', '수집', '고유식별', '제3자', '서명'].map((h, i) => (
-              <div key={h} className={cx(cell, 'bg-canvas', i < 5 && 'border-r')}>{h}</div>
-            ))}
-            {[0, 1, 2].flatMap((row) =>
-              ['○○○', '[학과]', '☑', '☑', '☑', '[서명]'].map((v, i) => (
-                <div key={row + '-' + i} className={cx(cell, 'border-t', i < 5 && 'border-r')}>{v}</div>
-              )),
-            )}
-          </div>
-        </>
-      )}
-      {doc === '03' && (
-        <>
-          <div className="text-center text-[15px] font-bold text-ink">팀장 신분증 사본 및 통장 사본</div>
-          <div className="grid grid-cols-2 gap-3">
-            {['신분증 사본', '통장 사본'].map((label) => (
-              <div key={label} className="flex aspect-[4/3] items-center justify-center rounded-lg bg-paper text-subtle">
-                {label}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      <p className="text-center text-[11px] text-subtle">원문 미리보기 자리 · 원본 렌더링 API 연결 전</p>
-    </div>
+    </section>
   );
 }
