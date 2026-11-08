@@ -1,0 +1,19 @@
+name: swax-intake
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: swax_intake
+      POSTGRES_USER: swax
+      POSTGRES_PASSWORD: ${AWARDS_DB_PASSWORD:?AWARDS_DB_PASSWORD is required}
+    ports:
+      - '127.0.0.1:55432:5432'
+    volumes:
+      - intake_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U swax -d swax_intake']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  intake_data:

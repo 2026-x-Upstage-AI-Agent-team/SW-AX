@@ -1,0 +1,116 @@
+package kr.swax.intake;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+class IntakeStore {
+    record Receipt(UUID batchId, String status, String statusUrl) {}
+    record Summary(UUID batchId, UUID eventId, String eventName, UUID targetTeamId, String teamName,
+                   String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status) {}
+    record Item(UUID itemId, int position, String name, int size, String sha256) {}
+    record Details(Summary batch, List<Item> files) {}
+    record Original(String name, byte[] bytes) {}
+    private record Previous(UUID id, String fingerprint) {}
+
+    private static final String SUMMARY = """
+            SELECT b.id, b.event_id, e.name AS event_name, b.target_team_id, t.name AS team_name,
+                   t.representative, b.created_at, totals.file_count, totals.total_bytes
+            FROM intake_batch b JOIN award_event e ON e.id = b.event_id
+            LEFT JOIN award_team t ON t.id = b.target_team_id
+            CROSS JOIN LATERAL (
+                SELECT count(*) AS file_count, sum(size_bytes) AS total_bytes FROM intake_file WHERE batch_id = b.id
+            ) totals
+            """;
+    private final JdbcTemplate db;
+    private final AwardCatalog catalog;
+
+    IntakeStore(JdbcTemplate db, AwardCatalog catalog) {
+        this.db = db;
+        this.catalog = catalog;
+    }
+
+    @Transactional
+    Receipt receive(String key, UUID event, UUID target, IntakeUpload upload) {
+        catalog.requireEvent(event);
+        if (target != null && !Boolean.TRUE.equals(db.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM award_team WHERE id = ? AND event_id = ?)", Boolean.class, target, event))) {
+            throw ApiErrors.error(422, "선택한 대회에 등록된 팀을 지정해 주세요.");
+        }
+        UUID id = UUID.randomUUID();
+        int inserted = db.update("""
+                INSERT INTO intake_batch(id, event_id, target_team_id, request_key, fingerprint)
+                VALUES (?, ?, ?, ?, ?) ON CONFLICT (request_key) DO NOTHING
+                """, id, event, target, key, upload.fingerprint());
+        if (inserted == 0) {
+            Previous previous = db.queryForObject("SELECT id, fingerprint FROM intake_batch WHERE request_key = ?",
+                    (rs, n) -> new Previous(rs.getObject("id", UUID.class), rs.getString("fingerprint")), key);
+            if (!previous.fingerprint().equals(upload.fingerprint())) {
+                throw ApiErrors.error(409, "같은 요청 키로 다른 접수 내용이 전송되었습니다.");
+            }
+            return receipt(previous.id());
+        }
+        int position = 0;
+        for (IntakeUpload.Entry file : upload.entries()) {
+            final int order = ++position;
+            try (InputStream stream = file.part().getInputStream()) {
+                db.update("""
+                        INSERT INTO intake_file(id, batch_id, position, name, size_bytes, sha256, original)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, ps -> {
+                    ps.setObject(1, UUID.randomUUID());
+                    ps.setObject(2, id);
+                    ps.setInt(3, order);
+                    ps.setString(4, file.name());
+                    ps.setInt(5, file.size());
+                    ps.setString(6, file.sha256());
+                    ps.setBinaryStream(7, stream, file.size());
+                });
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+        }
+        return receipt(id);
+    }
+
+    List<Summary> history(UUID event) {
+        catalog.requireEvent(event);
+        return db.query(SUMMARY + " WHERE b.event_id = ? ORDER BY b.created_at DESC, b.id", IntakeStore::summary, event);
+    }
+
+    Details details(UUID id) {
+        Summary batch = db.query(SUMMARY + " WHERE b.id = ?", IntakeStore::summary, id).stream().findFirst()
+                .orElseThrow(() -> ApiErrors.error(404, "접수번호를 찾을 수 없습니다."));
+        List<Item> files = db.query("SELECT id, position, name, size_bytes, sha256 FROM intake_file WHERE batch_id = ? ORDER BY position",
+                (rs, n) -> new Item(rs.getObject("id", UUID.class), rs.getInt("position"), rs.getString("name"),
+                        rs.getInt("size_bytes"), rs.getString("sha256")), id);
+        return new Details(batch, files);
+    }
+
+    Original original(UUID batch, UUID file) {
+        return db.query("SELECT name, original FROM intake_file WHERE batch_id = ? AND id = ?",
+                (rs, n) -> new Original(rs.getString("name"), rs.getBytes("original")), batch, file)
+                .stream().findFirst().orElseThrow(() -> ApiErrors.error(404, "해당 접수의 원본을 찾을 수 없습니다."));
+    }
+
+    private static Summary summary(ResultSet rs, int n) throws SQLException {
+        return new Summary(rs.getObject("id", UUID.class), rs.getObject("event_id", UUID.class),
+                rs.getString("event_name"), rs.getObject("target_team_id", UUID.class), rs.getString("team_name"),
+                rs.getString("representative"), rs.getObject("created_at", OffsetDateTime.class),
+                rs.getInt("file_count"), rs.getLong("total_bytes"), "received");
+    }
+
+    private static Receipt receipt(UUID id) {
+        return new Receipt(id, "received", "/api/intake-batches/" + id);
+    }
+}

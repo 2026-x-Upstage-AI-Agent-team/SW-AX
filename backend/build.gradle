@@ -1,0 +1,47 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.2'
+}
+
+group = 'kr.swax'
+version = '0.1.0'
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+}
+
+def frontend = file('../frontend')
+def npm = System.getProperty('os.name').startsWith('Windows') ? ['cmd', '/d', '/c', 'npm.cmd'] : ['npm']
+
+def installFrontend = tasks.register('installFrontend', Exec) {
+    workingDir frontend
+    commandLine npm + ['ci', '--no-audit', '--no-fund']
+    inputs.files("${frontend}/package.json", "${frontend}/package-lock.json")
+    outputs.file("${frontend}/node_modules/.package-lock.json")
+}
+
+def buildFrontend = tasks.register('buildFrontend', Exec) {
+    dependsOn installFrontend
+    workingDir frontend
+    commandLine npm + ['run', 'build']
+    inputs.dir("${frontend}/src")
+    inputs.files("${frontend}/index.html", "${frontend}/vite.config.js", "${frontend}/package.json", "${frontend}/package-lock.json")
+    outputs.dir("${frontend}/dist")
+}
+
+tasks.named('processResources') {
+    dependsOn buildFrontend
+    from("${frontend}/dist") { into 'static' }
+}
