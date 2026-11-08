@@ -2,7 +2,27 @@
 
 유잇 팀의 SW중심대학 사업단 시상금 증빙 자동화 프로젝트입니다. 사업단 담당자가 접수한 신청서·동의서·대표 증빙을 팀별로 대조하고, 확인된 정보로 지급내역서와 증빙을 담은 한글 보고서 및 PDF를 작성하는 과정을 다룹니다.
 
-운영판은 **React**로 담당자 화면을, **Spring Boot**로 접수·검토·승인 API를 구현하기로 했습니다. 문서 분류·추출·판정은 Upstage Studio가 맡습니다. 현재 팀 작업 폴더에서 실행하는 Windows 시연판은 HTML·CSS·JavaScript, FastAPI, SQLite로 구성되어 있으며, 공식 두 팀의 서류 접수부터 HWPX·PDF 다운로드까지 검증했습니다.
+운영판의 첫 단계로 **React · Spring Boot · PostgreSQL** 기반의 원본 접수 화면을 구현했습니다. 대회·팀을 등록하고 여러 팀의 한글 원본을 한 번에 접수한 뒤 접수번호로 다시 열거나 원본을 내려받을 수 있습니다. Windows 시연판은 HTML·CSS·JavaScript, FastAPI, SQLite로 구성되어 있으며, 공식 두 팀의 Studio 검토부터 HWPX·PDF 다운로드까지 검증했습니다. 운영판 워커는 별도 세션에서 구현 중입니다.
+
+## 운영판 원본 접수 실행
+
+Windows에서 Docker Desktop, JDK 21, Node.js 22.12 이상(또는 24 LTS), PowerShell 7.2 이상을 준비하고 프로젝트 루트에서 실행합니다.
+
+```powershell
+./start-intake.ps1
+```
+
+전용 PostgreSQL 컨테이너가 준비되면 Gradle 래퍼가 React를 빌드하고 Spring Boot가 같은 주소에서 화면과 API를 제공합니다. 처음에는 **대회·팀 관리 → 대회 등록**을 선택한 뒤 **원본 접수**에서 서류를 올립니다. **접수 내역**에서 접수번호를 열면 원본을 다시 받을 수 있습니다. [담당자 접수 화면](http://127.0.0.1:18765)
+
+API는 이 PC의 루프백 주소에 바인딩합니다. 여러 담당자의 인증·권한과 원격 배포는 후속 단계입니다. PostgreSQL은 로컬 포트 `55432`와 Compose 볼륨 `swax-intake_intake_data`를 사용합니다. 기본 개발 DB 비밀번호는 첫 실행 때 `var/intake-postgres.key`에 생성합니다. 기존 DB에 직접 연결할 때는 `AWARDS_DB_URL`, `AWARDS_DB_USER`, `AWARDS_DB_PASSWORD`를 지정한 후 `backend`에서 `.\gradlew.bat bootRun`을 실행합니다. `./start-service.ps1`은 Windows 시연판 실행 명령입니다.
+
+접수 API의 회귀 시험은 공식 ZIP과 `httpx`를 사용합니다. 별도 테스트 DB에 연결한 Spring Boot 인스턴스의 로컬 주소를 `INTAKE_TEST_URL`에 설정하고 아래 명령을 실행합니다. 시험은 그 DB에 대회와 테스트 접수를 생성합니다.
+
+```powershell
+python -m unittest discover -s tests -p test_intake_postgres.py -v
+```
+
+## 프로젝트 문서
 
 | 문서 | 내용 |
 |---|---|
