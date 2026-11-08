@@ -1,0 +1,16 @@
+/.env.local
+client_secret_*.json
+/output/upstage/
+/.venv/
+/var/
+__pycache__/
+/backend/.gradle/
+/backend/build/
+/frontend/node_modules/
+/frontend/dist/
+/0_RE_*/
+/test case/
+/output/pdf/
+/output/json/award_workflow_v0_scenario_answers*
+/outputs/
+/tmp/

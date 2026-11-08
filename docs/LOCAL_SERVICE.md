@@ -17,7 +17,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r service/requirements.txt
 ```
 
-프로젝트의 `.env.local`에서 `UPSTAGE_API_KEY`를 읽는다. 공식 두 팀의 검증에는 팀의 Studio 에이전트 설정 버전 `23`을 사용했다. 다른 에이전트나 설정을 사용하려면 `UPSTAGE_AGENT_ID`와 `UPSTAGE_CONFIG_ID`를 지정한다. API 키는 서버에서 읽는다.
+서버의 환경 변수 또는 프로젝트의 `.env.local`에 `UPSTAGE_API_KEY`와 `UPSTAGE_AGENT_ID`를 지정한다. 공식 두 팀의 검증에는 Studio 설정 버전 `23`을 사용했다. 다른 버전은 `UPSTAGE_CONFIG_ID`로 지정한다.
 
 ## 공식 자료를 접수하는 순서
 

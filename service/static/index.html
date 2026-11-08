@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>시상금 서류 검토 · SW중심대학사업단</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">W</span>
+        <div>서류 검토실<small>SW중심대학사업단</small></div>
+      </div>
+      <nav aria-label="업무 메뉴">
+        <a href="#home" data-nav="home"><i data-icon="grid"></i>업무 현황</a>
+        <a href="#intake" data-nav="intake"><i data-icon="inbox"></i>접수·팀 배정</a>
+        <a href="#review" data-nav="review"><i data-icon="files"></i>팀별 서류 검토</a>
+        <a href="#report" data-nav="report"><i data-icon="book"></i>지급내역서</a>
+        <a href="#mail" data-nav="mail"><i data-icon="mail"></i>발송 이력</a>
+      </nav>
+      <div class="sidefoot"><span class="dot"></span> 로컬 담당자 서비스</div>
+    </aside>
+    <main>
+      <header class="top">
+        <label for="event">대회</label
+        ><select id="event" aria-label="대회 선택"></select
+        ><button class="icon-btn" id="add-event" title="대회 추가" aria-label="대회 추가">＋</button
+        ><span class="top-right">SW중심대학사업단 <b>담당자</b></span>
+      </header>
+      <div id="view" aria-live="off"></div>
+    </main>
+    <dialog id="dialog"><div id="dialog-content"></div></dialog>
+    <div id="notice" role="status" aria-live="polite"></div>
+  </body>
+</html>
