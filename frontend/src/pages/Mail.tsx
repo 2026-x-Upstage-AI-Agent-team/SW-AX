@@ -1,7 +1,8 @@
-import { useState, type ChangeEvent } from 'react';
+import { useState } from 'react';
+import { Link } from 'react-router';
 import { reviewLive } from '../api/backend';
 import { ADMIN_NOTICE } from '../api/labels';
-import { connectGmail, setTeamEmail, startGmailOAuth, type Dashboard } from '../api/service';
+import { setTeamEmail, type Dashboard } from '../api/service';
 import { Page } from '../components/Layout';
 import MailItem from '../components/MailItem';
 import { Feedback, Notice, PageHeader, buttonStyles, cx, inputStyle } from '../components/ui';
@@ -28,7 +29,7 @@ export default function Mail() {
         title="발송 이력"
         demo
         lead="같은 팀·제출 버전·안내 종류의 메일은 한 번만 보냅니다. 원본, 주민번호·계좌번호·학번, 다른 팀 정보는 메일에 담지 않습니다."
-        side={dashboard && <GmailPanel d={dashboard} onSaved={refresh} />}
+        side={<Link to="/gmail" className={buttonStyles.secondary}>Gmail 연결</Link>}
       />
 
       {!dashboard ? (
@@ -82,90 +83,6 @@ export default function Mail() {
         </div>
       </section>
     </Page>
-  );
-}
-
-function GmailPanel({ d, onSaved }: { d: Dashboard; onSaved: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const connected = d.gmail_oauth_connected || !!d.gmail_account;
-  const status = d.gmail_oauth_connected
-    ? 'Google 계정으로 연결됨'
-    : d.gmail_account
-      ? `앱 비밀번호로 연결됨 · ${d.gmail_account}`
-      : d.smtp
-        ? 'SMTP로 발송'
-        : '연결 전 · 로컬 메일함에 저장';
-
-  async function run(task: () => Promise<void>) {
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      await task();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const savePassword = () =>
-    run(async () => {
-      const r = await connectGmail(password.replace(/\s/g, ''));
-      setPassword('');
-      setMessage(`${r.address}로 연결했습니다.`);
-      onSaved();
-    });
-
-  const startOAuth = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    run(async () => {
-      const { url } = await startGmailOAuth(await file.text());
-      window.location.assign(url);
-    });
-  };
-
-  return (
-    <div className="flex flex-[0_1_400px] flex-col gap-3 rounded-[18px] bg-canvas px-[18px] py-4">
-      <div className="flex items-center gap-3.5">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="5.5" width="18" height="13" rx="2" />
-          <path d="M3.5 7l8.5 6 8.5-6" />
-        </svg>
-        <div className="flex flex-1 flex-col gap-0.5">
-          <span className="text-sm font-bold">담당자 Gmail</span>
-          <span className={cx('text-xs', connected ? 'text-brand-strong' : 'text-muted')}>{status}</span>
-        </div>
-        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} disabled={!reviewLive} className={cx(buttonStyles.secondary, 'min-h-10 px-3.5 text-[13px]')}>
-          {connected ? '다시 연결' : '연결'}
-        </button>
-      </div>
-      {open && (
-        <div className="flex flex-col gap-3 border-t border-line-2 pt-3">
-          <label className="flex flex-col gap-1.5 text-xs text-muted">
-            Google 앱 비밀번호 (16자리)
-            <div className="flex gap-2">
-              <input type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} className={inputStyle} />
-              <button type="button" onClick={savePassword} disabled={busy || password.replace(/\s/g, '').length < 16} className={buttonStyles.secondary}>
-                저장
-              </button>
-            </div>
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">
-            앱 비밀번호를 쓸 수 없는 계정은 Google Cloud OAuth 클라이언트 JSON으로 연결
-            <input type="file" accept=".json,application/json" onChange={startOAuth} disabled={busy} className="text-sm text-ink file:mr-3 file:rounded-full file:border file:border-line-2 file:bg-white file:px-3 file:py-1.5" />
-          </label>
-          <p className="text-[11px] leading-relaxed text-subtle">담당자 Gmail 주소는 검토 서비스 설정에 먼저 등록돼 있어야 합니다. 비밀번호는 이 화면에 남기지 않습니다.</p>
-          <Feedback error={error} message={message} />
-        </div>
-      )}
-    </div>
   );
 }
 

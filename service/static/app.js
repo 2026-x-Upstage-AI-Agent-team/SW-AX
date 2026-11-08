@@ -193,7 +193,7 @@ async function render(autopoll = false) {
         : d.reports.some((r) => ["queued", "building"].includes(r.state));
     } else if (page === "mail") {
       view.innerHTML = mailPage(d);
-      bindMail(() => render());
+      bindMail(() => render(), d.gmail_account ? id : undefined);
       polling = d.mail.some((m) => ["waiting", "sending"].includes(m.state));
     } else {
       view.innerHTML = home(d);

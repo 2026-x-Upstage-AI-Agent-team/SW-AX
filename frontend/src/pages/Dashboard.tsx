@@ -69,7 +69,11 @@ export default function Dashboard() {
           {reviewLive && (
             <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-subtle">
               <span>Studio {dashboard.connected ? `연결됨 · 설정 ${dashboard.config}` : 'API 키 미설정'}</span>
-              <span>메일 {dashboard.gmail_oauth_connected || dashboard.gmail_account ? `Gmail ${dashboard.gmail_account ?? ''}` : dashboard.smtp ? 'SMTP' : '로컬 메일함'}</span>
+              {dashboard.gmail_account ? (
+                <Link to="/gmail" className="font-semibold text-brand-strong underline underline-offset-2">
+                  담당자 Gmail {dashboard.mail_ready ? '연결됨' : '인증 대기'}
+                </Link>
+              ) : <span>메일 {dashboard.smtp ? 'SMTP' : '로컬 메일함'}</span>}
               {processing > 0 && <span>처리 중 {processing}팀 · 자동 새로고침</span>}
             </p>
           )}

@@ -243,7 +243,8 @@ export function mailPage(d) {
         ? (d.gmail_oauth_connected ? "Google 로그인" : "앱 비밀번호") + " · 발신 및 관리자 알림 수신"
         : "인증 대기 · 연결하면 대기 중인 알림을 발송합니다.") +
       "</p></section>"
-    : "";
+    : '<section class="panel">' + section("담당자 Gmail", "주소 미설정") +
+      '<p>Windows 검토 서비스에서 MAIL_MODE를 gmail로, GMAIL_ADDRESS를 담당자 주소로 설정한 뒤 서비스를 다시 시작하세요.</p></section>';
   return (
     head(
       "발송 이력",
@@ -280,73 +281,76 @@ export function mailPage(d) {
   );
 }
 
-function bindGmailActions(container, refresh) {
-  const google = container.querySelector('[data-gmail-method="google"]');
-  if (google) google.onclick = () => {
-    const redirect = location.origin + "/api/settings/gmail/callback";
-    modal("Google로 Gmail 연결",
-      '<form class="stack" id="google-form"><p>Chrome 또는 Edge에서 담당자 계정으로 로그인해 메일 발송을 승인합니다.</p>'+
-      '<details><summary>처음 연결할 때 · Google Cloud 설정</summary><ol>'+
-      '<li>프로젝트에서 <a target="_blank" rel="noopener noreferrer" href="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</a>를 사용 설정하세요.</li>'+
-      '<li>외부 앱이 테스트 중이면 <a target="_blank" rel="noopener noreferrer" href="https://console.cloud.google.com/auth/audience">대상</a>의 테스트 사용자에서 ‘사용자 추가’를 눌러 담당자 Gmail 주소를 저장하세요.</li>'+
-      '<li><a target="_blank" rel="noopener noreferrer" href="https://console.cloud.google.com/auth/clients">클라이언트</a>에서 웹 애플리케이션을 만들고 아래 URI를 등록한 뒤 JSON을 내려받으세요.</li></ol></details>'+
-      '<label class="field">승인된 리디렉션 URI<input readonly value="'+esc(redirect)+'"></label>'+
-      '<label class="field">Google Cloud 클라이언트 JSON<input id="google-client" type="file" accept=".json,application/json" required></label>'+
-      '<p id="google-error" role="alert"></p><button class="primary">Google 로그인으로 이동</button></form>');
-    $("#google-form").onsubmit = async (event) => {
-      event.preventDefault();
-      const button = event.currentTarget.querySelector("button");
-      button.disabled = true;
-      try {
-        const file = $("#google-client").files[0];
-        if (!file || file.size > 32768) throw Error("Google Cloud 클라이언트 JSON을 선택하세요.");
-        const result = await api("/api/settings/gmail/oauth/start", "POST", {client_json: await file.text()});
-        location.assign(result.url);
-      } catch (error) {
-        $("#google-error").textContent = error.message;
-        button.disabled = false;
-      }
-    };
+function openGmailOAuth() {
+  const redirect = location.origin + "/api/settings/gmail/callback";
+  modal("Google로 Gmail 연결",
+    '<form class="stack" id="google-form"><p>Chrome 또는 Edge에서 담당자 계정으로 로그인해 메일 발송을 승인합니다.</p>'+
+    '<details><summary>처음 연결할 때 · Google Cloud 설정</summary><ol>'+
+    '<li>프로젝트에서 <a target="_blank" rel="noopener noreferrer" href="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</a>를 사용 설정하세요.</li>'+
+    '<li>외부 앱이 테스트 중이면 <a target="_blank" rel="noopener noreferrer" href="https://console.cloud.google.com/auth/audience">대상</a>의 테스트 사용자에서 ‘사용자 추가’를 눌러 담당자 Gmail 주소를 저장하세요.</li>'+
+    '<li><a target="_blank" rel="noopener noreferrer" href="https://console.cloud.google.com/auth/clients">클라이언트</a>에서 웹 애플리케이션을 만들고 아래 URI를 등록한 뒤 JSON을 내려받으세요.</li></ol></details>'+
+    '<label class="field">승인된 리디렉션 URI<input readonly value="'+esc(redirect)+'"></label>'+
+    '<label class="field">Google Cloud 클라이언트 JSON<input id="google-client" type="file" accept=".json,application/json" required></label>'+
+    '<p id="google-error" role="alert"></p><button class="primary">Google 로그인으로 이동</button></form>');
+  $("#google-form").onsubmit = async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("button");
+    button.disabled = true;
+    try {
+      const file = $("#google-client").files[0];
+      if (!file || file.size > 32768) throw Error("Google Cloud 클라이언트 JSON을 선택하세요.");
+      const result = await api("/api/settings/gmail/oauth/start", "POST", {client_json: await file.text()});
+      location.assign(result.url);
+    } catch (error) {
+      $("#google-error").textContent = error.message;
+      button.disabled = false;
+    }
   };
-  const connect = container.querySelector('[data-gmail-method="password"]');
-  if (connect)
-    connect.onclick = () => {
-      modal(
-        "담당자 Gmail 연결",
-        '<form class="stack" id="gmail-form">' +
-          '<p>Google 계정의 2단계 인증을 켠 뒤 <a target="_blank" rel="noopener noreferrer" href="https://myaccount.google.com/apppasswords">앱 비밀번호 발급</a>에서 ‘시상금 서류 알림’용 코드를 만드세요. 평소 Gmail 비밀번호는 Google 로그인 화면에서만 입력하세요.</p>' +
-          '<label class="field">Google이 발급한 16자리 코드<input id="gmail-secret" type="password" autocomplete="off" required></label>' +
-          '<p id="gmail-error" role="alert"></p><button class="primary">인증하고 연결</button></form>',
-      );
-      const input = $("#gmail-secret");
-      $("#dialog").addEventListener(
-        "close",
-        () => {
-          input.value = "";
-        },
-        { once: true },
-      );
-      $("#gmail-form").onsubmit = async (e) => {
-        e.preventDefault();
-        const button = e.currentTarget.querySelector("button");
-        button.disabled = true;
-        $("#gmail-error").textContent = "";
-        try {
-          await api("/api/settings/gmail/connect", "POST", { app_password: input.value });
-          $("#dialog").close();
-          notice("담당자 Gmail 인증을 완료했습니다.");
-          await refresh();
-        } catch (error) {
-          $("#gmail-error").textContent = error.message;
-        } finally {
-          input.value = "";
-          button.disabled = false;
-        }
-      };
-    };
 }
 
-export function bindMail(refresh) {
+function openGmailPassword(refresh) {
+  modal(
+    "담당자 Gmail 연결",
+    '<form class="stack" id="gmail-form">' +
+      '<p>Google 계정의 2단계 인증을 켠 뒤 <a target="_blank" rel="noopener noreferrer" href="https://myaccount.google.com/apppasswords">앱 비밀번호 발급</a>에서 ‘시상금 서류 알림’용 코드를 만드세요. 평소 Gmail 비밀번호는 Google 로그인 화면에서만 입력하세요.</p>' +
+      '<label class="field">Google이 발급한 16자리 코드<input id="gmail-secret" type="password" autocomplete="off" required></label>' +
+      '<p id="gmail-error" role="alert"></p><button class="primary">인증하고 연결</button></form>',
+  );
+  const input = $("#gmail-secret");
+  $("#dialog").addEventListener(
+    "close",
+    () => {
+      input.value = "";
+    },
+    { once: true },
+  );
+  $("#gmail-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const button = e.currentTarget.querySelector("button");
+    button.disabled = true;
+    $("#gmail-error").textContent = "";
+    try {
+      await api("/api/settings/gmail/connect", "POST", { app_password: input.value });
+      $("#dialog").close();
+      notice("담당자 Gmail 인증을 완료했습니다.");
+      await refresh();
+    } catch (error) {
+      $("#gmail-error").textContent = error.message;
+    } finally {
+      input.value = "";
+      button.disabled = false;
+    }
+  };
+}
+
+function bindGmailActions(container, refresh) {
+  const google = container.querySelector('[data-gmail-method="google"]');
+  const password = container.querySelector('[data-gmail-method="password"]');
+  if (google) google.onclick = openGmailOAuth;
+  if (password) password.onclick = () => openGmailPassword(refresh);
+}
+
+export function bindMail(refresh, method) {
   const manage = $("#gmail-manage");
   if (manage) {
     manage.onclick = () => {
@@ -355,6 +359,11 @@ export function bindMail(refresh) {
     };
   } else {
     bindGmailActions($("#view"), refresh);
+  }
+  if (method === "google" || method === "password") {
+    history.replaceState(history.state, "", "#mail");
+    if (method === "google") openGmailOAuth();
+    else openGmailPassword(refresh);
   }
   document.querySelectorAll("[data-mail]").forEach(
     (b) =>

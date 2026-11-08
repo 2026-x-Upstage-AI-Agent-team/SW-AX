@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigationType } from 'react-router';
-import { CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDashboard, Mail, Menu, PanelLeftClose, Settings2, Workflow } from 'lucide-react';
+import { AtSign, CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDashboard, Mail, Menu, PanelLeftClose, Settings2, Workflow } from 'lucide-react';
 import { backend } from '../api/backend';
 import { useEvent } from '../context/EventContext';
 import { cx } from './ui';
@@ -10,6 +10,7 @@ const menu = [
   { to: '/intake', label: '원본 접수', Icon: Inbox },
   { to: '/assign', label: '팀 배정 확인', Icon: Workflow },
   { to: '/mail', label: '발송 이력', Icon: Mail },
+  { to: '/gmail', label: 'Gmail 연결', Icon: AtSign },
   { to: '/report', label: '보고서', Icon: Files },
 ];
 

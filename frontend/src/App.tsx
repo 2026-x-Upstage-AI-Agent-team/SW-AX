@@ -3,6 +3,7 @@ import Layout, { Page } from './components/Layout';
 import { buttonStyles } from './components/ui';
 import Assign from './pages/Assign';
 import Dashboard from './pages/Dashboard';
+import Gmail from './pages/Gmail';
 import IntakePage from './pages/intake/IntakePage';
 import Mail from './pages/Mail';
 import Manage from './pages/Manage';
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="intake/batches/:id" element={<IntakePage view="detail" />} />
         <Route path="assign" element={<Assign />} />
         <Route path="mail" element={<Mail />} />
+        <Route path="gmail" element={<Gmail />} />
         <Route path="report" element={<Report />} />
         <Route path="manage" element={<Manage />} />
         <Route path="*" element={<NotFound />} />

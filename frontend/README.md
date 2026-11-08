@@ -19,10 +19,16 @@ Spring Boot가 `dist/`를 정적 파일로 내보내므로 해시 라우팅(`/#/
 
 | 모드 | 백엔드 | 실제로 동작하는 화면 |
 |---|---|---|
-| `dev` | Spring Boot 접수 API (`backend/`) | 원본 접수, 접수 내역·상세·원본 받기, 대회·팀 관리. 판정·검토 화면은 예시 데이터 |
+| `dev` | Spring Boot 접수 API (`backend/`) | 원본 접수, 접수 내역·상세·원본 받기, 대회·팀 관리. Gmail 연결은 Windows 검토 서비스에서 열고, 판정·검토 화면은 예시 데이터를 표시한다. |
 | `dev:service` | 검토 서비스 (`service/app.py`, `start-service.ps1`) | 전부. 원본 접수(보완본 포함), Studio 판정 현황, 팀 배정, 담당자 검토·결론 기록, 팀장 이메일, 메일 본문·재시도, Gmail 연결, 보고서 생성·확정·HWPX/PDF 다운로드·편집본 업로드 |
 
 검토 서비스는 상태를 바꾸는 요청에 `X-Award-Client: staff` 헤더와 같은 출처를 요구한다. 클라이언트는 헤더를 항상 붙이고, `dev:service` 프록시는 `Origin`을 검토 서비스 주소로 맞춰 보낸다.
+
+### 담당자 Gmail 연결
+
+사이드바나 모바일 메뉴에서 **Gmail 연결**을 연다. **발송 이력 → Gmail 연결**로도 들어갈 수 있다. 검토 서비스 모드에서는 등록된 발신 주소와 인증 상태를 확인하고 Google 로그인 또는 16자리 앱 비밀번호로 연결한다. Google 로그인에는 웹 클라이언트 JSON을 사용한다. [계정 준비 방법](../docs/IMPLEMENTATION_PLAN.md#51-담당자-gmail-연결)
+
+Spring Boot 접수 모드에서는 선택한 인증 창을 Windows 검토 서비스에서 새 탭으로 연다. 같은 PC에서는 `./start-service.ps1`로 띄운 `http://127.0.0.1:8765`를 사용한다. 담당자가 다른 PC에서 접속한다면 프런트엔드 빌드 시 `VITE_REVIEW_SERVICE_URL`에 브라우저로 접근 가능한 검토 서비스 주소를 지정한다. 이 값은 `dev:service` 프록시의 대상이기도 하다. 계정 주소만 등록된 상태는 **인증 대기**로 표시한다.
 
 ## 화면과 API
 
@@ -34,6 +40,7 @@ Spring Boot가 `dist/`를 정적 파일로 내보내므로 해시 라우팅(`/#/
 | `/intake/batches[/:id]` | 접수 내역 · 접수 상세 | `GET /api/intake-batches/{id}` |
 | `/assign` | 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
 | `/mail` | 발송 이력 (팀장 안내·담당자 알림, 본문, 재시도, Gmail 연결, 팀장 이메일 입력) | `GET·POST /api/mail/{id}[/retry]`, `POST /api/settings/gmail/...` |
+| `/gmail` | 담당자 Gmail 연결·재인증 | 검토 서비스의 `POST /api/settings/gmail/oauth/start`, `POST /api/settings/gmail/connect` |
 | `/report` | 보고서 확정 (팀 순서, 지급 정보 입력, 두 표 미리보기, 생성·확정·다운로드) | `GET /api/events/{id}/draft`, `POST /api/reports`, `GET·POST /api/reports/{id}[/confirm|/edited|/preview|/hwpx|/pdf]` |
 | `/manage` | 대회·팀 관리 | `POST /api/events`, `POST /api/events/{id}/teams` |
 
