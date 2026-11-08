@@ -10,6 +10,8 @@ export const stateLabels: Record<string, string> = {
   outside: '대상 외',
   error: '파일 확인',
   queued: '처리 대기',
+  blocked: '판정 보류',
+  superseded: '이전 버전',
   creating: '실행 요청 중',
   polling: 'Studio 검토 중',
   uncertain: '실행 이력 확인',

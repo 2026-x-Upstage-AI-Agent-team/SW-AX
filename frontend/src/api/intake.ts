@@ -12,7 +12,14 @@ export type BatchSummary = {
   file_count: number;
 };
 
-export type BatchFile = { item_id: string; name: string; size: number };
+export type BatchFile = { item_id: string; name: string; size: number; team: string | null; state: string };
+
+type BatchTeam = {
+  team: string;
+  state: 'confirmed' | 'blocked' | 'empty' | 'superseded';
+  version: number | null;
+  review_job: { review_job_id: string; state: 'queued' | 'blocked' | 'superseded'; status_url: string } | null;
+};
 
 export type BatchDetails = {
   batch: {
@@ -24,6 +31,7 @@ export type BatchDetails = {
     total_bytes: number;
   };
   files: BatchFile[];
+  teams: BatchTeam[];
 };
 
 export type Receipt = { batch_id: string; status?: string; status_url?: string };

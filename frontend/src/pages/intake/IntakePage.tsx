@@ -1,6 +1,6 @@
 import { Link, NavLink, useParams, useSearchParams } from 'react-router';
 import { backend } from '../../api/backend';
-import { bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
+import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
 import { docLabels, when } from '../../api/labels';
 import { filePreviewUrl, getBatch, getSubmission } from '../../api/service';
@@ -132,10 +132,17 @@ function History({ eventId }: { eventId: string }) {
 
 function Detail({ eventId }: { eventId: string }) {
   const { id = '' } = useParams();
-  const { revision, refresh } = useEvent();
-  const result = useApi<BatchDetails>(paths.batch(id), revision);
-  if (!result.data) return <Notice error={result.error} onRetry={refresh} />;
-  const { batch, files } = result.data;
+  const { revision, teams } = useEvent();
+  const result = useAsync(() => api<BatchDetails>(paths.batch(id)), [id, revision]);
+  const detail = result.data?.batch.batch_id === id ? result.data : undefined;
+  const links = new Map((detail?.teams ?? []).map((link) => [link.team, link]));
+  const teamIds = new Set((detail?.files ?? []).flatMap((file) => file.team ? [file.team] : []));
+  for (const team of links.keys()) teamIds.add(team);
+  const pending = detail?.files.some((file) => file.state === 'unassigned' || (file.team && !links.has(file.team)))
+    || detail?.teams?.some((link) => link.state === 'confirmed' && link.review_job?.state === 'queued');
+  usePolling(Boolean(detail?.batch.event_id === eventId && !result.error && pending), result.reload, 3000);
+  if (result.error || !detail) return <Notice error={result.error} onRetry={result.reload} />;
+  const { batch, files } = detail;
   if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 접수번호가 아닙니다." />;
   return (
     <div className="flex flex-col gap-4">
@@ -151,9 +158,42 @@ function Detail({ eventId }: { eventId: string }) {
           <dd>{formatDate(batch.created_at)}</dd>
           <dt className="text-muted">지정 팀</dt>
           <dd>{batch.team_name ? teamLabel({ name: batch.team_name, rep: batch.team_rep }) : '미지정 · 혼합 접수'}</dd>
-          <dt className="text-muted">검토 상태</dt>
-          <dd>내용 판독 전 (접수 API는 원본 보관까지 처리합니다)</dd>
         </dl>
+      </section>
+      <section className={card} aria-labelledby="review-jobs-title">
+        <div className="flex items-center justify-between">
+          <h2 id="review-jobs-title" className="text-xl font-extrabold">팀별 판정 작업</h2>
+          <button type="button" onClick={result.reload} className={buttonStyles.text}>새로고침</button>
+        </div>
+        {teamIds.size === 0 ? (
+          <p className="text-sm text-muted">원본을 팀에 배정하고 제출본을 확정하면 판정 작업이 등록됩니다.</p>
+        ) : (
+          <ul className="divide-y divide-line-soft">
+            {Array.from(teamIds, (id) => {
+              const team = teams?.find((entry) => entry.id === id);
+              const link = links.get(id);
+              const job = link?.review_job;
+              let submission = '제출본 확정 전';
+              if (link?.version != null) submission = `제출본 v${link.version}${link.state === 'superseded' ? ' · 이전 접수' : ''}`;
+              if (link?.state === 'blocked') submission = '미배정 원본 확인 중';
+              if (link?.state === 'empty') submission = '배정 원본 없음';
+              return (
+                <li key={id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="break-all font-semibold">{team ? teamLabel(team) : id}</p>
+                    <p className="mt-1 text-xs text-muted">{submission}</p>
+                  </div>
+                  {job ? (
+                    <div className="min-w-0 sm:text-right">
+                      <StateBadge state={job.state} />
+                      <p className="mt-1 break-all font-mono text-xs text-subtle">작업 {job.review_job_id}</p>
+                    </div>
+                  ) : <span className="text-sm text-muted">작업 미등록</span>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
       <section className={card}>
         <div className="flex items-center justify-between">

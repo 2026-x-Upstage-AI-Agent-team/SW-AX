@@ -70,6 +70,10 @@ class PostgresIntakeTest(unittest.TestCase):
     def confirm(self, receipt, team, revision, client=None):
         return (client or self.http).put(f"{receipt}/teams/{team}/submission", json={"revision": revision})
 
+    def review_jobs(self, state=None):
+        return self.http.get(f"/api/events/{self.event}/review-jobs",
+                             params={} if state is None else {"state": state}).raise_for_status().json()
+
     def test_all_official_originals_round_trip(self):
         files = [entry for group in sorted(self.sets) for entry in self.sets[group]]
         self.assertEqual((10, 29), (len(self.sets), len(files)))
@@ -231,6 +235,7 @@ class PostgresIntakeTest(unittest.TestCase):
         for team in (a, b):
             self.assertEqual(409, self.confirm(receipt, team, 2).status_code)
         self.assertEqual([], self.http.get(receipt).json()["teams"])
+        self.assertEqual([], self.review_jobs())
         for _ in range(2):
             self.assertEqual(3, self.decide(receipt, pending, "hold", 2, exclude=[a, a]).raise_for_status().json()["revision"])
         original = self.http.get(receipt).json()["files"][2]
@@ -250,13 +255,21 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(("blocked", None), (links[a]["state"], links[a]["submission_id"]))
         self.assertEqual(link_b, links[b])
         self.assertEqual("blocked", self.http.get(link_a["status_url"]).json()["state"])
+        job_a = link_a["review_job"]["review_job_id"]
+        self.assertEqual([job_a], [job["review_job_id"] for job in self.review_jobs("blocked")])
+        self.assertEqual([b], [job["team"] for job in self.review_jobs("queued")])
+        self.assertEqual(409, self.http.put(link_a["status_url"] + "/review-job").status_code)
         self.decide(receipt, pending, "outside", 5).raise_for_status()
         self.assertEqual(link_a, self.confirm(receipt, a, 6).raise_for_status().json())
         self.decide(receipt, first, "outside", 6).raise_for_status()
         self.assertEqual(409, self.confirm(receipt, a, 7).status_code)
         self.assertEqual("empty", self.http.get(link_a["status_url"]).json()["state"])
+        self.assertEqual([job_a], [job["review_job_id"] for job in self.review_jobs("blocked")])
         self.decide(receipt, first, "assign", 7, team=a).raise_for_status()
         self.assertEqual(link_a, self.confirm(receipt, a, 8).raise_for_status().json())
+        self.assertEqual({job_a, link_b["review_job"]["review_job_id"]},
+                         {job["review_job_id"] for job in self.review_jobs("queued")})
+        self.assertEqual(2, len(self.review_jobs()))
 
     def test_reassignment_revises_only_the_two_changed_snapshots(self):
         teams = [self.team(self.event, name, "") for name in ("Nextify", "AutoAI", "3팀")]
@@ -268,6 +281,8 @@ class PostgresIntakeTest(unittest.TestCase):
             self.decide(receipt, item["item_id"], "assign", revision, team=team).raise_for_status()
         before = [self.confirm(receipt, team, 8).raise_for_status().json() for team in teams]
         self.assertEqual([1, 1, 1], [link["version"] for link in before])
+        initial_jobs = {job["team"]: job for job in self.review_jobs("queued")}
+        self.assertEqual(3, len(initial_jobs))
         snapshots = [self.http.get(link["status_url"]).raise_for_status().json() for link in before]
         self.assertEqual([3, 3, 2], [len(sub["files"]) for sub in snapshots])
         for i, team in enumerate(teams):
@@ -277,8 +292,18 @@ class PostgresIntakeTest(unittest.TestCase):
         after = {s["team"]: s for s in self.http.get(receipt).raise_for_status().json()["teams"]}
         self.assertEqual([2, 2, 1], [after[t]["version"] for t in teams])
         self.assertEqual(before[2], after[teams[2]])
+        queued = self.review_jobs("queued")
+        self.assertEqual(3, len(queued))
+        self.assertEqual({(teams[0], 2), (teams[1], 2), (teams[2], 1)}, {(j["team"], j["version"]) for j in queued})
+        archived = self.review_jobs("superseded")
+        self.assertEqual({initial_jobs[t]["review_job_id"] for t in teams[:2]}, {j["review_job_id"] for j in archived})
+        self.assertEqual(5, len(self.review_jobs()))
+        self.assertIn(initial_jobs[teams[2]], queued)
         for i, positions in enumerate(((0, 1), (2, 3, 4, 5), (6, 7))):
             current = self.http.get(after[teams[i]]["status_url"]).raise_for_status().json()
+            task = self.http.get(after[teams[i]]["review_job"]["status_url"]).raise_for_status().json()
+            self.assertIn(task, queued)
+            self.assertEqual(current["submission_id"], task["submission_id"])
             self.assertEqual([files[j]["item_id"] for j in positions], [f["item_id"] for f in current["files"]])
             old = self.http.get(before[i]["status_url"]).raise_for_status().json()
             self.assertEqual(snapshots[i]["files"], old["files"])
@@ -302,6 +327,8 @@ class PostgresIntakeTest(unittest.TestCase):
             links = list(pool.map(lambda r: self.confirm(r, team, 3).raise_for_status().json(), receipts * 2))
         self.assertEqual({1}, {link["version"] for link in links})
         self.assertEqual(1, len({link["submission_id"] for link in links}))
+        self.assertEqual(1, len({link["review_job"]["review_job_id"] for link in links}))
+        self.assertEqual(1, len(self.review_jobs()))
         snapshot = self.http.get(links[0]["status_url"]).raise_for_status().json()
         self.assertEqual(sorted(hashlib.sha256(f[1]).hexdigest() for f in (a, b, b)),
                          sorted(f["sha256"] for f in snapshot["files"]))
@@ -340,6 +367,43 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(2 if first.status_code == 200 else 1, current["version"])
         latest = self.http.get(current["status_url"]).raise_for_status().json()
         self.assertEqual([items[0]], [f["item_id"] for f in latest["files"]])
+        self.assertEqual([current["submission_id"]], [job["submission_id"] for job in self.review_jobs("queued")])
+
+    def test_review_job_registration_handoff_and_event_permissions(self):
+        team = self.team(self.event, "3팀", "")
+        inputs = self.sets["set04"]
+        receipt = self.send(inputs).raise_for_status().headers["location"]
+        items = self.http.get(receipt).raise_for_status().json()["files"]
+        for rev, item in enumerate(items):
+            self.decide(receipt, item["item_id"], "assign", rev, team=team).raise_for_status()
+        link = self.confirm(receipt, team, len(items)).raise_for_status().json()
+        job, = self.review_jobs("queued")
+        self.assertEqual((self.event, team, link["submission_id"], 1),
+                         (job["event_id"], job["team"], job["submission_id"], job["version"]))
+        self.assertIsNotNone(datetime.fromisoformat(job["registered_at"]).utcoffset())
+        detail_url = job["status_url"]
+        register = link["status_url"] + "/review-job"
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for result in pool.map(lambda _: self.http.put(register).raise_for_status().json(), range(4)):
+                self.assertEqual(job, result)
+        self.assertEqual([job], self.review_jobs())
+        self.assertEqual(job, self.http.get(detail_url).raise_for_status().json())
+        batch_team, = self.http.get(receipt).raise_for_status().json()["teams"]
+        snapshot = self.http.get(job["submission_url"]).raise_for_status().json()
+        self.assertEqual(link["review_job"], batch_team["review_job"])
+        self.assertEqual({"review_job_id": job["review_job_id"], "state": "queued", "status_url": detail_url},
+                         snapshot["review_job"])
+        for source, (name, data) in zip(snapshot["files"], inputs, strict=True):
+            self.assertEqual(name, source["name"])
+            self.assertEqual(data, self.http.get(source["original_url"]).raise_for_status().content)
+        listing = f"/api/events/{self.event}/review-jobs"
+        self.assertEqual(422, self.http.get(listing, params={"state": "unknown"}).status_code)
+        for path in (detail_url, listing, job["submission_url"]):
+            self.assertEqual(404, self.peer.get(path).status_code)
+        self.assertEqual(404, self.peer.put(register).status_code)
+        with httpx.Client(base_url=URL, trust_env=False) as anonymous:
+            self.assertEqual(401, anonymous.get(detail_url).status_code)
+            self.assertEqual(401, anonymous.get(listing).status_code)
 
     def test_submission_and_exclusion_enforce_event_scope(self):
         team = self.team(self.event, "접수 팀", "")

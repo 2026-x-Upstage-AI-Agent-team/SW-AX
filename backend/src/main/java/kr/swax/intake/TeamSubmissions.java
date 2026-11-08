@@ -18,16 +18,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class TeamSubmissions {
     record Confirmation(Integer revision) {}
-    record Link(UUID team, String state, UUID submissionId, Integer version, String statusUrl) {}
-    record Original(UUID itemId, UUID batchId, int position, String name, int size, String sha256) {}
+    record Link(UUID team, String state, UUID submissionId, Integer version, String statusUrl, ReviewJobs.Reference reviewJob) {}
+    record Original(UUID itemId, UUID batchId, int position, String name, int size, String sha256, String originalUrl) {}
     record Snapshot(UUID submissionId, UUID eventId, UUID team, int version, String state, String confirmedBy,
-                    OffsetDateTime confirmedAt, List<Original> files) {}
+                    OffsetDateTime confirmedAt, List<Original> files, ReviewJobs.Reference reviewJob) {}
     private record Version(UUID id, int number, String digest) {}
     private record Batch(UUID event, int revision) {}
 
     private static final String LINKS = """
-            SELECT c.team_id, c.state, s.id, s.version FROM intake_team_confirmation c
-            JOIN team_submission s ON s.id = c.submission_id WHERE c.batch_id = ?
+            SELECT c.team_id, c.state, s.id, s.version, j.review_job_id, j.state AS job_state
+            FROM intake_team_confirmation c JOIN team_submission s ON s.id = c.submission_id
+            LEFT JOIN review_job_status j ON j.submission_id = s.id WHERE c.batch_id = ?
             """;
     private final JdbcTemplate db;
     private final IntakeStore intake;
@@ -55,9 +56,7 @@ class TeamSubmissions {
                 UUID.class, receipt.event(), team).isEmpty()) {
             throw ApiErrors.error(422, "같은 대회의 팀을 지정해 주세요.");
         }
-        Link previous = db.query(LINKS + " AND c.team_id = ?", TeamSubmissions::link, batch, team)
-                .stream().findFirst().orElse(null);
-        return reconcile(login, batch, team, previous, intake.files(batch), true);
+        return reconcile(login, batch, team, receiptLink(batch, team), intake.files(batch), true);
     }
 
     // The assignment caller holds the receipt lock. Other receipts can confirm the same teams concurrently.
@@ -91,7 +90,7 @@ class TeamSubmissions {
                 db.update("UPDATE intake_team_confirmation SET state = ? WHERE batch_id = ? AND team_id = ?",
                         state, batch, team);
             }
-            return new Link(team, state, null, null, null);
+            return receiptLink(batch, team);
         }
 
         var hash = IntakeUpload.sha256();
@@ -122,7 +121,7 @@ class TeamSubmissions {
                 INSERT INTO intake_team_confirmation(batch_id, team_id, submission_id, state) VALUES (?, ?, ?, 'confirmed')
                 ON CONFLICT (batch_id, team_id) DO UPDATE SET submission_id = EXCLUDED.submission_id, state = 'confirmed'
                 """, batch, team, latest.id());
-        return new Link(team, "confirmed", latest.id(), latest.number(), "/api/submissions/" + latest.id());
+        return receiptLink(batch, team);
     }
 
     private Version create(String login, UUID team, int number, String digest, List<IntakeStore.Item> files) {
@@ -139,27 +138,34 @@ class TeamSubmissions {
         return db.query(LINKS + " ORDER BY c.team_id", TeamSubmissions::link, batch);
     }
 
+    private Link receiptLink(UUID batch, UUID team) {
+        return db.query(LINKS + " AND c.team_id = ?", TeamSubmissions::link, batch, team)
+                .stream().findFirst().orElse(null);
+    }
+
     private static Link link(ResultSet rs, int row) throws SQLException {
         String state = rs.getString("state");
         UUID team = rs.getObject("team_id", UUID.class);
-        if (state.equals("blocked") || state.equals("empty")) return new Link(team, state, null, null, null);
+        ReviewJobs.Reference job = ReviewJobs.reference(rs);
+        if (state.equals("blocked") || state.equals("empty")) return new Link(team, state, null, null, null, job);
         UUID id = rs.getObject("id", UUID.class);
-        return new Link(team, state, id, rs.getInt("version"), "/api/submissions/" + id);
+        return new Link(team, state, id, rs.getInt("version"), "/api/submissions/" + id, job);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     Snapshot get(String login, UUID id) {
         return db.query("""
                 SELECT s.team_id, t.event_id, s.version, s.confirmed_by, s.confirmed_at,
-                       coalesce(c.state, 'superseded') AS state
+                       coalesce(c.state, 'superseded') AS state, j.review_job_id, j.state AS job_state
                 FROM team_submission s JOIN award_team t ON t.id = s.team_id
                 JOIN event_staff a ON a.event_id = t.event_id
                 LEFT JOIN intake_team_confirmation c ON c.team_id = s.team_id AND c.submission_id = s.id
                     AND c.state <> 'superseded'
+                LEFT JOIN review_job_status j ON j.submission_id = s.id
                 WHERE s.id = ? AND a.login = ?
                 """, (rs, n) -> new Snapshot(id, rs.getObject("event_id", UUID.class), rs.getObject("team_id", UUID.class),
                 rs.getInt("version"), rs.getString("state"), rs.getString("confirmed_by"),
-                rs.getObject("confirmed_at", OffsetDateTime.class), originals(id)), id, login).stream().findFirst()
+                rs.getObject("confirmed_at", OffsetDateTime.class), originals(id), ReviewJobs.reference(rs)), id, login).stream().findFirst()
                 .orElseThrow(() -> ApiErrors.error(404, "팀 제출본을 찾을 수 없습니다."));
     }
 
@@ -168,8 +174,12 @@ class TeamSubmissions {
                 SELECT f.id, f.batch_id, sf.position, f.name, f.size_bytes, f.sha256
                 FROM team_submission_file sf JOIN intake_file f ON f.id = sf.file_id
                 WHERE sf.submission_id = ? ORDER BY sf.position
-                """, (rs, n) -> new Original(rs.getObject("id", UUID.class), rs.getObject("batch_id", UUID.class),
-                rs.getInt("position"), rs.getString("name"), rs.getInt("size_bytes"), rs.getString("sha256")), submission);
+                """, (rs, n) -> {
+            UUID batch = rs.getObject("batch_id", UUID.class);
+            UUID item = rs.getObject("id", UUID.class);
+            return new Original(item, batch, rs.getInt("position"), rs.getString("name"), rs.getInt("size_bytes"),
+                    rs.getString("sha256"), "/api/intake-batches/" + batch + "/files/" + item + "/original");
+        }, submission);
     }
 
     private static RuntimeException newerReceipt() {
