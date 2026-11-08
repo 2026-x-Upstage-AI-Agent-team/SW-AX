@@ -24,10 +24,10 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
         lead={
           baseId
             ? '팀장이 보완해 보낸 서류를 같은 팀의 새 제출 버전으로 접수합니다. 교체할 이전 원본을 고르고 새 파일을 올리면 다시 판정합니다.'
-            : '여러 팀의 01·02·03 원본을 섞어서 올려도 됩니다. 저장이 끝나면 접수번호가 발급되고, 팀 배정과 판정은 뒤에서 진행됩니다.'
+            : '여러 팀의 신청서(01), 동의서(02), 대표 증빙(03)을 한 번에 접수할 수 있습니다.'
         }
       />
-      <nav aria-label="원본 접수" className="flex gap-1.5 self-start rounded-full bg-white p-1">
+      <nav aria-label="원본 접수" className="segments self-start">
         {[
           ['/intake', '접수하기', true],
           ['/intake/batches', '접수 내역', false],
@@ -36,7 +36,7 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
             key={to as string}
             to={to as string}
             end={end as boolean}
-            className={({ isActive }) => cx('inline-flex min-h-10 items-center rounded-full px-[18px] text-sm', isActive ? 'bg-ink font-bold text-white' : 'text-muted')}
+            className="segment"
           >
             {label}
           </NavLink>

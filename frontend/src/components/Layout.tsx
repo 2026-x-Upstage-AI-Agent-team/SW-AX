@@ -1,87 +1,116 @@
-import type { ReactNode } from 'react';
-import { Link, NavLink, Outlet } from 'react-router';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigationType } from 'react-router';
+import { CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDashboard, Mail, Menu, PanelLeftClose, Settings2, Workflow } from 'lucide-react';
 import { backend } from '../api/backend';
 import { useEvent } from '../context/EventContext';
 import { cx } from './ui';
 
 const menu = [
-  { to: '/', label: '업무 현황', end: true },
-  { to: '/intake', label: '원본 접수', end: false },
-  { to: '/assign', label: '팀 배정 확인', end: false },
-  { to: '/mail', label: '발송 이력', end: false },
-  { to: '/report', label: '보고서', end: false },
+  { to: '/', label: '업무 현황', Icon: LayoutDashboard },
+  { to: '/intake', label: '원본 접수', Icon: Inbox },
+  { to: '/assign', label: '팀 배정 확인', Icon: Workflow },
+  { to: '/mail', label: '발송 이력', Icon: Mail },
+  { to: '/report', label: '보고서', Icon: Files },
 ];
 
-export default function Layout() {
-  const { events, eventsError, event, selectEvent } = useEvent();
+function Brand({ subtitle = '시상금 서류 검토실', onNavigate }: { subtitle?: string; onNavigate?: () => void }) {
   return (
-    <div className="min-h-screen bg-white">
-      <header className="sticky top-0 z-20 border-b border-line bg-white/90 backdrop-blur-md">
-        <nav aria-label="주 메뉴" className="mx-auto flex min-h-14 max-w-[1240px] flex-wrap items-center gap-x-7 gap-y-1 px-6 py-1">
-          <Link to="/" className="flex items-center gap-2 text-base font-extrabold tracking-[-0.02em] text-ink">
-            <span aria-hidden="true" className="inline-block size-2.5 rounded-full bg-brand" />
-            시상금 서류 검토실
-          </Link>
-          <ul className="flex flex-auto flex-wrap gap-1">
-            {menu.map((item) => (
-              <li key={item.to}>
-                <NavLink
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    cx(
-                      'relative inline-flex min-h-11 items-center px-3 text-sm',
-                      isActive
-                        ? 'font-bold text-ink after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-brand'
-                        : 'text-muted hover:text-ink',
-                    )
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-[13px] text-muted">
-              대회
-              <select
-                className="h-9 max-w-52 rounded-[10px] border border-line-2 bg-white px-2.5 text-ink disabled:text-subtle"
-                value={event?.id ?? ''}
-                disabled={!events?.length}
-                onChange={(e) => selectEvent(e.target.value)}
-                title={eventsError}
-              >
-                {!events?.length && <option value="">{eventsError ? 'API 연결 안 됨' : '불러오는 중'}</option>}
-                {events?.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span
-              className="hidden rounded-full bg-canvas px-2.5 py-1 text-[11px] text-muted lg:inline"
-              title={backend === 'service' ? '검토 서비스(FastAPI, 127.0.0.1:8765)에 연결해 판정·검토·메일·보고서까지 실제로 처리합니다.' : '접수 API(Spring Boot, 127.0.0.1:18765)에 연결합니다. 판정·검토 화면은 예시 데이터입니다.'}
-            >
-              {backend === 'service' ? '검토 서비스' : '접수 API'}
-            </span>
-            <NavLink to="/manage" className={({ isActive }) => cx('inline-flex min-h-11 items-center px-2 text-[13px]', isActive ? 'font-bold text-ink' : 'text-brand-strong hover:text-brand-deep')}>
-              대회·팀 관리
-            </NavLink>
-          </div>
-        </nav>
+    <Link to="/" className="brand-lockup" onClick={onNavigate} aria-label="시상금 서류 검토실 업무 현황">
+      <span className="brand-mark"><CheckCheck size={22} strokeWidth={2.5} aria-hidden="true" /></span>
+      <span className="min-w-0"><strong>SW·AX</strong><small title={subtitle}>{subtitle}</small></span>
+    </Link>
+  );
+}
+
+function WorkspaceNav({ onNavigate }: { onNavigate?: () => void }) {
+  const { events, eventsError, event, selectEvent } = useEvent();
+  const { pathname } = useLocation();
+  return (
+    <>
+      <label className="event-field">
+        <span>대회 선택</span>
+        <span className="event-picker">
+          <CalendarDays size={17} aria-hidden="true" />
+          <select value={event?.id ?? ''} disabled={!events?.length} onChange={(e) => selectEvent(e.target.value)} title={eventsError ?? event?.name}>
+            {!events?.length && <option value="">{eventsError ? 'API 연결 안 됨' : events ? '등록된 대회 없음' : '불러오는 중…'}</option>}
+            {events?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+          <ChevronDown size={15} aria-hidden="true" />
+        </span>
+      </label>
+      <nav aria-label="주 메뉴" className="workspace-nav">
+        {menu.map(({ to, label, Icon }) => (
+          <NavLink key={to} to={to} end={to === '/'} onClick={onNavigate}
+            className={({ isActive }) => cx('nav-item', (isActive || (to === '/' && pathname.startsWith('/teams/'))) && 'is-current')}>
+            <Icon size={19} aria-hidden="true" />{label}
+          </NavLink>
+        ))}
+      </nav>
+      <div className="sidebar-foot">
+        <NavLink to="/manage" onClick={onNavigate} className={({ isActive }) => cx('nav-item', isActive && 'is-current')}>
+          <Settings2 size={19} aria-hidden="true" />대회·팀 관리
+        </NavLink>
+        <p className="service-mode">{backend === 'service' ? '검토 서비스' : '접수 API'}</p>
+      </div>
+    </>
+  );
+}
+
+export default function Layout() {
+  const menuDialog = useRef<HTMLDialogElement>(null);
+  const { event } = useEvent();
+  const { pathname } = useLocation();
+  const navigation = useNavigationType();
+  const close = () => menuDialog.current?.close();
+  useEffect(() => {
+    if (menuDialog.current?.open) menuDialog.current.close();
+    if (navigation !== 'POP') window.scrollTo(0, 0);
+  }, [pathname, navigation]);
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 60rem)');
+    const onResize = () => { if (desktop.matches && menuDialog.current?.open) menuDialog.current.close(); };
+    desktop.addEventListener('change', onResize);
+    return () => desktop.removeEventListener('change', onResize);
+  }, []);
+
+  return (
+    <div className="workspace">
+      <a className="skip-link" href="#workspace-content" onClick={(e) => {
+        e.preventDefault();
+        document.getElementById('workspace-content')?.focus();
+      }}>본문으로 바로가기</a>
+      <aside className="workspace-rail" aria-label="작업 공간">
+        <Brand />
+        <WorkspaceNav />
+      </aside>
+      <header className="mobile-bar">
+        <Brand subtitle={event?.name} />
+        <button type="button" className="icon-button" aria-label="메뉴 열기" aria-haspopup="dialog"
+          aria-controls="workspace-menu" onClick={() => menuDialog.current?.showModal()}>
+          <Menu size={22} aria-hidden="true" />
+        </button>
       </header>
-      <Outlet />
+      <dialog ref={menuDialog} id="workspace-menu" className="mobile-menu" aria-label="작업 메뉴"
+        onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
+        <div className="mobile-menu-body">
+          <div className="flex items-center justify-between gap-2">
+            <Brand onNavigate={close} />
+            <button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus>
+              <PanelLeftClose size={20} aria-hidden="true" />
+            </button>
+          </div>
+          <WorkspaceNav onNavigate={close} />
+        </div>
+      </dialog>
+      <div className="workspace-body"><Outlet /></div>
     </div>
   );
 }
 
-/** 회색 바탕 화면용 본문 컨테이너 */
 export function Page({ children, tone = 'white', width = 'wide' }: { children: ReactNode; tone?: 'white' | 'gray'; width?: 'wide' | 'normal' }) {
   return (
-    <div className={tone === 'gray' ? 'min-h-[calc(100vh-57px)] bg-canvas' : ''}>
-      <main className={cx('mx-auto flex flex-col gap-8 px-6 pb-24 pt-10', width === 'wide' ? 'max-w-[1240px]' : 'max-w-[1200px]')}>{children}</main>
-    </div>
+    <main id="workspace-content" tabIndex={-1} className={cx('workspace-page', width === 'normal' && 'page-normal', tone === 'white' && 'page-paper')}>
+      {children}
+    </main>
   );
 }

@@ -3,6 +3,8 @@
 React 19 · Vite · TypeScript · Tailwind CSS v4 · React Router.
 색상은 울산대학교 SW중심대학사업단 사이트(sw.ulsan.ac.kr) 팔레트를 `src/index.css`의 `@theme`에 모아 두었다.
 
+넓은 화면에서는 사이드바에서 대회를 선택하고, 휴대폰에서는 상단 메뉴에서 대회를 바꾼다. 업무 현황에서 판정 분포와 확인할 일을 먼저 보고 팀별 근거를 열 수 있다. 확정한 보고서의 HWPX·PDF 다운로드는 미리보기 위에 함께 표시한다. 키보드 포커스, 동작 줄이기, 투명도 줄이기, 고대비 설정을 지원한다. [적용한 Apple 디자인 지침](https://github.com/emilkowalski/skills/tree/main/skills/apple-design)
+
 ## 실행
 
 ```powershell

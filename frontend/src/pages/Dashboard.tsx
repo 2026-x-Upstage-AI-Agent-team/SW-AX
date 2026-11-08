@@ -1,33 +1,20 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { ArrowRight, Check, ChevronDown, CircleAlert, FileUp } from 'lucide-react';
 import { reviewLive } from '../api/backend';
 import { busyStates, recoverableStates, stateLabel } from '../api/labels';
 import type { Verdict } from '../api/service';
-import { DemoBadge, DocChips, Notice, StateBadge, VerdictBadge, buttonStyles, cx } from '../components/ui';
-import { useEvent } from '../context/EventContext';
+import { Page } from '../components/Layout';
+import { DocChips, Notice, PageHeader, StateBadge, VerdictBadge, buttonStyles, cx } from '../components/ui';
 import { useOverview, type TeamRow } from '../hooks/useOverview';
-
-const steps = [
-  { t: '일괄 업로드', d: '여러 팀 파일 혼합' },
-  { t: '팀 배정', d: '01 명단과 근거 대조' },
-  { t: 'Studio 판정', d: '분류·추출·검증' },
-  { t: '담당자 확인', d: '원본 쪽·행 대조' },
-  { t: '팀장 메일', d: '보완 사유 자동 안내' },
-  { t: '보고서', d: 'HWPX · PDF 편철' },
-];
 
 type Filter = 'all' | 'action' | 'ok';
 
-const summaryTone: Record<Verdict, string> = {
-  성공: 'text-brand-strong',
-  담당자확인: 'text-caution',
-  재제출요청: 'text-alert-strong',
-};
-const summaryNote: Record<Verdict, string> = {
-  성공: '담당자 승인 후 보고서 편철',
-  담당자확인: '원본 대조 후 결과 발송',
-  재제출요청: '팀장 보완 메일 자동 발송',
-};
+const verdicts: Array<{ key: Verdict; label: string; color: string }> = [
+  { key: '성공', label: '성공', color: 'var(--chart-success)' },
+  { key: '담당자확인', label: '담당자 확인', color: 'var(--chart-review)' },
+  { key: '재제출요청', label: '재제출 요청', color: 'var(--chart-return)' },
+];
 
 type Alert = { key: string; text: string; sub: string; to: string; action: string };
 
@@ -41,11 +28,9 @@ function needsAction(r: TeamRow) {
 }
 
 export default function Dashboard() {
-  const { event } = useEvent();
   const { dashboard, rows, error, refresh } = useOverview();
   const [filter, setFilter] = useState<Filter>('all');
   const list = rows ?? [];
-  const count = (v: Verdict) => list.filter((r) => r.submission?.verdict === v).length;
   const processing = list.filter((r) => r.submission && busyStates.has(r.submission.state)).length;
   const visible = useMemo(
     () => list.filter((r) => (filter === 'all' ? true : filter === 'ok' ? !needsAction(r) : needsAction(r))),
@@ -68,97 +53,84 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="mx-auto flex max-w-[1200px] flex-col gap-14 px-6 pb-24 pt-16">
-      <section className="flex flex-col items-center gap-5 text-center">
-        <p className="text-[15px] font-bold text-brand-strong">{event?.name ?? '대회'} · 시상금 증빙 검토</p>
-        <h1 className="text-[clamp(36px,5vw,60px)] font-extrabold leading-[1.12] tracking-[-0.035em]">
-          서류 대조는 맡기고,
-          <br />
-          판단만 하세요.
-        </h1>
-        <p className="max-w-[620px] text-lg leading-relaxed text-muted">
-          여러 팀의 01 신청서·02 동의서·03 대표 증빙을 한 번에 올리면, 팀을 나누고 서로 맞지 않는 곳만 골라 보여 드립니다.
-        </p>
-        <div className="mt-2 flex flex-wrap justify-center gap-3">
-          <Link to="/intake" className={buttonStyles.primary}>
-            파일 일괄 업로드
-          </Link>
-          {alerts[0] && (
-            <Link to={alerts[0].to} className={cx(buttonStyles.text, 'text-base')}>
-              확인할 일 {alerts.length}건 →
-            </Link>
-          )}
-        </div>
-      </section>
-
-      <ol aria-label="처리 단계" className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] overflow-hidden rounded-[18px] border border-line">
-        {steps.map((s, i) => (
-          <li key={s.t} className="flex flex-col gap-1.5 border-r border-line bg-[#fafbfb] px-5 py-[18px] last:border-r-0">
-            <span className="font-mono text-xs text-subtle">{String(i + 1).padStart(2, '0')}</span>
-            <span className="text-[15px] font-bold">{s.t}</span>
-            <span className="text-[13px] text-muted">{s.d}</span>
-          </li>
-        ))}
-      </ol>
-
+    <Page tone="gray">
+      <PageHeader title="업무 현황" demo side={
+        <Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />원본 접수하기</Link>
+      } />
       {!dashboard ? (
         <Notice error={error && `${error} (검토 서비스가 실행 중인지 확인해 주세요.)`} onRetry={refresh} />
       ) : (
         <>
+          <div className="overview-panels">
+            <VerdictSummary rows={list} />
+            <ActionQueue alerts={alerts} />
+          </div>
+          <TeamTable list={visible} total={list.length} counts={{ action: list.filter(needsAction).length, ok: list.filter((r) => !needsAction(r)).length }} filter={filter} setFilter={setFilter} />
           {reviewLive && (
-            <p className="-mt-6 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-muted">
+            <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-subtle">
               <span>Studio {dashboard.connected ? `연결됨 · 설정 ${dashboard.config}` : 'API 키 미설정'}</span>
               <span>메일 {dashboard.gmail_oauth_connected || dashboard.gmail_account ? `Gmail ${dashboard.gmail_account ?? ''}` : dashboard.smtp ? 'SMTP' : '로컬 메일함'}</span>
-              {processing > 0 && <span className="font-bold text-brand-strong">처리 중 {processing}팀 · 자동 새로고침</span>}
+              {processing > 0 && <span>처리 중 {processing}팀 · 자동 새로고침</span>}
             </p>
           )}
-
-          <section aria-label="판정 요약" className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
-            <div className="flex flex-col gap-2 rounded-[22px] bg-canvas p-7">
-              <span className="text-sm text-muted">접수 팀</span>
-              <span className="text-[44px] font-extrabold tracking-[-0.03em]">{list.length}</span>
-              <span className="text-[13px] text-muted">{processing > 0 ? `판정 중 ${processing}팀` : dashboard.events.find((e) => e.id === dashboard.event)?.name}</span>
-            </div>
-            {(['성공', '담당자확인', '재제출요청'] as Verdict[]).map((v) => (
-              <div key={v} className="flex flex-col gap-2 rounded-[22px] bg-canvas p-7">
-                <span className={cx('text-sm font-bold', summaryTone[v])}>{v}</span>
-                <span className="text-[44px] font-extrabold tracking-[-0.03em]">{count(v)}</span>
-                <span className="text-[13px] text-muted">{summaryNote[v]}</span>
-              </div>
-            ))}
-          </section>
-
-          {alerts.length > 0 && (
-            <section aria-label="확인할 일" className="flex flex-col gap-2.5">
-              {alerts.slice(0, 5).map((a) => (
-                <div key={a.key} role="status" className="flex flex-wrap items-center gap-4 rounded-[18px] border border-caution-line bg-caution-bg px-6 py-4">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-caution" aria-hidden="true">
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 7v6M12 16.5v.5" />
-                  </svg>
-                  <div className="flex flex-[1_1_380px] flex-col gap-1">
-                    <strong className="text-[15px]">{a.text}</strong>
-                    <span className="text-sm text-muted">{a.sub}</span>
-                  </div>
-                  <Link to={a.to} className={buttonStyles.outline}>
-                    {a.action}
-                  </Link>
-                </div>
-              ))}
-              {alerts.length > 5 && <p className="text-sm text-muted">외 {alerts.length - 5}건은 아래 표에서 ‘조치 필요’로 볼 수 있습니다.</p>}
-            </section>
-          )}
-
-          <TeamTable
-            list={visible}
-            total={list.length}
-            counts={{ action: list.filter(needsAction).length, ok: list.filter((r) => !needsAction(r)).length }}
-            filter={filter}
-            setFilter={setFilter}
-          />
         </>
       )}
-    </main>
+    </Page>
+  );
+}
+
+function VerdictSummary({ rows }: { rows: TeamRow[] }) {
+  const done = rows.filter((r) => !r.held && r.submission?.state === 'done' && r.submission.verdict);
+  const groups = verdicts.map(({ key, label, color }) => ({
+    label, color, count: done.filter((r) => r.submission?.verdict === key).length,
+  }));
+  if (done.length < rows.length) groups.push({ label: '판정 전', color: 'var(--chart-pending)', count: rows.length - done.length });
+  let end = 0;
+  const stops = groups.filter((g) => g.count > 0).map((g) => {
+    const start = end;
+    end += (g.count / rows.length) * 100;
+    return `${g.color} ${start}% ${end}%`;
+  });
+  return (
+    <section className="surface summary-panel" aria-labelledby="summary-heading">
+      <h2 id="summary-heading" className="panel-title">판정 현황</h2>
+      <div className="summary-body">
+        <div className="verdict-ring" style={stops.length ? { background: `conic-gradient(${stops.join(', ')})` } : undefined}>
+          <div className="ring-center"><strong>{rows.length}</strong><span>접수 팀</span></div>
+        </div>
+        <dl className="verdict-legend">
+          {groups.map(({ label, color, count }) => (
+            <div key={label}><dt><i aria-hidden="true" style={{ backgroundColor: color }} />{label}</dt><dd>{count}<small>팀</small></dd></div>
+          ))}
+        </dl>
+      </div>
+    </section>
+  );
+}
+
+function ActionQueue({ alerts }: { alerts: Alert[] }) {
+  const item = (a: Alert) => (
+    <li key={a.key}>
+      <Link to={a.to} className="queue-link">
+        <span className="queue-icon"><CircleAlert size={17} aria-hidden="true" /></span>
+        <span className="min-w-0"><strong>{a.text}</strong><small>{a.sub}</small></span>
+        <span className="sr-only">{a.action}</span><ArrowRight size={16} className="queue-arrow" aria-hidden="true" />
+      </Link>
+    </li>
+  );
+  return (
+    <section className="surface queue-panel" aria-labelledby="queue-heading">
+      <h2 id="queue-heading" className="panel-title">확인할 일 <span className="heading-count">{alerts.length}</span></h2>
+      {alerts.length ? (
+        <>
+          <ul className="queue-list">{alerts.slice(0, 2).map(item)}</ul>
+          {alerts.length > 2 && <details className="queue-more">
+            <summary><span>나머지 {alerts.length - 2}건</span><ChevronDown size={15} aria-hidden="true" /></summary>
+            <ul className="queue-list">{alerts.slice(2).map(item)}</ul>
+          </details>}
+        </>
+      ) : <p className="queue-empty"><Check size={19} aria-hidden="true" />지금 확인할 일이 없습니다.</p>}
+    </section>
   );
 }
 
@@ -181,22 +153,21 @@ function TeamTable({
     ['ok', `정리됨 ${counts.ok}`],
   ];
   return (
-    <section aria-labelledby="teams-h" className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section aria-labelledby="teams-h" className="surface team-panel">
+      <div className="team-panel-head">
         <div className="flex items-center gap-3">
-          <h2 id="teams-h" className="text-[28px] font-extrabold tracking-[-0.02em]">
+          <h2 id="teams-h" className="panel-title">
             팀별 판정
           </h2>
-          <DemoBadge />
         </div>
-        <div role="group" aria-label="판정 필터" className="flex flex-wrap gap-1.5 rounded-full bg-canvas p-1">
+        <div role="group" aria-label="판정 필터" className="segments">
           {filters.map(([key, label]) => (
             <button
               key={key}
               type="button"
               aria-pressed={filter === key}
               onClick={() => setFilter(key)}
-              className={cx('min-h-9 rounded-full px-3.5 text-[13px]', filter === key ? 'bg-white font-bold shadow-[0_1px_3px_rgba(0,0,0,0.12)]' : 'text-muted')}
+              className="segment"
             >
               {label}
             </button>
@@ -205,7 +176,7 @@ function TeamTable({
       </div>
 
       {total === 0 ? (
-        <p className="rounded-[18px] border border-line px-6 py-10 text-center text-sm text-muted">
+        <p className="px-6 py-10 text-center text-sm text-muted">
           아직 접수된 팀이 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">
             원본을 접수
@@ -213,10 +184,10 @@ function TeamTable({
           하면 팀이 자동으로 만들어집니다.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-[18px] border border-line">
-          <table className="w-full min-w-[980px] border-collapse text-sm">
+        <div className="team-table-scroll" role="region" aria-label="팀별 판정 표" tabIndex={0}>
+          <table className="w-full min-w-[49rem] border-collapse text-sm">
             <thead>
-              <tr className="text-left text-xs text-muted">
+              <tr className="bg-canvas text-left text-xs text-muted">
                 <th scope="col" className="border-b border-line px-5 py-3.5 font-medium">팀</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">접수 서류</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">판정</th>
@@ -226,11 +197,12 @@ function TeamTable({
               </tr>
             </thead>
             <tbody>
+              {list.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-muted">이 필터에 해당하는 팀이 없습니다.</td></tr>}
               {list.map((r) => {
                 const s = r.submission;
                 return (
                   <tr key={r.id} className="border-b border-line-soft last:border-b-0 hover:bg-[#fafbfb]">
-                    <td className="px-5 py-4 align-top">
+                    <td className="team-identity px-5 py-4 align-top">
                       {s ? (
                         <Link to={`/teams/${s.id}`} className="font-bold text-ink hover:text-brand-strong">
                           {r.name}
@@ -243,8 +215,8 @@ function TeamTable({
                         <span className="font-mono">{s ? `v${s.version}` : '제출본 없음'}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-4 align-top">{s ? <DocChips documents={r.detail?.result?.documents} /> : '—'}</td>
-                    <td className="px-3 py-4 align-top">
+                    <td data-label="접수 서류" className="team-docs px-3 py-4 align-top">{s ? <DocChips documents={r.detail?.result?.documents} /> : '—'}</td>
+                    <td className="team-verdict px-3 py-4 align-top">
                       {r.held ? (
                         <StateBadge state="unassigned" />
                       ) : s?.verdict && s.state === 'done' ? (
@@ -255,15 +227,15 @@ function TeamTable({
                         '—'
                       )}
                     </td>
-                    <td className="max-w-[420px] px-3 py-4 align-top leading-normal text-ink-2">
+                    <td className="team-reason min-w-44 max-w-[380px] px-3 py-4 align-top leading-relaxed text-ink-2">
                       {r.held
                         ? '이 팀에 속할 수 있는 미배정 파일이 있어 판정을 기다립니다.'
                         : s?.error || r.detail?.result?.reason || (s && busyStates.has(s.state) ? 'Studio 판정을 기다리는 중입니다.' : '')}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-4 align-top">
+                    <td data-label="담당자 결정" className="team-decision whitespace-nowrap px-3 py-4 align-top">
                       {s?.decision ? <span className={cx('text-xs font-bold', s.decision === '승인' ? 'text-brand-strong' : 'text-alert-strong')}>{s.decision}</span> : <span className="text-xs text-subtle">미기록</span>}
                     </td>
-                    <td className="px-5 py-4 align-top">{r.leaderMail ? <StateBadge state={r.leaderMail.state} /> : <span className="text-xs text-subtle">없음</span>}</td>
+                    <td data-label="팀장 안내" className="team-mail px-5 py-4 align-top">{r.leaderMail ? <StateBadge state={r.leaderMail.state} /> : <span className="text-xs text-subtle">없음</span>}</td>
                   </tr>
                 );
               })}
@@ -271,7 +243,7 @@ function TeamTable({
           </table>
         </div>
       )}
-      {!reviewLive && <p className="text-xs text-subtle">예시 데이터: 판정·근거는 유잇 미션2 정답 JSON(set01–set10) 기준, set03–set10 팀명은 임시 표기입니다.</p>}
+      {!reviewLive && <p className="border-t border-line-soft px-5 py-3 text-xs text-subtle">예시 판정은 set01–set10 기준이며 set03–set10의 팀명은 임시 표기입니다.</p>}
     </section>
   );
 }

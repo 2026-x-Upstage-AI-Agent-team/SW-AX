@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
+import { FileUp } from 'lucide-react';
 import { ApiError, bytes } from '../../api/client';
 import { teamLabel, uploadBatch, type AwardEvent, type AwardTeam } from '../../api/intake';
 import { docLabels } from '../../api/labels';
@@ -103,7 +104,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-6 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]">
+    <form onSubmit={submit} className="surface flex flex-col gap-6 p-[clamp(18px,3vw,32px)]">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '제출 원본'}</h2>
         <span className="text-sm text-muted">HWP · HWPX</span>
@@ -169,14 +170,14 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
             add(e.dataTransfer.files);
           }}
           className={cx(
-            'mt-4 grid w-full place-items-center gap-2.5 rounded-[18px] border-2 border-dashed px-3 py-10 text-brand-deep',
-            dragging ? 'border-brand bg-brand-tint' : 'border-line-2 bg-[#fafbfb] hover:border-brand hover:bg-brand-tint',
+            'mt-4 grid w-full place-items-center gap-2 rounded-2xl border border-dashed px-4 py-8 text-brand-deep sm:py-11',
+            dragging ? 'border-brand-strong bg-brand-tint ring-2 ring-brand-strong' : 'border-brand/65 bg-canvas hover:border-brand-strong hover:bg-brand-tint',
           )}
         >
-          <span aria-hidden="true" className="grid size-10 place-items-center rounded-full border border-brand text-xl">
-            ↑
+          <span aria-hidden="true" className="mb-1 grid size-12 place-items-center rounded-2xl bg-brand-tint">
+            <FileUp size={25} strokeWidth={1.7} />
           </span>
-          <strong className="text-base text-ink">파일을 끌어오거나 선택하세요</strong>
+          <strong className="text-base text-ink">{dragging ? '여기에 놓아 파일 추가' : '파일을 끌어오거나 선택하세요'}</strong>
           <span className="text-[13px] text-muted">00 지급내역서 제외 · 파일당 40 MiB · 합계 300 MiB</span>
         </button>
         {files.length > 0 && (

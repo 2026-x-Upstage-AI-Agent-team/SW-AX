@@ -13,7 +13,7 @@ const verdictStyle: Record<Verdict, string> = {
   재제출요청: 'bg-alert-tint text-alert-strong',
 };
 
-const pill = 'inline-flex items-center rounded-full font-bold whitespace-nowrap';
+const pill = 'inline-flex items-center rounded-md font-semibold whitespace-nowrap';
 
 export function VerdictBadge({ verdict, size = 'sm' }: { verdict: Verdict; size?: 'sm' | 'md' }) {
   return <span className={cx(pill, size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-[13px]', verdictStyle[verdict])}>{verdict}</span>;
@@ -134,34 +134,31 @@ export function DemoBadge() {
 
 export function PageHeader({ title, lead, side, demo }: { title: string; lead?: ReactNode; side?: ReactNode; demo?: boolean }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-5">
-      <div className="flex max-w-3xl flex-[1_1_520px] flex-col gap-2.5">
+    <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+      <div className="flex min-w-0 max-w-3xl flex-auto flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-[32px] font-extrabold tracking-[-0.03em] sm:text-4xl">{title}</h1>
+          <h1 className="page-title">{title}</h1>
           {demo && <DemoBadge />}
         </div>
-        {lead && <p className="text-[17px] leading-relaxed text-ink-2">{lead}</p>}
+        {lead && <p className="page-lead">{lead}</p>}
       </div>
       {side}
-    </div>
+    </header>
   );
 }
 
 export const buttonStyles = {
-  primary:
-    'inline-flex min-h-12 items-center justify-center rounded-full bg-brand-strong px-6 text-[15px] font-bold text-white hover:bg-brand-deep disabled:cursor-not-allowed disabled:opacity-50',
-  secondary:
-    'inline-flex min-h-11 items-center justify-center rounded-full border border-line-2 bg-white px-[18px] text-sm font-medium text-ink hover:border-muted disabled:cursor-not-allowed disabled:opacity-50',
-  outline:
-    'inline-flex min-h-11 items-center justify-center rounded-full border border-ink bg-white px-[18px] text-sm font-bold text-ink hover:bg-canvas disabled:cursor-not-allowed disabled:opacity-50',
-  text: 'inline-flex min-h-11 items-center px-2 text-sm font-medium text-brand-strong hover:text-brand-deep disabled:opacity-50',
-  danger: 'inline-flex min-h-11 items-center px-3 text-sm font-medium text-alert-strong hover:underline disabled:opacity-50',
+  primary: 'action action-primary',
+  secondary: 'action action-secondary',
+  outline: 'action action-outline',
+  text: 'action action-text',
+  danger: 'action action-danger',
 };
 
 export const inputStyle = 'h-11 w-full rounded-xl border border-line-2 bg-white px-3 text-sm text-ink disabled:bg-canvas disabled:text-subtle';
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx('rounded-[22px] border border-line bg-white', className)}>{children}</div>;
+  return <div className={cx('surface', className)}>{children}</div>;
 }
 
 /** 검토용 PDF 미리보기. 주소가 없으면(예시 데이터, 판독 전) 자리만 보여 준다. */

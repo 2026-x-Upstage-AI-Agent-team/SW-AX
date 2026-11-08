@@ -37,7 +37,7 @@ export default function Mail() {
         <>
           {noEmail.length > 0 && <EmailList teams={noEmail} onSaved={refresh} />}
 
-          <div role="tablist" aria-label="수신자" className="flex gap-1.5 self-start rounded-full bg-canvas p-1">
+          <div role="group" aria-label="수신자" className="segments self-start">
             {(
               [
                 ['leader', `팀장 안내 ${dashboard.mail.filter((m) => m.kind !== ADMIN_NOTICE).length}`],
@@ -47,10 +47,9 @@ export default function Mail() {
               <button
                 key={key}
                 type="button"
-                role="tab"
-                aria-selected={tab === key}
+                aria-pressed={tab === key}
                 onClick={() => setTab(key)}
-                className={cx('min-h-10 rounded-full px-[18px] text-sm', tab === key ? 'bg-white font-bold shadow-[0_1px_3px_rgba(0,0,0,0.12)]' : 'text-muted')}
+                className="segment"
               >
                 {label}
               </button>

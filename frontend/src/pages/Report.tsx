@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router';
+import { Download, FileText, FileType2 } from 'lucide-react';
 import { reviewLive } from '../api/backend';
 import { useAsync, usePolling } from '../api/client';
 import { when } from '../api/labels';
@@ -75,16 +76,16 @@ export default function Report() {
       <PageHeader
         title="보고서 확정"
         demo
-        lead="담당자가 승인하고 시상구분·지원액을 넣은 팀만 편철합니다. 00 지급내역서의 두 표를 채우고 팀별 01→02→03 원본을 한 번씩 붙인 HWPX와 PDF를 만듭니다."
+        lead="승인한 팀의 지급 정보와 편철 순서를 확인한 뒤 같은 버전의 HWPX와 PDF를 내려받습니다."
       />
 
       {!draft.data ? (
         <Notice error={draft.error} onRetry={draft.reload} />
       ) : (
-        <div className="flex flex-wrap items-start gap-6">
+        <div className="report-columns">
           <section aria-labelledby="teams-h" className="flex min-w-0 flex-[1_1_420px] flex-col gap-3.5">
             <h2 id="teams-h" className="text-xl font-extrabold">
-              ① 팀 순서와 지급 정보
+              팀 순서와 지급 정보
             </h2>
             {teams.length === 0 && <p className="rounded-[20px] bg-white px-5 py-6 text-sm text-muted">판정이 끝난 팀이 없습니다.</p>}
             {ready.map((t) => {
@@ -113,7 +114,7 @@ export default function Report() {
 
           <section aria-labelledby="preview-h" className="flex min-w-0 flex-[999_1_580px] flex-col gap-3.5">
             <h2 id="preview-h" className="text-xl font-extrabold">
-              ② 미리보기와 생성
+              미리보기와 생성
             </h2>
             <Tables teams={chosen} />
             <Generate event={event} order={order} disabled={chosen.length === 0} onCreated={(id) => { setRid(id); refresh(); }} />
@@ -448,29 +449,33 @@ function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: str
       {r.stale && <Feedback error="생성 뒤 지급 정보나 제출본이 바뀌었습니다. 새 보고서를 생성해 주세요." />}
       {r.error && <Feedback error={r.error} />}
       {(r.state === 'queued' || r.state === 'building') && <p className="text-sm text-muted">한글 문서를 만드는 중입니다. 완료되면 미리보기가 열립니다.</p>}
-      {ready && <PdfFrame url={reportFileUrl(r.id, 'preview')} title={`보고서 v${r.version} 미리보기`} height={720} />}
-      <div className="flex flex-wrap items-center gap-2.5">
-        {r.state === 'preview' && (
-          <button type="button" disabled={busy || r.stale} onClick={() => act(() => confirmReport(r.id).then(() => undefined))} className={buttonStyles.primary}>
-            이 버전으로 확정
-          </button>
-        )}
-        {r.state === 'confirmed' && !r.stale && (
-          <>
-            <a href={reportFileUrl(r.id, 'hwpx')} download className={buttonStyles.primary}>
-              HWPX 내려받기
+      {r.state === 'preview' && (
+        <button type="button" disabled={busy || r.stale} onClick={() => act(() => confirmReport(r.id).then(() => undefined))} className={cx(buttonStyles.primary, 'self-start')}>
+          이 버전으로 확정
+        </button>
+      )}
+      {r.state === 'confirmed' && !r.stale && (
+        <>
+          <div role="group" aria-label={`보고서 v${r.version} 다운로드`} className="grid gap-2 sm:grid-cols-2">
+            <a href={reportFileUrl(r.id, 'hwpx')} download className="file-download">
+              <FileType2 size={22} aria-hidden="true" />
+              <span><strong>HWPX 내려받기</strong><small>편집용 한글 문서</small></span>
+              <Download size={16} aria-hidden="true" />
             </a>
-            <a href={reportFileUrl(r.id, 'pdf')} download className={cx(buttonStyles.secondary, 'min-h-12 px-[22px] text-[15px] font-bold')}>
-              PDF 내려받기
+            <a href={reportFileUrl(r.id, 'pdf')} download className="file-download">
+              <FileText size={22} aria-hidden="true" />
+              <span><strong>PDF 내려받기</strong><small>인쇄·제출용 문서</small></span>
+              <Download size={16} aria-hidden="true" />
             </a>
-            <label className={cx(buttonStyles.text, 'cursor-pointer')}>
-              한글에서 고친 HWPX 올리기
-              <input type="file" accept=".hwpx" onChange={onEdited} disabled={busy} className="sr-only" />
-            </label>
-          </>
-        )}
-      </div>
+          </div>
+          <label className={cx(buttonStyles.text, 'self-start cursor-pointer has-[:focus-visible]:outline-2')}>
+            한글에서 고친 HWPX 올리기
+            <input type="file" accept=".hwpx" onChange={onEdited} disabled={busy} className="sr-only" />
+          </label>
+        </>
+      )}
       <Feedback error={error} />
+      {ready && <PdfFrame url={reportFileUrl(r.id, 'preview')} title={`보고서 v${r.version} 미리보기`} height={720} />}
     </div>
   );
 }
