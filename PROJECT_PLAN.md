@@ -7,7 +7,7 @@ SW중심대학 사업단 담당자는 같은 대회에 참가한 여러 팀의 0
 | 항목 | 현재 기준 |
 |---|---|
 | 갱신일 | 2026년 11월 9일 한국 시간 |
-| 운영 스택 | 담당자 화면은 **React**, 백엔드 API는 **Spring Boot**, 운영 DB는 **PostgreSQL**이다. Spring Batch는 초기 도입을 보류한다. PDF 출력은 전용 Windows PC에 배치하고 판독·판정 워커와 작업 큐는 추후 결정한다. [구현계획서](docs/IMPLEMENTATION_PLAN.md#운영판-전환) |
+| 운영 스택 | 담당자 화면은 **React**, 백엔드 API는 **Spring Boot**, 운영 DB는 **PostgreSQL**이다. 판정 작업의 대기열과 워커 배정은 PostgreSQL이 관리한다. Spring Batch는 초기 도입을 보류하고 PDF 출력은 전용 Windows PC에 배치한다. [구현계획서](docs/IMPLEMENTATION_PLAN.md#운영판-전환) |
 | 1차 시연 범위 | 담당자 1명이 Windows PC 한 대에서 여러 팀의 파일을 혼합 일괄 업로드하고 자동 배정·미배정 파일 확인·팀별 검토·팀장 메일 자동 발송·보완본 재검토·HWPX와 PDF 다운로드까지 진행. 완료 기준은 10.1절 |
 | 운영판 1차 구현 | React → Spring Boot → PostgreSQL로 대회·팀 등록, 혼합 원본 접수, 접수 내역 조회와 원본 다운로드를 구현했다. 공식 ZIP 29개 원본의 SHA-256이 다운로드 결과와 일치했고, Chrome에서 set01·02의 원본 6개를 한 번에 접수해 다시 열었다. [실행 방법](README.md#운영판-원본-접수-실행) |
 | 담당자 화면 A안 | 2026년 11월 8일 A안(울산대 SW중심대학사업단 팔레트, TypeScript·Tailwind CSS·React Router)을 main에 병합했다. 같은 날 `feat/connect-review-api`에서 업무 현황·팀별 검토·팀 배정·발송 이력·보고서 화면을 검토 서비스 API(`service/app.py`)에 연결했다. `npm run dev:service`로 검토 서비스에, `npm run dev`로 Spring Boot 접수 API에 붙는다. Windows PC에서 `npm install` 후 `npm run build`(타입 검사와 `vite build`)가 통과했다. 11월 8일에는 대역 서버로 경로·헤더·본문을 확인했다. [화면 구성](frontend/README.md) |
@@ -17,8 +17,8 @@ SW중심대학 사업단 담당자는 같은 대회에 참가한 여러 팀의 0
 | 운영판 담당자 접근 | 별도 Chrome 세션에서 기존 공식 접수의 같은 원본 URL을 열었다. 배정 계정은 SHA-256이 일치하는 파일을 받았고, 다른 계정은 404, 비로그인은 401을 받았다. 시험 대회에서 권한을 회수하면 로그인 중에도 다음 다운로드가 차단됐다. [인증과 권한](docs/IMPLEMENTATION_PLAN.md#담당자-인증과-대회-권한) |
 | 운영판 수동 배정 | 기존 공식 set01 원본을 두 담당자가 차례로 미배정 → Nextify → AutoAI로 배정했다. 원본별 이력에서 전후 팀, 로그인 계정, 사유, 변경 시각을 확인했다. 같은 요청 재전송 뒤에도 이력은 두 건이고 원본 SHA-256은 일치했다. [원본 수동 배정 API](docs/IMPLEMENTATION_PLAN.md#원본-수동-배정-api) |
 | 운영판 팀별 제출본 | 후보 제외·대상 외 결정을 기록하고 관련 미배정 원본이 없는 팀부터 제출본을 확정한다. 파일 내용과 부수가 같은 묶음은 기존 버전을 사용한다. 확정 후 재배정하면 원본 목록이 바뀐 팀의 버전만 갱신한다. [팀별 제출본 확정 API](docs/IMPLEMENTATION_PLAN.md#팀별-제출본-확정-api) |
-| 운영판 판정 작업 | 팀별 제출 버전마다 판정 작업 한 건을 등록한다. 대회별 대기 목록과 작업 상세에서 확정 원본을 조회할 수 있고, React 접수 상세에서 팀별 제출 버전·작업 상태·번호를 확인한다. [판정 작업 API](docs/IMPLEMENTATION_PLAN.md#팀-제출본-판정-작업-등록조회) |
-| 다음 단계 | 워커가 대기 작업을 선점하고 Studio 실행 ID와 결과를 제출 버전에 연결한다. Studio 정상 사례의 소속 표기 기준은 별도로 확정한다. |
+| 운영판 판정 작업 | 워커가 팀별 확정 작업을 선점하고 원본을 내려받아 Studio 실행 ID와 결과를 같은 제출 버전에 기록한다. 두 워커가 작업 한 건을 동시에 요청했을 때 한 쪽만 배정받았다. 접수 상세는 처리 중, 검토 완료와 최종판정, 처리 실패를 팀별로 갱신한다. [워커 API](docs/IMPLEMENTATION_PLAN.md#워커-판정-작업-배정과-결과-등록) |
+| 다음 단계 | 운영 워커에서 이 API로 원본을 받아 실제 Studio 실행과 결과 반환까지 연결한다. Studio 정상 사례의 소속 표기 기준은 별도로 확정한다. |
 | 남은 검증 | set03과 set05~10의 실제 Studio 판정 대조, 공식 set04 보완 안내의 외부 수신함 대조, 운영 장애 시나리오 전체 인수 시험 |
 | 구성 프롬프트 | [Studio 구성 프롬프트](docs/STUDIO_BUILD_PROMPT.txt). 최종판정은 9.4절, 판정 후 알림은 7.1절 기준 |
 | 구현계획서 | [팀별 비동기 접수·대기열·오류 처리](docs/IMPLEMENTATION_PLAN.md). 서비스 API, 재시도·재기동 규칙과 단계별 인수 시험 |
@@ -139,7 +139,7 @@ flowchart TD
 
 ### 4.1 일괄 접수와 팀별 Agents API 호출
 
-아래의 비동기 처리·폴링은 Windows 시연판의 참조 흐름이다. 운영판 API는 원본 저장·배정과 팀별 제출 버전 확정까지 제공한다. 후속 판정에는 확정한 제출 버전과 원격 실행 ID를 연결해야 한다. 사전 연동 시험에서 별도 등록한 파일 ID를 참조하면 403이 반환됐다. 10.3절의 공식 set01·set02는 팀별 PDF 3개를 `file_data`로 Job에 직접 첨부해 처리했다. [Upstage Job 파일 입력 방식](https://github.com/UpstageAI/upstage-extensions-hub/blob/main/skills/upstage-studio/references/jobs.md)
+아래의 비동기 처리·폴링은 Windows 시연판의 참조 흐름이다. 운영판 API는 워커에 팀별 확정 원본을 배정하고, 워커가 반환한 원격 실행 ID와 최종 결과를 해당 버전에 저장한다. 사전 연동 시험에서 별도 등록한 파일 ID를 참조하면 403이 반환됐다. 10.3절의 공식 set01·set02는 팀별 PDF 3개를 `file_data`로 Job에 직접 첨부해 처리했다. [Upstage Job 파일 입력 방식](https://github.com/UpstageAI/upstage-extensions-hub/blob/main/skills/upstage-studio/references/jobs.md)
 
 1. 운영판은 선택한 원본과 대회·일괄 접수번호·파일 목록을 PostgreSQL에 함께 저장한 뒤 `202 Accepted`와 조회 주소를 반환한다. 선택한 파일의 전송이 끊기면 같은 요청으로 다시 전송한다. Windows 시연판은 접수와 배정 작업을 SQLite에 기록해 후속 처리를 시작한다.
 2. 워커는 4.3절의 기준을 적용해 팀별 파일 목록을 만든다. 그 팀에 속할 수 있는 미배정 파일이 남아 있으면 해당 팀은 배정을 기다린다. 목록이 확정되면 실제로 받은 파일을 모두 담아 팀별 제출 버전을 만든다. 01·03만 접수된 것이 확인된 팀은 두 파일로 02 누락을 검사한다.

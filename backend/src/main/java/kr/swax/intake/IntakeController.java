@@ -55,7 +55,10 @@ class IntakeController {
 
     @GetMapping("/{batch}/files/{file}/original")
     ResponseEntity<byte[]> original(Principal staff, @PathVariable UUID batch, @PathVariable UUID file) {
-        IntakeStore.Original original = store.original(staff.getName(), batch, file);
+        return attachment(store.original(staff.getName(), batch, file));
+    }
+
+    static ResponseEntity<byte[]> attachment(IntakeStore.Original original) {
         ContentDisposition attachment = ContentDisposition.attachment().filename(original.name(), StandardCharsets.UTF_8).build();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachment.toString())

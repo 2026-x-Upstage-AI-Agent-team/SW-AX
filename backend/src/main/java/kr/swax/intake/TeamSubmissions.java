@@ -9,6 +9,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,7 @@ class TeamSubmissions {
     private record Batch(UUID event, int revision) {}
 
     private static final String LINKS = """
-            SELECT c.team_id, c.state, s.id, s.version, j.review_job_id, j.state AS job_state
+            SELECT c.team_id, c.state, s.id, s.version, j.review_job_id, j.state AS job_state, j.verdict
             FROM intake_team_confirmation c JOIN team_submission s ON s.id = c.submission_id
             LEFT JOIN review_job_status j ON j.submission_id = s.id WHERE c.batch_id = ?
             """;
@@ -156,7 +157,7 @@ class TeamSubmissions {
     Snapshot get(String login, UUID id) {
         return db.query("""
                 SELECT s.team_id, t.event_id, s.version, s.confirmed_by, s.confirmed_at,
-                       coalesce(c.state, 'superseded') AS state, j.review_job_id, j.state AS job_state
+                       coalesce(c.state, 'superseded') AS state, j.review_job_id, j.state AS job_state, j.verdict
                 FROM team_submission s JOIN award_team t ON t.id = s.team_id
                 JOIN event_staff a ON a.event_id = t.event_id
                 LEFT JOIN intake_team_confirmation c ON c.team_id = s.team_id AND c.submission_id = s.id
@@ -165,11 +166,13 @@ class TeamSubmissions {
                 WHERE s.id = ? AND a.login = ?
                 """, (rs, n) -> new Snapshot(id, rs.getObject("event_id", UUID.class), rs.getObject("team_id", UUID.class),
                 rs.getInt("version"), rs.getString("state"), rs.getString("confirmed_by"),
-                rs.getObject("confirmed_at", OffsetDateTime.class), originals(id), ReviewJobs.reference(rs)), id, login).stream().findFirst()
+                rs.getObject("confirmed_at", OffsetDateTime.class),
+                originals(id, (batch, item) -> "/api/intake-batches/" + batch + "/files/" + item + "/original"),
+                ReviewJobs.reference(rs)), id, login).stream().findFirst()
                 .orElseThrow(() -> ApiErrors.error(404, "팀 제출본을 찾을 수 없습니다."));
     }
 
-    private List<Original> originals(UUID submission) {
+    List<Original> originals(UUID submission, BiFunction<UUID, UUID, String> originalUrl) {
         return db.query("""
                 SELECT f.id, f.batch_id, sf.position, f.name, f.size_bytes, f.sha256
                 FROM team_submission_file sf JOIN intake_file f ON f.id = sf.file_id
@@ -178,7 +181,7 @@ class TeamSubmissions {
             UUID batch = rs.getObject("batch_id", UUID.class);
             UUID item = rs.getObject("id", UUID.class);
             return new Original(item, batch, rs.getInt("position"), rs.getString("name"), rs.getInt("size_bytes"),
-                    rs.getString("sha256"), "/api/intake-batches/" + batch + "/files/" + item + "/original");
+                    rs.getString("sha256"), originalUrl.apply(batch, item));
         }, submission);
     }
 

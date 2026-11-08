@@ -139,7 +139,7 @@ function Detail({ eventId }: { eventId: string }) {
   const teamIds = new Set((detail?.files ?? []).flatMap((file) => file.team ? [file.team] : []));
   for (const team of links.keys()) teamIds.add(team);
   const pending = detail?.files.some((file) => file.state === 'unassigned' || (file.team && !links.has(file.team)))
-    || detail?.teams?.some((link) => link.state === 'confirmed' && link.review_job?.state === 'queued');
+    || detail?.teams?.some(({ review_job }) => review_job?.state === 'queued' || review_job?.state === 'running');
   usePolling(Boolean(detail?.batch.event_id === eventId && !result.error && pending), result.reload, 3000);
   if (result.error || !detail) return <Notice error={result.error} onRetry={result.reload} />;
   const { batch, files } = detail;
@@ -186,6 +186,7 @@ function Detail({ eventId }: { eventId: string }) {
                   {job ? (
                     <div className="min-w-0 sm:text-right">
                       <StateBadge state={job.state} />
+                      {job.verdict && <p className="mt-1 text-sm font-semibold">{job.verdict}</p>}
                       <p className="mt-1 break-all font-mono text-xs text-subtle">작업 {job.review_job_id}</p>
                     </div>
                   ) : <span className="text-sm text-muted">작업 미등록</span>}

@@ -2,10 +2,12 @@
 import hashlib
 import json
 import os
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from threading import Barrier
 from urllib.parse import urlparse
 from uuid import uuid4
 from zipfile import ZipFile
@@ -15,6 +17,8 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = os.getenv("INTAKE_TEST_URL")
+WORKER = "/api/worker/review-jobs"
+requires_worker = unittest.skipUnless(os.getenv("AWARDS_REVIEW_WORKER_TOKEN"), "Set the test server's worker token.")
 
 def login(client, username, password):
     headers = {"Accept": "application/json", "X-CSRF-TOKEN": client.get("/api/auth/session").json()["csrf_token"]}
@@ -73,6 +77,32 @@ class PostgresIntakeTest(unittest.TestCase):
     def review_jobs(self, state=None):
         return self.http.get(f"/api/events/{self.event}/review-jobs",
                              params={} if state is None else {"state": state}).raise_for_status().json()
+
+    def worker(self):
+        client = httpx.Client(base_url=URL, timeout=30, trust_env=False,
+                              headers={"Authorization": "Bearer " + os.environ["AWARDS_REVIEW_WORKER_TOKEN"]})
+        self.addCleanup(client.close)
+        return client
+
+    def review_fixture(self, *groups):
+        teams = [self.team(self.event, group, "") for group in groups]
+        files = [(team, source) for team, group in zip(teams, groups) for source in self.sets[group]]
+        receipt = self.send([source for _, source in files]).raise_for_status().headers["location"]
+        items = self.http.get(receipt).raise_for_status().json()["files"]
+        for rev, ((team, _), item) in enumerate(zip(files, items, strict=True)):
+            self.decide(receipt, item["item_id"], "assign", rev, team=team).raise_for_status()
+        for team in teams:
+            self.confirm(receipt, team, len(items)).raise_for_status()
+        return receipt, teams
+
+    def race_claims(self):
+        gate = Barrier(2)
+        workers = [self.worker(), self.worker()]
+        def claim(index):
+            gate.wait(timeout=10)
+            return workers[index].post(WORKER + "/claim", json={"worker_id": f"worker-{index}", "event_id": self.event})
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            return list(pool.map(claim, (0, 1)))
 
     def test_all_official_originals_round_trip(self):
         files = [entry for group in sorted(self.sets) for entry in self.sets[group]]
@@ -404,6 +434,146 @@ class PostgresIntakeTest(unittest.TestCase):
         with httpx.Client(base_url=URL, trust_env=False) as anonymous:
             self.assertEqual(401, anonymous.get(detail_url).status_code)
             self.assertEqual(401, anonymous.get(listing).status_code)
+
+    @requires_worker
+    def test_one_worker_claim_and_idempotent_result(self):
+        receipt, (team,) = self.review_fixture("set04")
+        payload = {"worker_id": "staff", "event_id": self.event}
+        self.assertEqual(401, self.http.post(WORKER + "/claim", json=payload).status_code)
+        worker = self.worker()
+        self.assertEqual(401, worker.post(WORKER + "/claim", json=payload, headers={"Authorization": "Bearer wrong"}).status_code)
+        self.assertEqual(422, worker.post(WORKER + "/claim", json={"worker_id": " "}).status_code)
+        first, empty = sorted(self.race_claims(), key=lambda r: r.status_code)
+        self.assertEqual((200, 204), (first.status_code, empty.status_code))
+        claim = first.json()
+        task, = self.review_jobs("running")
+        self.assertEqual((team, task["review_job_id"], 1), (claim["team"], claim["review_job_id"], claim["attempt"]))
+        self.assertNotIn("claim_token", task)
+        self.assertEqual("running", self.http.get(receipt).json()["teams"][0]["review_job"]["state"])
+        url = WORKER + "/" + claim["review_job_id"]
+        token = {"X-Claim-Token": claim["claim_token"]}
+        for original, (name, content) in zip(claim["files"], self.sets["set04"], strict=True):
+            self.assertEqual(name, original["name"])
+            self.assertEqual(content, worker.get(original["original_url"], headers=token).raise_for_status().content)
+        self.assertEqual(404, worker.get(url + f"/files/{uuid4()}/original", headers=token).status_code)
+        self.assertEqual(401, worker.get(task["status_url"]).status_code)
+        studio_id = "test-" + uuid4().hex
+        result = {"state": "done", "studio_job_id": studio_id, "verdict": "재제출요청", "reason": "02 동의서 누락",
+                  "output": {"documents": ["01", "03"]}}
+        self.assertEqual(409, worker.put(url + "/result", json=result, headers={"X-Claim-Token": str(uuid4())}).status_code)
+        self.assertEqual(422, worker.put(url + "/result", json={**result, "verdict": "임의 값"}, headers=token).status_code)
+        renewed = worker.put(url + "/lease", json={"studio_job_id": studio_id}, headers=token).raise_for_status().json()
+        self.assertGreater(datetime.fromisoformat(renewed["lease_until"]), datetime.fromisoformat(claim["lease_until"]))
+        self.assertEqual(409, worker.put(url + "/lease", json={"studio_job_id": "changed"}, headers=token).status_code)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            codes = list(pool.map(lambda _: worker.put(url + "/result", json=result, headers=token).status_code, range(2)))
+        self.assertEqual([204, 204], codes)
+        stored = self.http.get(task["status_url"]).raise_for_status().json()
+        self.assertEqual(result, stored["result"])
+        self.assertEqual(studio_id, stored["studio_job_id"])
+        self.assertIsNotNone(datetime.fromisoformat(stored["finished_at"]).utcoffset())
+        self.assertEqual(409, worker.put(url + "/result", json={**result, "reason": "수정"}, headers=token).status_code)
+        self.assertEqual(409, worker.get(claim["files"][0]["original_url"], headers=token).status_code)
+        self.assertEqual(204, worker.post(WORKER + "/claim", json=payload).status_code)
+        self.assertEqual(stored, self.http.get(task["status_url"]).json())
+        self.assertEqual(404, self.peer.get(task["status_url"]).status_code)
+        summary, = self.review_jobs("done")
+        self.assertNotIn("result", summary)
+        current = self.http.get(receipt).json()["teams"][0]["review_job"]
+        self.assertEqual(("done", "재제출요청"), (current["state"], current["verdict"]))
+
+    @requires_worker
+    def test_two_workers_take_distinct_teams_and_failure_is_not_a_verdict(self):
+        receipt, teams = self.review_fixture("set01", "set02")
+        a, b = [r.raise_for_status().json() for r in self.race_claims()]
+        self.assertEqual(set(teams), {a["team"], b["team"]})
+        self.assertNotEqual(a["review_job_id"], b["review_job_id"])
+        worker = self.worker()
+        token_a, token_b = [{"X-Claim-Token": c["claim_token"]} for c in (a, b)]
+        self.assertEqual(409, worker.get(a["files"][0]["original_url"], headers=token_b).status_code)
+        url_a, url_b = [WORKER + "/" + c["review_job_id"] for c in (a, b)]
+        self.assertEqual(404, worker.get(url_a + "/files/" + b["files"][0]["item_id"] + "/original", headers=token_a).status_code)
+        run = {"studio_job_id": "test-" + uuid4().hex}
+        worker.put(url_a + "/lease", json=run, headers=token_a).raise_for_status()
+        self.assertEqual(409, worker.put(url_b + "/lease", json=run, headers=token_b).status_code)
+        failure = {"state": "failed", "reason": "검토용 변환 실패"}
+        worker.put(url_b + "/result", json=failure, headers=token_b).raise_for_status()
+        by_team = {t["team"]: t["review_job"] for t in self.http.get(receipt).json()["teams"]}
+        self.assertEqual(("running", "failed"), (by_team[a["team"]]["state"], by_team[b["team"]]["state"]))
+        self.assertNotIn("verdict", by_team[b["team"]])
+        failed, = self.review_jobs("failed")
+        self.assertEqual(failure["reason"], self.http.get(failed["status_url"]).json()["result"]["reason"])
+
+    @requires_worker
+    def test_hold_restore_and_new_version_fence_old_worker(self):
+        receipt, (team,) = self.review_fixture("set04")
+        worker = self.worker()
+        def claim():
+            return worker.post(WORKER + "/claim", json={"worker_id": "worker", "event_id": self.event})
+        first = claim().raise_for_status().json()
+        url = WORKER + "/" + first["review_job_id"]
+        old = {"X-Claim-Token": first["claim_token"]}
+        file = first["files"][0]["item_id"]
+        self.decide(receipt, file, "hold", 2).raise_for_status()
+        self.assertEqual(204, claim().status_code)
+        self.assertEqual(409, worker.put(url + "/lease", json={}, headers=old).status_code)
+        self.decide(receipt, file, "assign", 3, team=team).raise_for_status()
+        again = claim().raise_for_status().json()
+        self.assertEqual((first["review_job_id"], 2), (again["review_job_id"], again["attempt"]))
+        self.assertNotEqual(first["claim_token"], again["claim_token"])
+        failed = {"state": "failed", "reason": "이전 작업 응답"}
+        self.assertEqual(409, worker.put(url + "/result", json=failed, headers=old).status_code)
+        other = self.team(self.event, "재배정 팀", "")
+        self.decide(receipt, file, "assign", 4, team=other).raise_for_status()
+        self.assertEqual(409, worker.put(url + "/result", json=failed, headers={"X-Claim-Token": again["claim_token"]}).status_code)
+        current, = self.review_jobs("queued")
+        self.assertEqual((2, team), (current["version"], current["team"]))
+        self.assertEqual([first["review_job_id"]], [j["review_job_id"] for j in self.review_jobs("superseded")])
+
+    @requires_worker
+    def test_same_version_from_new_receipt_keeps_active_claim(self):
+        previous, (team,) = self.review_fixture("set04")
+        worker = self.worker()
+        payload = {"worker_id": "worker", "event_id": self.event}
+        held = worker.post(WORKER + "/claim", json=payload).raise_for_status().json()
+        files = list(reversed(self.sets["set04"]))
+        current = self.send(files).raise_for_status().headers["location"]
+        for rev, item in enumerate(self.http.get(current).json()["files"]):
+            self.decide(current, item["item_id"], "assign", rev, team=team).raise_for_status()
+        link = self.confirm(current, team, len(files)).raise_for_status().json()
+        self.assertEqual((held["submission_id"], "running"), (link["submission_id"], link["review_job"]["state"]))
+        self.assertEqual(204, worker.post(WORKER + "/claim", json=payload).status_code)
+        result = {"state": "done", "studio_job_id": "test-" + uuid4().hex, "verdict": "담당자확인", "reason": "원본 대조 필요"}
+        worker.put(WORKER + "/" + held["review_job_id"] + "/result", json=result,
+                   headers={"X-Claim-Token": held["claim_token"]}).raise_for_status()
+        for receipt, state in ((previous, "superseded"), (current, "confirmed")):
+            team_link, = self.http.get(receipt).json()["teams"]
+            self.assertEqual((state, "done", "담당자확인"), (team_link["state"], team_link["review_job"]["state"],
+                                                       team_link["review_job"]["verdict"]))
+
+    @requires_worker
+    @unittest.skipUnless(os.getenv("INTAKE_TEST_SHORT_LEASE"), "Run with a 5–20 second test lease.")
+    def test_expired_claim_resumes_same_studio_job(self):
+        self.review_fixture("set01")
+        worker = self.worker()
+        def claim(name):
+            return worker.post(WORKER + "/claim", json={"worker_id": name, "event_id": self.event})
+        first = claim("first").raise_for_status().json()
+        url = WORKER + "/" + first["review_job_id"]
+        old = {"X-Claim-Token": first["claim_token"]}
+        run = {"studio_job_id": "test-" + uuid4().hex}
+        worker.put(url + "/lease", headers=old, json=run).raise_for_status()
+        deadline = time.monotonic() + 23
+        while not self.review_jobs("queued") and time.monotonic() < deadline:
+            time.sleep(0.2)
+        self.assertEqual(409, worker.put(url + "/lease", headers=old, json={}).status_code)
+        second = claim("second").raise_for_status().json()
+        self.assertEqual((first["review_job_id"], run["studio_job_id"], 2),
+                         (second["review_job_id"], second["studio_job_id"], second["attempt"]))
+        result = {"state": "done", "verdict": "성공", "reason": "원본 확인 완료"}
+        self.assertEqual(409, worker.put(url + "/result", headers=old, json=result).status_code)
+        self.assertEqual(204, worker.put(url + "/result", headers={"X-Claim-Token": second["claim_token"]}, json=result).status_code)
+        self.assertEqual(204, claim("third").status_code)
 
     def test_submission_and_exclusion_enforce_event_scope(self):
         team = self.team(self.event, "접수 팀", "")

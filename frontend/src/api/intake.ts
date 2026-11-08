@@ -18,7 +18,12 @@ type BatchTeam = {
   team: string;
   state: 'confirmed' | 'blocked' | 'empty' | 'superseded';
   version: number | null;
-  review_job: { review_job_id: string; state: 'queued' | 'blocked' | 'superseded'; status_url: string } | null;
+  review_job: {
+    review_job_id: string;
+    state: 'queued' | 'running' | 'done' | 'failed' | 'blocked' | 'superseded';
+    status_url: string;
+    verdict?: string;
+  } | null;
 };
 
 export type BatchDetails = {

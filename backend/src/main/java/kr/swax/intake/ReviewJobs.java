@@ -7,28 +7,38 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 class ReviewJobs {
-    record Reference(UUID reviewJobId, String state, String statusUrl) {}
+    record Reference(UUID reviewJobId, String state, String statusUrl,
+                     @JsonInclude(JsonInclude.Include.NON_NULL) String verdict) {}
     record Job(UUID reviewJobId, String state, UUID eventId, UUID team, UUID submissionId, int version,
-               OffsetDateTime registeredAt, String submissionUrl, String statusUrl) {}
+               OffsetDateTime registeredAt, String submissionUrl, String statusUrl, String workerId,
+               String studioJobId, OffsetDateTime finishedAt, String verdict,
+               @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode result) {}
 
-    private static final String SELECT = """
-            SELECT j.review_job_id, j.state, j.event_id, j.team_id, j.submission_id, j.version, j.registered_at
-            FROM review_job_status j
-            """;
+    private static String select(boolean withResult) {
+        return """
+                SELECT j.review_job_id, j.state, j.event_id, j.team_id, j.submission_id, j.version, j.registered_at,
+                       j.worker_id, j.studio_job_id, j.finished_at, j.verdict,
+                """ + (withResult ? "j.result" : "NULL") + " AS result FROM review_job_status j ";
+    }
     private static final String ORDER = " ORDER BY j.registered_at, j.review_job_id";
-    private static final Set<String> STATES = Set.of("queued", "blocked", "superseded");
+    private static final Set<String> STATES = Set.of("queued", "running", "done", "failed", "blocked", "superseded");
     private final JdbcTemplate db;
     private final AwardCatalog catalog;
+    private final ObjectMapper mapper;
 
-    ReviewJobs(JdbcTemplate db, AwardCatalog catalog) {
+    ReviewJobs(JdbcTemplate db, AwardCatalog catalog, ObjectMapper mapper) {
         this.db = db;
         this.catalog = catalog;
+        this.mapper = mapper;
     }
 
     @Transactional
@@ -47,36 +57,40 @@ class ReviewJobs {
             throw ApiErrors.error(409, "현재 확정된 팀 제출본에만 판정 작업을 등록할 수 있습니다.");
         }
         db.update("INSERT INTO review_job (submission_id) VALUES (?) ON CONFLICT (submission_id) DO NOTHING", submission);
-        return db.queryForObject(SELECT + " WHERE j.submission_id = ?", ReviewJobs::job, submission);
+        return db.queryForObject(select(true) + " WHERE j.submission_id = ?", this::job, submission);
     }
 
     Job get(String login, UUID id) {
-        return db.query(SELECT + """
+        return db.query(select(true) + """
                 JOIN event_staff a ON a.event_id = j.event_id WHERE a.login = ? AND j.review_job_id = ?
-                """, ReviewJobs::job, login, id).stream().findFirst()
+                """, this::job, login, id).stream().findFirst()
                 .orElseThrow(() -> ApiErrors.error(404, "판정 작업을 찾을 수 없습니다."));
     }
 
     @Transactional
     List<Job> list(String login, UUID event, String state) {
         catalog.requireEvent(login, event);
-        String sql = SELECT + " WHERE j.event_id = ?";
-        if (state == null) return db.query(sql + ORDER, ReviewJobs::job, event);
+        String sql = select(false) + " WHERE j.event_id = ?";
+        if (state == null) return db.query(sql + ORDER, this::job, event);
         if (!STATES.contains(state)) throw ApiErrors.error(422, "판정 작업 상태를 확인해 주세요.");
-        return db.query(sql + " AND j.state = ?" + ORDER, ReviewJobs::job, event, state);
+        return db.query(sql + " AND j.state = ?" + ORDER, this::job, event, state);
     }
 
     static Reference reference(ResultSet rs) throws SQLException {
         UUID id = rs.getObject("review_job_id", UUID.class);
-        return id == null ? null : new Reference(id, rs.getString("job_state"), url(id));
+        if (id == null) return null;
+        String state = rs.getString("job_state");
+        return new Reference(id, state, url(id), "done".equals(state) ? rs.getString("verdict") : null);
     }
 
-    private static Job job(ResultSet rs, int row) throws SQLException {
+    private Job job(ResultSet rs, int row) throws SQLException {
         UUID id = rs.getObject("review_job_id", UUID.class);
         UUID submission = rs.getObject("submission_id", UUID.class);
+        String result = rs.getString("result");
         return new Job(id, rs.getString("state"), rs.getObject("event_id", UUID.class), rs.getObject("team_id", UUID.class),
                 submission, rs.getInt("version"), rs.getObject("registered_at", OffsetDateTime.class),
-                "/api/submissions/" + submission, url(id));
+                "/api/submissions/" + submission, url(id), rs.getString("worker_id"), rs.getString("studio_job_id"),
+                rs.getObject("finished_at", OffsetDateTime.class), rs.getString("verdict"), result == null ? null : mapper.readTree(result));
     }
 
     private static String url(UUID id) { return "/api/review-jobs/" + id; }
