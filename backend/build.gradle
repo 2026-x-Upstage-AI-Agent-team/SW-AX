@@ -20,9 +20,15 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'net.java.dev.jna:jna-platform:5.17.0'
+    implementation 'org.eclipse.angus:angus-mail'
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
+
+tasks.named('test') { useJUnitPlatform() }
 
 tasks.register('staffAdmin', JavaExec) {
     classpath = files(sourceSets.main.output.classesDirs, sourceSets.main.resources.srcDirs) + configurations.runtimeClasspath

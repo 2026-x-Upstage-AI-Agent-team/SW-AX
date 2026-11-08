@@ -28,7 +28,7 @@ class GmailNotifications(unittest.TestCase):
         folder = Path(scope.enter_context(tempfile.TemporaryDirectory()))
         for module in (db, web, worker):
             scope.enter_context(patch.object(module, "DATA", folder))
-        for module in (web, worker):
+        for module in (db, web, worker):
             scope.enter_context(patch.object(module, "settings", return_value={"MAIL_MODE": "gmail"}))
         smtp = scope.enter_context(patch.object(mailing.smtplib, "SMTP_SSL"))
         self.smtp = smtp.return_value
