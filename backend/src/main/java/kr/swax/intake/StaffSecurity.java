@@ -42,10 +42,12 @@ class StaffSecurity {
         http.securityMatcher(new OrRequestMatcher(staffApi, paths.matcher("/"), paths.matcher("/index.html"),
                         paths.matcher("/login"), paths.matcher("/logout")))
                 .authorizeHttpRequests(auth -> auth.requestMatchers("/api/auth/session", "/login", "/logout").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, GmailController.CALLBACK).permitAll()
                         .anyRequest().authenticated())
                 // Browsers set this forbidden header themselves. Other clients must supply the session CSRF token.
                 .csrf(csrf -> csrf.ignoringRequestMatchers(request -> staffApi.matches(request)
                         && "same-origin".equals(request.getHeader("Sec-Fetch-Site"))))
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .requestCache(cache -> cache.disable())
                 .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(unauthorized, api)
                         .defaultAuthenticationEntryPointFor(browserLogin, new NegatedRequestMatcher(api)))

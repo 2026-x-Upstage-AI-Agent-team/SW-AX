@@ -1,0 +1,3 @@
+-r ../service/requirements.txt
+psycopg[binary]==3.3.8
+ziglang==0.14.1; sys_platform == "win32"

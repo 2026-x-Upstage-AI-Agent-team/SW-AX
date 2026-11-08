@@ -57,7 +57,11 @@ class FileAssignments {
                 || exclude.stream().anyMatch(Objects::isNull)) {
             throw ApiErrors.error(422, "배정에는 대상 팀을, 보류에는 제외할 팀 목록을 지정해 주세요.");
         }
-        if (command.team() != null) catalog.requireTeam(current.event(), command.team());
+        if (command.team() != null) {
+            catalog.requireTeam(current.event(), command.team());
+            if (db.queryForObject("SELECT EXISTS(SELECT FROM original_analysis WHERE file_id=? AND (failed OR signals->>'mixed'='true'))",
+                    Boolean.class,file)) throw ApiErrors.error(409, "손상 또는 혼합 파일은 원접수와 대조해 분리된 원본으로 교체하세요.");
+        }
         List<UUID> excluded = exclude.stream().distinct().sorted(Comparator.comparing(UUID::toString)).toList();
         for (UUID team : excluded) catalog.requireTeam(current.event(), team);
         Change previous = db.query(CHANGES + " ORDER BY revision DESC LIMIT 1", FileAssignments::change, file)
@@ -81,6 +85,7 @@ class FileAssignments {
                 excluded.stream().map(team -> new Object[] {file, next, team}).toList());
         db.update("UPDATE intake_batch SET assignment_revision = ? WHERE id = ?", next, batch);
         submissions.refresh(login, batch, before, command.team());
+        submissions.confirmPrepared(batch);
         return new Saved(true, next);
     }
 

@@ -15,7 +15,7 @@ import tools.jackson.databind.node.ObjectNode;
 
 @Service
 class ReviewWorkerJobs {
-    record ClaimRequest(String workerId, UUID eventId) {}
+    record ClaimRequest(String workerId, UUID eventId, UUID reviewJobId) {}
     record Claim(UUID reviewJobId, UUID eventId, UUID team, UUID submissionId, int version, int attempt,
                  UUID claimToken, OffsetDateTime leaseUntil, String studioJobId, List<TeamSubmissions.Original> files) {}
     record Checkpoint(String studioJobId) {}
@@ -61,6 +61,7 @@ class ReviewWorkerJobs {
                     JOIN intake_team_confirmation c ON c.submission_id = s.id AND c.state = 'confirmed'
                     WHERE (j.work_state = 'queued' OR (j.work_state = 'running' AND j.lease_until <= statement_timestamp()))
                       AND (?::uuid IS NULL OR t.event_id = ?)
+                      AND (?::uuid IS NULL OR j.id = ?)
                     ORDER BY j.registered_at, j.id LIMIT 1 FOR UPDATE OF c, j SKIP LOCKED
                 )
                 UPDATE review_job j SET work_state = 'running', worker_id = ?, claim_token = gen_random_uuid(),
@@ -75,7 +76,7 @@ class ReviewWorkerJobs {
                     submission, rs.getInt("version"), rs.getInt("claim_attempt"), rs.getObject("claim_token", UUID.class),
                     rs.getObject("lease_until", OffsetDateTime.class), rs.getString("studio_job_id"),
                     submissions.originals(submission, (batch, file) -> ReviewWorkerController.PATH + "/" + id + "/files/" + file + "/original"));
-        }, request.eventId(), request.eventId(), request.workerId().strip(), leaseSeconds).stream().findFirst();
+        }, request.eventId(), request.eventId(), request.reviewJobId(), request.reviewJobId(), request.workerId().strip(), leaseSeconds).stream().findFirst();
     }
 
     @Transactional

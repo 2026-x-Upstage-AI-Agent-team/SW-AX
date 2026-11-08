@@ -5,6 +5,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.*;
@@ -30,10 +31,17 @@ class IntakeController {
             Principal staff,
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
             @RequestParam UUID event, @RequestParam(required = false) UUID target, @RequestParam String manifest,
+            @RequestParam(required = false) UUID base, @RequestParam(defaultValue = "[]") String removed,
             @RequestParam(required = false) List<MultipartFile> files) throws IOException {
-        IntakeUpload upload = IntakeUpload.read(event, target, key, manifest, files, mapper);
-        IntakeStore.Receipt receipt = store.receive(staff.getName(), key, event, target, upload);
-        return ResponseEntity.accepted().location(URI.create(receipt.statusUrl())).body(receipt);
+        List<UUID> replaced;
+        try { replaced = List.of(mapper.readValue(removed, UUID[].class)); }
+        catch (RuntimeException ex) { throw ApiErrors.error(422, "교체할 원본 목록을 확인하세요."); }
+        if (replaced.size() > 100 || Set.copyOf(replaced).size() != replaced.size() || (base == null && !replaced.isEmpty())) {
+            throw ApiErrors.error(422, "이전 제출본에서 교체할 원본을 한 번씩 지정하세요.");
+        }
+        IntakeUpload upload = IntakeUpload.read(event, target, key, manifest, files, mapper, base, replaced);
+        IntakeStore.Receipt receipt = store.receive(staff.getName(), key, event, target, upload, base, replaced);
+        return ResponseEntity.status(receipt.status().equals("done") ? 200 : 202).location(URI.create(receipt.statusUrl())).body(receipt);
     }
 
     @GetMapping

@@ -20,7 +20,11 @@ class IntakeStore {
     record Summary(UUID batchId, UUID eventId, String eventName, UUID targetTeamId, String teamName,
                    String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status, int revision) {}
     record Item(UUID itemId, int position, String name, int size, String sha256, UUID team, String state, String reason,
-                List<UUID> excluded) {}
+                List<UUID> excluded, List<UUID> candidates) {
+        boolean holds(UUID owner) {
+            return state.equals("unassigned") && !excluded.contains(owner) && (candidates.isEmpty() || candidates.contains(owner));
+        }
+    }
     record Details(Summary batch, List<Item> files, int revision, List<TeamSubmissions.Link> teams) {}
     record Original(String name, byte[] bytes) {}
     private record Previous(UUID id, String fingerprint) {}
@@ -44,21 +48,38 @@ class IntakeStore {
     }
 
     @Transactional
-    Receipt receive(String login, String key, UUID event, UUID target, IntakeUpload upload) {
+    Receipt receive(String login, String key, UUID event, UUID target, IntakeUpload upload, UUID base, List<UUID> replaced) {
         catalog.requireEvent(login, event);
         if (target != null) catalog.requireTeam(event, target);
         UUID id = UUID.randomUUID();
         int inserted = db.update("""
-                INSERT INTO intake_batch(id, event_id, target_team_id, request_key, fingerprint)
-                VALUES (?, ?, ?, ?, ?) ON CONFLICT (request_key) DO NOTHING
-                """, id, event, target, key, upload.fingerprint());
+                INSERT INTO intake_batch(id, event_id, target_team_id, request_key, fingerprint,uploaded_by)
+                VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (request_key) DO NOTHING
+                """, id, event, target, key, upload.fingerprint(), login);
         if (inserted == 0) {
             Previous previous = db.queryForObject("SELECT id, fingerprint FROM intake_batch WHERE request_key = ?",
                     (rs, n) -> new Previous(rs.getObject("id", UUID.class), rs.getString("fingerprint")), key);
             if (!previous.fingerprint().equals(upload.fingerprint())) {
                 throw ApiErrors.error(409, "같은 요청 키로 다른 접수 내용이 전송되었습니다.");
             }
-            return receipt(previous.id());
+            boolean done = db.queryForObject("""
+                    SELECT EXISTS(SELECT FROM intake_preparation WHERE batch_id=? AND state='prepared')
+                       AND EXISTS(SELECT FROM intake_team_confirmation WHERE batch_id=?)
+                       AND NOT EXISTS(SELECT FROM intake_team_confirmation c LEFT JOIN ops_submission s ON s.id=c.submission_id
+                           WHERE c.batch_id=? AND (c.state<>'confirmed' OR s.state NOT IN ('done','failed')))
+                       AND NOT EXISTS(SELECT FROM intake_file_state WHERE batch_id=? AND state='unassigned')
+                    """, Boolean.class, previous.id(),previous.id(),previous.id(),previous.id());
+            return done ? new Receipt(previous.id(),"done",receipt(previous.id()).statusUrl()) : receipt(previous.id());
+        }
+        if (base != null) {
+            if (target == null || db.queryForList("""
+                    SELECT t.id FROM award_team t JOIN intake_team_confirmation c ON c.team_id=t.id
+                    WHERE t.event_id=? AND t.id=? AND c.submission_id=? AND c.state='confirmed' FOR NO KEY UPDATE OF t
+                    """, UUID.class,event,target,base).isEmpty()) throw ApiErrors.error(409,"같은 대회 팀의 현재 확정본에서 보완 접수하세요.");
+            List<UUID> originals=db.queryForList("SELECT file_id FROM team_submission_file WHERE submission_id=?",UUID.class,base);
+            if (!originals.containsAll(replaced)) throw ApiErrors.error(422,"교체할 파일이 이전 제출본에 없습니다.");
+            db.update("UPDATE intake_batch SET base_submission=?, replaced=?::uuid[] WHERE id=?",base,
+                    "{"+String.join(",",replaced.stream().map(UUID::toString).toList())+"}",id);
         }
         int position = 0;
         for (IntakeUpload.Entry file : upload.entries()) {
@@ -80,6 +101,7 @@ class IntakeStore {
                 throw new UncheckedIOException(ex);
             }
         }
+        db.update("INSERT INTO intake_preparation(batch_id) VALUES (?)",id);
         return receipt(id);
     }
 
@@ -98,11 +120,12 @@ class IntakeStore {
 
     List<Item> files(UUID batch) {
         return db.query("""
-                SELECT id, position, name, size_bytes, sha256, team_id, state, reason, excluded
-                FROM intake_file_state WHERE batch_id = ? ORDER BY position
+                SELECT f.id, position, name, size_bytes, sha256, team_id, state, coalesce(f.reason,a.reason) AS reason, excluded,
+                       coalesce(a.candidates,'{}'::uuid[]) AS candidates
+                FROM intake_file_state f LEFT JOIN original_analysis a ON a.file_id=f.id WHERE batch_id = ? ORDER BY position
                 """, (rs, n) -> new Item(rs.getObject("id", UUID.class), rs.getInt("position"), rs.getString("name"),
                 rs.getInt("size_bytes"), rs.getString("sha256"), rs.getObject("team_id", UUID.class),
-                rs.getString("state"), rs.getString("reason"), FileAssignments.excluded(rs)), batch);
+                rs.getString("state"), rs.getString("reason"), FileAssignments.excluded(rs), List.of((UUID[])rs.getArray("candidates").getArray())), batch);
     }
 
     Original original(String login, UUID batch, UUID file) {

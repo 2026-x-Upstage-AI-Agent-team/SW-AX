@@ -22,7 +22,7 @@ record IntakeUpload(String fingerprint, List<Entry> entries) {
     static final int MIB = 1024 * 1024;
 
     static IntakeUpload read(UUID event, UUID target, String key, String manifest, List<MultipartFile> files,
-                             ObjectMapper mapper) throws IOException {
+                             ObjectMapper mapper, UUID base, List<UUID> replaced) throws IOException {
         if (key == null || !key.matches("[A-Za-z0-9_-]{8,100}")) {
             throw ApiErrors.error(422, "유효한 접수 요청 키가 필요합니다.");
         }
@@ -38,6 +38,10 @@ record IntakeUpload(String fingerprint, List<Entry> entries) {
         MessageDigest batch = sha256();
         field(batch, event.toString());
         field(batch, target == null ? "" : target.toString());
+        if (base != null) {
+            field(batch, base.toString());
+            replaced.stream().sorted().forEach(id -> field(batch, id.toString()));
+        }
         List<Entry> entries = new ArrayList<>();
         long total = 0;
         for (int i = 0; i < files.size(); i++) {

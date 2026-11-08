@@ -14,8 +14,13 @@ class ReviewWorkerController {
     static final String PATH = "/api/worker/review-jobs";
     private static final String TOKEN = "X-Claim-Token";
     private final ReviewWorkerJobs jobs;
+    private final TeamSubmissions submissions;
 
-    ReviewWorkerController(ReviewWorkerJobs jobs) { this.jobs = jobs; }
+    ReviewWorkerController(ReviewWorkerJobs jobs, TeamSubmissions submissions) { this.jobs = jobs; this.submissions = submissions; }
+
+    @PutMapping("/preparations/{id}/confirm")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void confirmPrepared(@PathVariable UUID id) { submissions.confirmPrepared(id); }
 
     @PostMapping("/claim")
     ResponseEntity<ReviewWorkerJobs.Claim> claim(@RequestBody ReviewWorkerJobs.ClaimRequest request) {

@@ -15,6 +15,8 @@ KINDS = {"01": "지급확인서", "02": "개인정보 동의서", "03": "신분�
 
 
 def source(f):
+    if "_source" in f:
+        return Path(f["_source"])
     return DATA / "files" / f["batch"] / (f["id"] + f["ext"])
 
 
@@ -58,12 +60,12 @@ def word(text, target):
     return bool(target and re.search(r"(?<![가-힣A-Za-z0-9])" + re.escape(target) + r"(?![가-힣A-Za-z0-9])", text, re.I))
 
 
-def read_signals(f):
+def read_signals(f, renderer=None):
     pdf = preview(f)
     if not pdf.is_file():
         draft = pdf.with_suffix(".working.pdf")
         try:
-            convert(source(f), draft)
+            (renderer or convert)(source(f), draft)
             draft.replace(pdf)
         finally:
             draft.unlink(missing_ok=True)
@@ -120,7 +122,8 @@ def match_file(f, sig, teams, target):
     if f["kind"] == "00":
         return "outside", set(), "00 지급내역서는 출력 양식입니다."
     named = {t["id"] for t in teams if word(f["name"], t["name"]) or word(sig["body"], t["name"])}
-    matched, possible = set(), set(named)
+    partial_names = {t["id"] for t in teams if t["name"] and t["name"].casefold() in f["name"].casefold()}
+    matched, possible = set(), named | partial_names
     reason = "한 팀으로 확정할 소속 근거가 부족합니다."
     if f["kind"] == "01" and sig["apps"]:
         app = sig["apps"][0]
@@ -130,17 +133,23 @@ def match_file(f, sig, teams, target):
         people = sig["consent"]
         names = Counter(p["name"] for p in people)
         counts = Counter(m["name"] for t in teams for m in t["roster"])
+        exclusive = set()
         for team in teams:
             roster = team["roster"]
             in_team = {p["name"] for p in roster}
             if names.keys() & in_team:
                 possible.add(team["id"])
+                if any(counts[n] == 1 for n in names.keys() & in_team):
+                    exclusive.add(team["id"])
             complete = len(names) >= 2 and names == Counter(m["name"] for m in roster) and all(counts[n] == 1 for n in names)
             pairs = {(m["name"], compact(m["major"])) for m in roster}
             partial = len(names) >= 2 and all((m["name"], compact(m["major"])) in pairs for m in people)
             single = len(people) == 1 and names.keys() <= in_team and team["id"] in named
             if complete or partial or single:
                 matched.add(team["id"])
+        if len(exclusive) > 1:
+            sig["mixed"] = True
+            return None, possible, "서로 다른 팀의 고유 작성자가 한 동의서에 있습니다. 팀별 원본으로 나눠 주세요."
         reason = f"동의서 {sig['page']}쪽 작성자 {sum(names.values())}명의 성명·명단을 대조했습니다."
     elif f["kind"] == "03":
         # Look before bank evidence so that the account holder alone cannot identify the ID holder.

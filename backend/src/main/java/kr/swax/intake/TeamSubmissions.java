@@ -81,11 +81,23 @@ class TeamSubmissions {
 
     private Link reconcile(String login, UUID batch, UUID team, Link previous, List<IntakeStore.Item> files,
                            boolean explicit) {
-        boolean blocked = files.stream().anyMatch(f -> f.state().equals("unassigned") && !f.excluded().contains(team));
-        List<IntakeStore.Item> selected = files.stream().filter(f -> team.equals(f.team())).toList();
+        boolean blocked = files.stream().anyMatch(f -> f.holds(team));
+        List<IntakeStore.Item> selected = new ArrayList<>(db.query("""
+                SELECT f.id,f.name,f.size_bytes,f.sha256,sf.position FROM intake_batch b
+                JOIN team_submission_file sf ON sf.submission_id=b.base_submission JOIN intake_file f ON f.id=sf.file_id
+                WHERE b.id=? AND b.target_team_id=? AND f.id<>ALL(b.replaced) ORDER BY sf.position
+                """, (rs,n) -> new IntakeStore.Item(rs.getObject("id",UUID.class),rs.getInt("position"),rs.getString("name"),
+                rs.getInt("size_bytes"),rs.getString("sha256"),team,"assigned","",List.of(),List.of()),batch,team));
+        selected.addAll(files.stream().filter(f -> team.equals(f.team())).toList());
+        if (previous == null && db.queryForObject("""
+                SELECT EXISTS(SELECT FROM intake_batch b WHERE b.id=? AND b.target_team_id=? AND b.base_submission IS NOT NULL
+                    AND NOT EXISTS(SELECT FROM intake_team_confirmation c WHERE c.team_id=? AND c.state='confirmed'
+                    AND c.submission_id=b.base_submission))
+                """,Boolean.class,batch,team,team)) throw newerReceipt();
         if (blocked || selected.isEmpty()) {
             if (explicit) throw ApiErrors.error(409, blocked ? "이 팀에 속할 수 있는 미배정 원본이 남아 있습니다."
                     : "이 팀에 배정된 원본이 없습니다.");
+            if (previous == null) return null;
             String state = blocked ? "blocked" : "empty";
             if (!state.equals(previous.state())) {
                 db.update("UPDATE intake_team_confirmation SET state = ? WHERE batch_id = ? AND team_id = ?",
@@ -137,6 +149,35 @@ class TeamSubmissions {
 
     static List<Link> links(JdbcTemplate db, UUID batch) {
         return db.query(LINKS + " ORDER BY c.team_id", TeamSubmissions::link, batch);
+    }
+
+    @Transactional
+    void confirmPrepared(UUID batch) {
+        var phases=db.queryForList("""
+                SELECT p.state FROM intake_preparation p JOIN intake_batch b ON b.id=p.batch_id
+                WHERE b.id=? FOR UPDATE OF b,p
+                """,String.class,batch);
+        if (phases.isEmpty() || phases.getFirst().equals("pending")) return;
+        List<IntakeStore.Item> files=intake.files(batch);
+        var teams=db.queryForList("""
+                SELECT t.id FROM award_team t WHERE t.id IN (SELECT team_id FROM intake_file_state WHERE batch_id=?
+                    UNION SELECT target_team_id FROM intake_batch WHERE id=? AND base_submission IS NOT NULL
+                      UNION SELECT team_id FROM intake_team_confirmation WHERE batch_id=?)
+                ORDER BY t.id FOR NO KEY UPDATE
+                """,UUID.class,batch,batch,batch);
+        for (UUID team : teams) {
+            Link previous=receiptLink(batch,team);
+            if (previous==null && files.stream().anyMatch(f -> f.holds(team))) continue;
+            if (previous!=null && previous.state().equals("superseded")) continue;
+            // An older pending batch cannot take ownership back from a more recent receipt.
+            if (db.queryForObject("""
+                    SELECT EXISTS(SELECT FROM intake_team_confirmation c JOIN intake_batch current ON current.id=c.batch_id
+                        JOIN intake_batch original ON original.id=? WHERE c.team_id=? AND c.state<>'superseded'
+                        AND current.created_at>original.created_at)
+                    """,Boolean.class,batch,team)) continue;
+            reconcile("@workflow",batch,team,previous,files,false);
+        }
+        db.update("UPDATE intake_preparation SET state='prepared' WHERE batch_id=?",batch);
     }
 
     private Link receiptLink(UUID batch, UUID team) {
