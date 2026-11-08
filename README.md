@@ -2,10 +2,13 @@
 
 유잇 팀의 SW중심대학 사업단 시상금 증빙 자동화 프로젝트입니다. 사업단 담당자가 접수한 신청서·동의서·대표 증빙을 팀별로 대조하고, 확인된 정보로 지급내역서와 증빙을 담은 한글 보고서 및 PDF를 작성하는 과정을 다룹니다.
 
+운영판은 **React**로 담당자 화면을, **Spring Boot**로 접수·검토·승인 API를 구현하기로 했습니다. 문서 분류·추출·판정은 Upstage Studio가 맡습니다. 현재 팀 작업 폴더에서 실행하는 Windows 시연판은 HTML·CSS·JavaScript, FastAPI, SQLite로 구성되어 있으며, 공식 두 팀의 서류 접수부터 HWPX·PDF 다운로드까지 검증했습니다.
+
 | 문서 | 내용 |
 |---|---|
 | [프로젝트 기획서](PROJECT_PLAN.md) | 학교 담당자 인터뷰에서 확인한 업무, 팀별 판정 기준, 보고서 양식, 시연 범위와 검증 결과 |
-| [서비스 구현계획서](docs/IMPLEMENTATION_PLAN.md) | 여러 팀의 파일 접수·배정, 처리 대기열, 오류 복구와 단계별 인수 시험 |
+| [서비스 구현계획서](docs/IMPLEMENTATION_PLAN.md) | React·Spring Boot 전환 범위, 파일 접수·팀 배정, 오류 복구와 인수 기준 |
+| [Windows 시연판 실행 안내](docs/LOCAL_SERVICE.md) | 팀 작업 폴더에서 현재 시연판을 실행하고 검토·편철 결과를 확인하는 절차 |
 | [Studio 구성 프롬프트](docs/STUDIO_BUILD_PROMPT.txt) | 문서 분류·추출·대조와 결과 출력을 위한 워크플로우 구성안 |
 | [미션 2 유형표](docs/유잇_미션2_유형표.xlsx) | set01~set10의 시험 목적과 기대 결과 |
 | [미션 2 정답 JSON](output/json/유잇_미션2_answer.json) | 팀별 기대 판정과 그 근거 |
