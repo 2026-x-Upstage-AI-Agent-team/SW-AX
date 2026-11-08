@@ -20,8 +20,18 @@ class ReviewWorkerAccess {
     @Bean
     @Order(1)
     SecurityFilterChain reviewWorkerApi(HttpSecurity http, @Value("${awards.review.worker-token}") String token) throws Exception {
+        return bearer(http, ReviewWorkerController.PATH, token);
+    }
+
+    @Bean
+    @Order(2)
+    SecurityFilterChain outputWorkerApi(HttpSecurity http, @Value("${awards.output.worker-token}") String token) throws Exception {
+        return bearer(http, OutputJobs.PATH, token);
+    }
+
+    private SecurityFilterChain bearer(HttpSecurity http, String path, String token) throws Exception {
         byte[] expected = token.getBytes(StandardCharsets.UTF_8);
-        http.securityMatcher(ReviewWorkerController.PATH + "/**")
+        http.securityMatcher(path + "/**")
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.disable())
                 .requestCache(cache -> cache.disable())

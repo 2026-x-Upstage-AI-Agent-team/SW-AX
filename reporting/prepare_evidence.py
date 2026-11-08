@@ -6,7 +6,10 @@ from zipfile import ZipFile
 
 from lxml import etree as ET
 
-from fill_award_form import HP
+if __package__:
+    from .fill_award_form import HP
+else:
+    from fill_award_form import HP
 
 
 def empty_running_text(ctrl, kind, side, control_id):

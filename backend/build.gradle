@@ -13,7 +13,10 @@ java {
 
 repositories { mavenCentral() }
 
+configurations { reportConverter }
+
 dependencies {
+    reportConverter 'io.github.spah1879:hwp2hwpx:2026.8.31-jdk11'
     implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
@@ -59,4 +62,9 @@ def buildFrontend = tasks.register('buildFrontend', Exec) {
 tasks.named('processResources') {
     dependsOn buildFrontend
     from("${frontend}/dist") { into 'static' }
+}
+
+tasks.register('prepareReportConverter', Sync) {
+    from configurations.reportConverter
+    into layout.buildDirectory.dir('report-converter')
 }
