@@ -76,7 +76,7 @@ record IntakeUpload(String fingerprint, List<Entry> entries) {
         digest.update((byte) 0);
     }
 
-    private static MessageDigest sha256() {
+    static MessageDigest sha256() {
         try { return MessageDigest.getInstance("SHA-256"); }
         catch (NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
     }

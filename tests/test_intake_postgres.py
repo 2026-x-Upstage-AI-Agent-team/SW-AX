@@ -63,6 +63,13 @@ class PostgresIntakeTest(unittest.TestCase):
     def team(self, event, name, rep):
         return self.http.post(f"/api/events/{event}/teams", json={"name": name, "rep": rep}).raise_for_status().json()["id"]
 
+    def decide(self, receipt, item, action, revision, **fields):
+        return self.http.put(f"{receipt}/files/{item}/assignment",
+                             json={"action": action, "revision": revision, "reason": "원본 목록 대조", **fields})
+
+    def confirm(self, receipt, team, revision, client=None):
+        return (client or self.http).put(f"{receipt}/teams/{team}/submission", json={"revision": revision})
+
     def test_all_official_originals_round_trip(self):
         files = [entry for group in sorted(self.sets) for entry in self.sets[group]]
         self.assertEqual((10, 29), (len(self.sets), len(files)))
@@ -214,6 +221,151 @@ class PostgresIntakeTest(unittest.TestCase):
         winner = teams[[r.status_code for r in outcomes].index(200)]
         changes = self.http.get(url + "/history").raise_for_status().json()
         self.assertEqual([(None, winner, 1)], [(c["before_team_id"], c["after_team_id"], c["revision"]) for c in changes])
+
+    def test_exclusion_releases_only_selected_teams_and_outside_releases_the_rest(self):
+        a, b = [self.team(self.event, name, "") for name in ("Nextify", "AutoAI")]
+        receipt = self.send(self.sets["set01"]).raise_for_status().headers["location"]
+        first, second, pending = [f["item_id"] for f in self.http.get(receipt).json()["files"]]
+        self.decide(receipt, first, "assign", 0, team=a).raise_for_status()
+        self.decide(receipt, second, "assign", 1, team=b).raise_for_status()
+        for team in (a, b):
+            self.assertEqual(409, self.confirm(receipt, team, 2).status_code)
+        self.assertEqual([], self.http.get(receipt).json()["teams"])
+        for _ in range(2):
+            self.assertEqual(3, self.decide(receipt, pending, "hold", 2, exclude=[a, a]).raise_for_status().json()["revision"])
+        original = self.http.get(receipt).json()["files"][2]
+        self.assertEqual(("unassigned", None, [a]), (original["state"], original["team"], original["excluded"]))
+        self.assertEqual(409, self.confirm(receipt, b, 3).status_code)
+        link_a = self.confirm(receipt, a, 3).raise_for_status().json()
+        for _ in range(2):
+            self.assertEqual(4, self.decide(receipt, pending, "outside", 3).raise_for_status().json()["revision"])
+        link_b = self.confirm(receipt, b, 4).raise_for_status().json()
+        self.assertEqual(1, link_b["version"])
+        changes = self.http.get(f"{receipt}/files/{pending}/assignment/history").raise_for_status().json()
+        self.assertEqual([("unassigned", [a]), ("outside", [])], [(h["state"], h["excluded"]) for h in changes])
+        self.assertEqual(link_a, self.confirm(receipt, a, 4).raise_for_status().json())
+
+        self.decide(receipt, pending, "hold", 4, exclude=[b]).raise_for_status()
+        links = {s["team"]: s for s in self.http.get(receipt).json()["teams"]}
+        self.assertEqual(("blocked", None), (links[a]["state"], links[a]["submission_id"]))
+        self.assertEqual(link_b, links[b])
+        self.assertEqual("blocked", self.http.get(link_a["status_url"]).json()["state"])
+        self.decide(receipt, pending, "outside", 5).raise_for_status()
+        self.assertEqual(link_a, self.confirm(receipt, a, 6).raise_for_status().json())
+        self.decide(receipt, first, "outside", 6).raise_for_status()
+        self.assertEqual(409, self.confirm(receipt, a, 7).status_code)
+        self.assertEqual("empty", self.http.get(link_a["status_url"]).json()["state"])
+        self.decide(receipt, first, "assign", 7, team=a).raise_for_status()
+        self.assertEqual(link_a, self.confirm(receipt, a, 8).raise_for_status().json())
+
+    def test_reassignment_revises_only_the_two_changed_snapshots(self):
+        teams = [self.team(self.event, name, "") for name in ("Nextify", "AutoAI", "3팀")]
+        inputs = self.sets["set01"] + self.sets["set02"] + self.sets["set04"]
+        receipt = self.send(inputs).raise_for_status().headers["location"]
+        files = self.http.get(receipt).raise_for_status().json()["files"]
+        owners = [teams[0]] * 3 + [teams[1]] * 3 + [teams[2]] * 2
+        for revision, (item, team) in enumerate(zip(files, owners, strict=True)):
+            self.decide(receipt, item["item_id"], "assign", revision, team=team).raise_for_status()
+        before = [self.confirm(receipt, team, 8).raise_for_status().json() for team in teams]
+        self.assertEqual([1, 1, 1], [link["version"] for link in before])
+        snapshots = [self.http.get(link["status_url"]).raise_for_status().json() for link in before]
+        self.assertEqual([3, 3, 2], [len(sub["files"]) for sub in snapshots])
+        for i, team in enumerate(teams):
+            self.assertEqual(before[i], self.confirm(receipt, team, 8).raise_for_status().json())
+        for _ in range(2):
+            self.decide(receipt, files[2]["item_id"], "assign", 8, team=teams[1]).raise_for_status()
+        after = {s["team"]: s for s in self.http.get(receipt).raise_for_status().json()["teams"]}
+        self.assertEqual([2, 2, 1], [after[t]["version"] for t in teams])
+        self.assertEqual(before[2], after[teams[2]])
+        for i, positions in enumerate(((0, 1), (2, 3, 4, 5), (6, 7))):
+            current = self.http.get(after[teams[i]]["status_url"]).raise_for_status().json()
+            self.assertEqual([files[j]["item_id"] for j in positions], [f["item_id"] for f in current["files"]])
+            old = self.http.get(before[i]["status_url"]).raise_for_status().json()
+            self.assertEqual(snapshots[i]["files"], old["files"])
+            self.assertEqual("confirmed" if i == 2 else "superseded", old["state"])
+            self.assertEqual(after[teams[i]], self.confirm(receipt, teams[i], 9).raise_for_status().json())
+        self.assertEqual(409, self.confirm(receipt, teams[0], 8).status_code)
+
+    def test_concurrent_confirmations_reuse_content_across_receipts_and_count_duplicates(self):
+        team = self.team(self.event, "Nextify", "")
+        a, b = self.sets["set01"][:2]
+
+        def prepare(files):
+            receipt = self.send(files).raise_for_status().headers["location"]
+            items = self.http.get(receipt).raise_for_status().json()["files"]
+            for revision, item in enumerate(items):
+                self.decide(receipt, item["item_id"], "assign", revision, team=team).raise_for_status()
+            return receipt
+
+        receipts = [prepare([a, b, b]), prepare([("표시명변경.hwp", b[1]), b, a])]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            links = list(pool.map(lambda r: self.confirm(r, team, 3).raise_for_status().json(), receipts * 2))
+        self.assertEqual({1}, {link["version"] for link in links})
+        self.assertEqual(1, len({link["submission_id"] for link in links}))
+        snapshot = self.http.get(links[0]["status_url"]).raise_for_status().json()
+        self.assertEqual(sorted(hashlib.sha256(f[1]).hexdigest() for f in (a, b, b)),
+                         sorted(f["sha256"] for f in snapshot["files"]))
+        self.assertEqual([1, 2, 3], [f["position"] for f in snapshot["files"]])
+        for receipt in receipts:
+            self.assertEqual(snapshot["submission_id"], self.confirm(receipt, team, 3).raise_for_status().json()["submission_id"])
+        reduced = prepare([a, b])
+        v2 = self.confirm(reduced, team, 2).raise_for_status().json()
+        self.assertEqual(2, v2["version"])
+        self.assertNotEqual(snapshot["submission_id"], v2["submission_id"])
+        self.assertEqual(409, self.confirm(receipts[0], team, 3).status_code)
+        old_item = self.http.get(receipts[0]).json()["files"][0]["item_id"]
+        self.assertEqual(409, self.decide(receipts[0], old_item, "outside", 3).status_code)
+        self.assertEqual(3, self.http.get(receipts[0]).json()["revision"])
+        self.assertEqual(v2, self.confirm(reduced, team, 2).raise_for_status().json())
+        changed_bytes = prepare([a, (b[0], self.sets["set02"][1][1])])
+        self.assertEqual(3, self.confirm(changed_bytes, team, 2).raise_for_status().json()["version"])
+
+    def test_confirm_racing_reassignment_never_exposes_a_mixed_snapshot(self):
+        a, b = [self.team(self.event, name, "") for name in ("Nextify", "AutoAI")]
+        receipt = self.send(self.sets["set01"]).raise_for_status().headers["location"]
+        items = [f["item_id"] for f in self.http.get(receipt).json()["files"]]
+        for rev, team in enumerate((a, a, b)):
+            self.decide(receipt, items[rev], "assign", rev, team=team).raise_for_status()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            confirming = pool.submit(self.confirm, receipt, a, 3)
+            moving = pool.submit(self.decide, receipt, items[1], "assign", 3, team=b)
+            first = confirming.result()
+            moving.result().raise_for_status()
+        self.assertIn(first.status_code, (200, 409))
+        current = self.confirm(receipt, a, 4).raise_for_status().json()
+        if first.status_code == 200:
+            earlier = self.http.get(first.json()["status_url"]).raise_for_status().json()
+            self.assertEqual(items[:2], [f["item_id"] for f in earlier["files"]])
+            self.assertEqual("superseded", earlier["state"])
+        self.assertEqual(2 if first.status_code == 200 else 1, current["version"])
+        latest = self.http.get(current["status_url"]).raise_for_status().json()
+        self.assertEqual([items[0]], [f["item_id"] for f in latest["files"]])
+
+    def test_submission_and_exclusion_enforce_event_scope(self):
+        team = self.team(self.event, "접수 팀", "")
+        foreign_event = self.http.post("/api/events", json={"name": uuid4().hex}).raise_for_status().json()["id"]
+        foreign = self.team(foreign_event, "다른 대회", "")
+        receipt = self.send(self.sets["set04"]).raise_for_status().headers["location"]
+        first, second = [f["item_id"] for f in self.http.get(receipt).json()["files"]]
+        for action, fields in (("hold", {"exclude": [team, foreign]}), ("outside", {"team": team}),
+                               ("assign", {"team": team, "exclude": [team]}), ("hold", {"exclude": [None]})):
+            self.assertEqual(422, self.decide(receipt, first, action, 0, **fields).status_code)
+        self.assertEqual(0, self.http.get(receipt).json()["revision"])
+        self.decide(receipt, first, "assign", 0, team=team).raise_for_status()
+        self.decide(receipt, second, "assign", 1, team=team).raise_for_status()
+        self.assertEqual(422, self.confirm(receipt, foreign, 2).status_code)
+        self.assertEqual(404, self.confirm(receipt, team, 2, self.peer).status_code)
+        self.assertEqual(422, self.confirm(receipt, team, None).status_code)
+        link = self.confirm(receipt, team, 2).raise_for_status().json()
+        self.assertEqual(404, self.peer.get(link["status_url"]).status_code)
+        with httpx.Client(base_url=URL, trust_env=False) as anonymous:
+            self.assertEqual(401, anonymous.get(link["status_url"]).status_code)
+        sub = self.http.get(link["status_url"]).raise_for_status().json()
+        self.assertEqual((self.event, team, os.environ["INTAKE_TEST_LOGIN_A"]),
+                         (sub["event_id"], sub["team"], sub["confirmed_by"]))
+        for f in sub["files"]:
+            raw = self.http.get(f"/api/intake-batches/{f['batch_id']}/files/{f['item_id']}/original").raise_for_status()
+            self.assertEqual(f["sha256"], hashlib.sha256(raw.content).hexdigest())
 
     def test_two_staff_direct_downloads_and_event_isolation(self):
         event_b = self.peer.post("/api/events", json={"name": "담당 B " + uuid4().hex}).raise_for_status().json()["id"]

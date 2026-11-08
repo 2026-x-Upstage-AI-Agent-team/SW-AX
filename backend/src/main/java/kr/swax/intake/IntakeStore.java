@@ -19,8 +19,9 @@ class IntakeStore {
     record Receipt(UUID batchId, String status, String statusUrl) {}
     record Summary(UUID batchId, UUID eventId, String eventName, UUID targetTeamId, String teamName,
                    String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status, int revision) {}
-    record Item(UUID itemId, int position, String name, int size, String sha256, UUID team, String state, String reason) {}
-    record Details(Summary batch, List<Item> files, int revision) {}
+    record Item(UUID itemId, int position, String name, int size, String sha256, UUID team, String state, String reason,
+                List<UUID> excluded) {}
+    record Details(Summary batch, List<Item> files, int revision, List<TeamSubmissions.Link> teams) {}
     record Original(String name, byte[] bytes) {}
     private record Previous(UUID id, String fingerprint) {}
 
@@ -92,20 +93,16 @@ class IntakeStore {
     Details details(String login, UUID id) {
         Summary batch = db.query(SUMMARY + " WHERE b.id = ?", IntakeStore::summary, login, id).stream().findFirst()
                 .orElseThrow(() -> ApiErrors.error(404, "접수번호를 찾을 수 없습니다."));
-        List<Item> files = db.query("""
-                SELECT f.id, f.position, f.name, f.size_bytes, f.sha256, latest.after_team_id, latest.reason
-                FROM intake_file f LEFT JOIN LATERAL (
-                    SELECT after_team_id, reason FROM intake_file_assignment
-                    WHERE file_id = f.id ORDER BY revision DESC LIMIT 1
-                ) latest ON true
-                WHERE f.batch_id = ? ORDER BY f.position
-                """, (rs, n) -> {
-            UUID team = rs.getObject("after_team_id", UUID.class);
-            return new Item(rs.getObject("id", UUID.class), rs.getInt("position"), rs.getString("name"),
-                    rs.getInt("size_bytes"), rs.getString("sha256"), team, team == null ? "unassigned" : "assigned",
-                    rs.getString("reason"));
-        }, id);
-        return new Details(batch, files, batch.revision());
+        return new Details(batch, files(id), batch.revision(), TeamSubmissions.links(db, id));
+    }
+
+    List<Item> files(UUID batch) {
+        return db.query("""
+                SELECT id, position, name, size_bytes, sha256, team_id, state, reason, excluded
+                FROM intake_file_state WHERE batch_id = ? ORDER BY position
+                """, (rs, n) -> new Item(rs.getObject("id", UUID.class), rs.getInt("position"), rs.getString("name"),
+                rs.getInt("size_bytes"), rs.getString("sha256"), rs.getObject("team_id", UUID.class),
+                rs.getString("state"), rs.getString("reason"), FileAssignments.excluded(rs)), batch);
     }
 
     Original original(String login, UUID batch, UUID file) {
