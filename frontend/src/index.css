@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* 울산대학교 SW중심대학사업단 사이트(sw.ulsan.ac.kr) 팔레트.
+   brand(#4AA36A)는 사이트 원색, brand-strong은 흰 글자 대비 4.5:1을 맞춘 버튼·링크용 색. */
+@theme {
+  --font-sans: "Pretendard Variable", Pretendard, "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+
+  --color-brand: #4aa36a;
+  --color-brand-strong: #2f7d4a;
+  --color-brand-deep: #24603a;
+  --color-brand-tint: #ecf6ef;
+
+  --color-alert: #ff4c2d;
+  --color-alert-strong: #b83218;
+  --color-alert-tint: #ffede9;
+  --color-alert-soft: #fff4f1;
+
+  --color-info: #63b8f4;
+  --color-info-tint: #eaf5fd;
+
+  --color-caution: #9a5300;
+  --color-caution-tint: #fff1dc;
+  --color-caution-bg: #fff7ea;
+  --color-caution-line: #f5d9a8;
+
+  --color-ink: #212121;
+  --color-ink-2: #3a3c3c;
+  --color-muted: #5e6060;
+  --color-subtle: #6b6d6d;
+  --color-line: #eaebeb;
+  --color-line-2: #d9dbdb;
+  --color-line-soft: #f0f1f1;
+  --color-canvas: #f4f5f5;
+  --color-paper: #ecedeD;
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply bg-white text-ink font-sans antialiased; word-break: keep-all; }
+  button, a, select { touch-action: manipulation; }
+  button:not(:disabled), a { cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
+}

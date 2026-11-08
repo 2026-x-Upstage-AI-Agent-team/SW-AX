@@ -1,0 +1,192 @@
+import { useRef, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router';
+import { ApiError, bytes } from '../../api/client';
+import { teamLabel, uploadBatch, type AwardEvent, type AwardTeam } from '../../api/intake';
+import { buttonStyles, cx } from '../../components/ui';
+
+type Picked = { id: string; file: File };
+
+const MAX_FILES = 100;
+const MAX_TOTAL = 300 * 1024 ** 2;
+const MAX_FILE = 40 * 1024 ** 2;
+const PENDING_KEY = 'intake.pending';
+
+function readPending(): { selection: string; key: string } | null {
+  try {
+    return JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+function writePending(value: { selection: string; key: string } | null) {
+  try {
+    if (value) sessionStorage.setItem(PENDING_KEY, JSON.stringify(value));
+    else sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    /* 저장소를 쓸 수 없으면 새 키로 접수한다 */
+  }
+}
+
+export default function Upload({ event, teams }: { event: AwardEvent; teams: AwardTeam[] }) {
+  const navigate = useNavigate();
+  const picker = useRef<HTMLInputElement>(null);
+  const [target, setTarget] = useState('');
+  const [files, setFiles] = useState<Picked[]>([]);
+  const [error, setError] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const total = files.reduce((sum, entry) => sum + entry.file.size, 0);
+
+  function add(list: FileList | null) {
+    if (busy || !list?.length) return;
+    const added = Array.from(list);
+    if (files.length + added.length > MAX_FILES || total + added.reduce((n, f) => n + f.size, 0) > MAX_TOTAL) {
+      setError('한 번에 100개, 합계 300 MiB까지 선택해 주세요.');
+      return;
+    }
+    for (const file of added) {
+      if (!/\.(hwp|hwpx)$/i.test(file.name) || /^00(?:\D|$)/.test(file.name)) {
+        setError(file.name + ' 파일은 접수할 수 없습니다. 00 지급내역서를 제외한 HWP·HWPX를 선택해 주세요.');
+        return;
+      }
+      if (!file.size || file.size > MAX_FILE) {
+        setError(file.name + ' 파일이 비었거나 40 MiB를 초과합니다.');
+        return;
+      }
+    }
+    setFiles((current) => [...current, ...added.map((file) => ({ id: crypto.randomUUID(), file }))]);
+    setError('');
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (busy || !files.length) return;
+    setError('');
+    setBusy(true);
+    setProgress(0);
+    try {
+      const manifest = files.map(({ file }) => ({ name: file.name, size: file.size }));
+      const selection = JSON.stringify([event.id, target, manifest, files.map((x) => x.file.lastModified)]);
+      const stored = readPending();
+      const key = stored?.selection === selection ? stored.key : crypto.randomUUID();
+      writePending({ selection, key });
+      const form = new FormData();
+      form.set('event', event.id);
+      if (target) form.set('target', target);
+      form.set('manifest', JSON.stringify(manifest));
+      files.forEach(({ file }) => form.append('files', file));
+      const receipt = await uploadBatch(form, key, setProgress);
+      writePending(null);
+      navigate(`/intake/batches/${receipt.batch_id}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        writePending(null);
+        setError(err.message + ' 접수 내역을 확인해 주세요. 다시 접수하면 새 접수번호가 생성됩니다.');
+      } else {
+        setError((err as Error).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-6 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-extrabold">제출 원본</h2>
+        <span className="text-sm text-muted">HWP · HWPX</span>
+      </div>
+      <fieldset disabled={busy} className="flex min-w-0 flex-col gap-2">
+        <label htmlFor="target" className="text-sm font-bold">
+          접수 출처
+        </label>
+        <select id="target" value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 max-w-[370px] rounded-xl border border-line-2 bg-white px-3">
+          <option value="">팀 미지정 · 혼합 접수</option>
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {teamLabel(t)}
+            </option>
+          ))}
+        </select>
+        <p className="text-sm text-muted">한 팀에서 받은 묶음이면 그 팀을 지정할 수 있습니다.</p>
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          accept=".hwp,.hwpx"
+          aria-label="제출 원본 파일 선택"
+          hidden
+          onChange={(e) => {
+            add(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => picker.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            add(e.dataTransfer.files);
+          }}
+          className={cx(
+            'mt-4 grid w-full place-items-center gap-2.5 rounded-[18px] border-2 border-dashed px-3 py-10 text-brand-deep',
+            dragging ? 'border-brand bg-brand-tint' : 'border-line-2 bg-[#fafbfb] hover:border-brand hover:bg-brand-tint',
+          )}
+        >
+          <span aria-hidden="true" className="grid size-10 place-items-center rounded-full border border-brand text-xl">
+            ↑
+          </span>
+          <strong className="text-base text-ink">파일을 끌어오거나 선택하세요</strong>
+          <span className="text-[13px] text-muted">00 지급내역서 제외 · 파일당 40 MiB · 합계 300 MiB</span>
+        </button>
+        {files.length > 0 && (
+          <ol className="mt-2">
+            {files.map(({ id, file }) => (
+              <li key={id} className="flex flex-wrap items-center gap-2.5 border-b border-line-soft py-3 text-sm">
+                <span className="flex-[1_1_160px] break-all">{file.name}</span>
+                <small className="whitespace-nowrap text-muted">{bytes(file.size)}</small>
+                <button
+                  type="button"
+                  aria-label={file.name + ' 선택 취소'}
+                  className={buttonStyles.text}
+                  onClick={() => {
+                    setFiles((list) => list.filter((item) => item.id !== id));
+                    setError('');
+                  }}
+                >
+                  제거
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+      </fieldset>
+      {error && (
+        <p role="alert" className="rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">
+          {error}
+        </p>
+      )}
+      {busy && (
+        <div role="status" className="flex items-center gap-2.5 text-sm">
+          <progress max={100} value={progress} className="max-w-1/2 accent-brand" />
+          {progress === 100 ? '원본 저장 확인 중' : '원본 전송 중 ' + progress + '%'}
+        </div>
+      )}
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-sm">
+        <span>
+          선택 <b>{files.length}</b>개 · {bytes(total)}
+        </span>
+        <button className={buttonStyles.primary} disabled={busy || !files.length}>
+          원본 접수하기
+        </button>
+      </footer>
+    </form>
+  );
+}
