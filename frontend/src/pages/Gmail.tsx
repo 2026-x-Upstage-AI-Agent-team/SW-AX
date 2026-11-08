@@ -1,13 +1,23 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { reviewLive } from '../api/backend';
+import { useSearchParams } from 'react-router';
+import { isDemoBackend } from '../api/backend';
+import { useApi } from '../api/client';
 import { connectGmail, startGmailOAuth, type Dashboard } from '../api/service';
 import { Page } from '../components/Layout';
 import { Card, Feedback, Notice, PageHeader, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
 const localHosts = ['localhost', '127.0.0.1', '[::1]'];
-const setupHelp = 'Windows 검토 서비스에서 MAIL_MODE를 gmail로, GMAIL_ADDRESS를 담당자 주소로 설정한 뒤 서비스를 다시 시작하세요.';
+type Account = Pick<Dashboard, 'gmail_account' | 'gmail_oauth_connected' | 'mail_ready'>;
+const results: Record<string, string> = {
+  connected: 'Google 계정을 연결했습니다.',
+  cancelled: 'Google 연결을 취소했습니다. 기존 연결 상태를 유지합니다.',
+  expired: '연결 요청이 만료되었거나 다른 브라우저에서 열렸습니다. 여기서 다시 시작하세요.',
+  permission: '메일을 발송하려면 Google 동의 화면에서 이메일 보내기를 허용하세요.',
+  account: '등록된 담당자 주소와 다른 Google 계정입니다. 담당자 계정으로 다시 연결하세요.',
+  failed: 'Google 인증을 완료하지 못했습니다. 잠시 후 다시 시도하세요.',
+};
 
 function getReviewOrigin() {
   const configured = import.meta.env.VITE_REVIEW_SERVICE_URL?.trim();
@@ -21,13 +31,12 @@ function getReviewOrigin() {
     }
   }
   if (localHosts.includes(location.hostname)) return new URL('http://127.0.0.1:8765');
-  return reviewLive ? new URL(location.origin) : undefined;
+  return isDemoBackend ? new URL(location.origin) : undefined;
 }
 
-function SetupLink({ origin, method, children }: { origin: URL; method: 'google' | 'password'; children: string }) {
+function ReviewGoogleLink({ origin, children }: { origin: URL; children: string }) {
   return (
-    <a href={new URL('/#mail/' + method, origin).href} target="_blank" rel="noopener noreferrer"
-      className={method === 'google' ? buttonStyles.primary : buttonStyles.secondary}>
+    <a href={new URL('/#mail/google', origin).href} target="_blank" rel="noopener noreferrer" className={buttonStyles.primary}>
       {children}<ExternalLink size={15} aria-hidden="true" /><span className="sr-only"> (새 탭)</span>
     </a>
   );
@@ -35,50 +44,50 @@ function SetupLink({ origin, method, children }: { origin: URL; method: 'google'
 
 export default function Gmail() {
   const { dashboard, dashboardError, refresh } = useEvent();
-  const origin = getReviewOrigin();
+  const [revision, setRevision] = useState(0);
+  const status = useApi<Account & { redirect_uri: string }>(isDemoBackend ? null : '/api/settings/gmail', revision);
+  const [params, setParams] = useSearchParams();
+  const [result] = useState(() => params.get('result') ?? '');
   useEffect(() => {
-    if (!reviewLive) return;
+    if (params.has('result')) setParams({}, { replace: true });
+  }, [params, setParams]);
+  const origin = isDemoBackend ? getReviewOrigin() : undefined;
+  useEffect(() => {
+    if (!isDemoBackend) return;
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
   }, [refresh]);
 
   let content;
-  if (!origin) {
+  if (!isDemoBackend) {
+    const reload = () => setRevision((v) => v + 1);
+    content = status.data
+      ? <AccountSetup d={status.data} callback={new URL(status.data.redirect_uri)} refresh={reload} />
+      : <Notice error={status.error} onRetry={reload} />;
+  } else if (!origin) {
     content = <Feedback error="운영자가 이 웹앱에 Windows 검토 서비스 주소(VITE_REVIEW_SERVICE_URL)를 설정해야 합니다." />;
-  } else if (!reviewLive) {
-    content = (
-      <Card className="flex max-w-2xl flex-col items-start gap-4 p-6">
-        <h2 className="panel-title">담당자 계정 인증</h2>
-        <p className="text-sm text-muted">인증과 연결 상태 확인은 Windows 검토 서비스에서 진행합니다. 선택한 방법이 새 탭에서 열립니다.</p>
-        <div className="flex flex-wrap gap-2">
-          <SetupLink origin={origin} method="google">Google로 연결</SetupLink>
-          <SetupLink origin={origin} method="password">앱 비밀번호로 연결</SetupLink>
-        </div>
-        {localHosts.includes(origin.hostname) && <p className="text-sm text-muted">화면이 열리지 않으면 이 PC의 프로젝트 폴더에서 <code>./start-service.ps1</code>을 실행하세요.</p>}
-        <a href={new URL('/#mail', origin).href} target="_blank" rel="noopener noreferrer" className={buttonStyles.text}>현재 연결 상태 보기 <span className="sr-only">(새 탭)</span></a>
-      </Card>
-    );
   } else if (dashboardError || !dashboard) {
     content = <Notice error={dashboardError} onRetry={refresh} />;
   } else {
-    content = <AccountSetup key={dashboard.gmail_account ?? ''} d={dashboard} origin={origin} refresh={refresh} />;
+    content = <AccountSetup key={dashboard.gmail_account ?? ''} d={dashboard} callback={new URL('/api/settings/gmail/callback', origin)} refresh={refresh} />;
   }
   return (
     <Page tone="gray" width="normal">
       <PageHeader title="Gmail 연결" lead="팀장 안내와 담당자 알림을 보낼 Gmail 계정을 연결합니다." />
+      {Object.hasOwn(results, result) && <Feedback {...(result === 'connected' || result === 'cancelled' ? { message: results[result] } : { error: results[result] })} />}
       {content}
     </Page>
   );
 }
 
-function AccountSetup({ d, origin, refresh }: { d: Dashboard; origin: URL; refresh: () => void }) {
+function AccountSetup({ d, callback, refresh }: { d: Account; callback: URL; refresh: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const account = d.gmail_account;
   const connected = !!account && d.mail_ready;
   // Google 콜백에 시작 요청의 호스트 전용 state 쿠키가 전달돼야 한다.
-  const sameCookieHost = origin.hostname === location.hostname && origin.protocol === location.protocol;
+  const sameCookieHost = callback.hostname === location.hostname && callback.protocol === location.protocol;
 
   async function submit(e: FormEvent<HTMLFormElement>, method: 'google' | 'password') {
     e.preventDefault();
@@ -89,8 +98,8 @@ function AccountSetup({ d, origin, refresh }: { d: Dashboard; origin: URL; refre
     try {
       if (method === 'google') {
         const file = data.get('client');
-        if (!(file instanceof File) || !file.size || file.size > 32768) throw new Error('32 KiB 이하의 Google Cloud 웹 클라이언트 JSON을 선택하세요.');
-        const { url } = await startGmailOAuth(await file.text());
+        if (isDemoBackend && (!(file instanceof File) || !file.size || file.size > 32768)) throw new Error('32 KiB 이하의 Google Cloud 웹 클라이언트 JSON을 선택하세요.');
+        const { url } = await startGmailOAuth(file instanceof File ? await file.text() : undefined);
         window.location.assign(url);
       } else {
         const password = String(data.get('password') ?? '').replace(/\s/g, '');
@@ -116,22 +125,24 @@ function AccountSetup({ d, origin, refresh }: { d: Dashboard; origin: URL; refre
         </span>
       </div>
       {!account ? (
-        <div><p className="mb-2 text-sm text-muted">{setupHelp}</p><button type="button" className={buttonStyles.secondary} onClick={refresh}>설정 다시 확인</button></div>
+        <div><p className="mb-2 text-sm text-muted">{isDemoBackend ? 'Windows 검토 서비스에서 MAIL_MODE를 gmail로, GMAIL_ADDRESS를 담당자 주소로 설정하세요.' : '운영 서버에 담당자 발신 주소(GMAIL_ADDRESS)를 설정하세요.'}</p><button type="button" className={buttonStyles.secondary} onClick={refresh}>설정 다시 확인</button></div>
       ) : (
         <>
           {sameCookieHost ? (
             <form onSubmit={(e) => submit(e, 'google')} className="flex flex-col items-start gap-3 border-t border-line pt-4">
-              <label className="flex max-w-full flex-col gap-2 text-sm font-semibold">
+              {isDemoBackend ? <label className="flex max-w-full flex-col gap-2 text-sm font-semibold">
                 Google Cloud 웹 클라이언트 JSON
                 <input type="file" name="client" accept=".json,application/json" required disabled={busy} className="max-w-full text-sm file:mr-2 file:rounded-md file:border file:border-line-2 file:px-3 file:py-2" />
-              </label>
-              <details className="max-w-full text-sm text-muted"><summary className="cursor-pointer">처음 연결할 때</summary>
+              </label> : <p className="text-sm text-muted">Google에서 담당자 계정을 선택해 메일 발송을 허용하면 이 화면으로 돌아옵니다.</p>}
+              <button className={buttonStyles.primary} disabled={busy}>{busy ? '연결 중…' : 'Google로 연결'}</button>
+              <details className="max-w-full text-sm text-muted"><summary className="cursor-pointer">Google에 등록할 복귀 주소</summary>
                 <p className="mt-2">Google Cloud에서 Gmail API를 사용 설정하고 웹 클라이언트의 승인된 리디렉션 URI에 아래 주소를 등록하세요.</p>
-                <code className="mt-1 block select-all break-all">{new URL('/api/settings/gmail/callback', origin).href}</code>
+                <code className="mt-1 block select-all break-all">{callback.href}</code>
               </details>
-              <button className={buttonStyles.primary} disabled={busy}>{connected ? 'Google로 다시 연결' : 'Google로 연결'}</button>
             </form>
-          ) : <div><SetupLink origin={origin} method="google">{connected ? 'Google로 다시 연결' : 'Google로 연결'}</SetupLink></div>}
+          ) : isDemoBackend ? <div><ReviewGoogleLink origin={callback}>Google로 연결</ReviewGoogleLink></div>
+            : <div><p className="mb-2 text-sm text-muted">Google 인증과 담당자 로그인이 같은 주소를 사용해야 합니다.</p>
+              <a className={buttonStyles.primary} href={new URL('/#/gmail', callback).href}>등록된 주소에서 Gmail 연결 열기</a></div>}
           <details className="border-t border-line pt-4">
             <summary className="cursor-pointer text-sm font-semibold">앱 비밀번호로 연결</summary>
             <form onSubmit={(e) => submit(e, 'password')} className="mt-3 flex flex-wrap items-end gap-2">

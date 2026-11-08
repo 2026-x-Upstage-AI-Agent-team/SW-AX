@@ -56,7 +56,7 @@ export function useApi<T>(path: string | null, revision = 0): Loadable<T> {
     );
     return () => controller.abort();
   }, [path, revision]);
-  return result?.path === path && result.revision === revision ? result : {};
+  return result?.path === path ? result : {};
 }
 
 /**

@@ -22,6 +22,8 @@ export const stateLabels: Record<string, string> = {
   failed: '처리 실패',
   ownership: '소속 재확인',
   done: '검토 완료',
+  printing: '전용 PC 출력 대기',
+  verifying: '출력 검증 중',
   building: '문서 생성 중',
   preview: '미리보기 준비',
   confirmed: '제출본 확정',
@@ -54,7 +56,7 @@ export const issueLabels: Record<string, string> = {
 };
 
 /** Studio Job 처리가 진행 중인 상태 */
-export const busyStates = new Set(['queued', 'creating', 'polling', 'preparing', 'building', 'sending']);
+export const busyStates = new Set(['queued', 'running', 'printing', 'verifying', 'creating', 'polling', 'preparing', 'building', 'sending']);
 
 /** 담당자가 재개를 눌러야 하는 제출본 상태 */
 export const recoverableStates = new Set(['failed', 'uncertain', 'invalid', 'paused', 'access']);

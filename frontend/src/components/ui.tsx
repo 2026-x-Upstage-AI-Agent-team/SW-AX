@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { reviewLive } from '../api/backend';
 import { stateLabel } from '../api/labels';
 import type { DocKey, Ref, Verdict } from '../api/service';
 
@@ -119,26 +118,12 @@ export function Feedback({ error, message }: { error?: string; message?: string 
   return null;
 }
 
-/** 검토 서비스에 연결되지 않아 예시 데이터를 보여 줄 때의 표시 */
-export function DemoBadge() {
-  if (reviewLive) return null;
-  return (
-    <span
-      className="inline-flex rounded-full border border-line-2 px-2.5 py-1 text-xs text-muted"
-      title="검토 서비스(npm run dev:service)에 연결하기 전까지 set01–set10 예시 데이터를 보여 줍니다."
-    >
-      예시 데이터
-    </span>
-  );
-}
-
-export function PageHeader({ title, lead, side, demo }: { title: string; lead?: ReactNode; side?: ReactNode; demo?: boolean }) {
+export function PageHeader({ title, lead, side }: { title: string; lead?: ReactNode; side?: ReactNode }) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
       <div className="flex min-w-0 max-w-3xl flex-auto flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="page-title">{title}</h1>
-          {demo && <DemoBadge />}
         </div>
         {lead && <p className="page-lead">{lead}</p>}
       </div>
@@ -161,7 +146,7 @@ export function Card({ children, className }: { children: ReactNode; className?:
   return <div className={cx('surface', className)}>{children}</div>;
 }
 
-/** 검토용 PDF 미리보기. 주소가 없으면(예시 데이터, 판독 전) 자리만 보여 준다. */
+/** 검토용 PDF 미리보기. 판독 중에는 준비 상태를 표시한다. */
 export function PdfFrame({ url, title, height = 640 }: { url: string; title: string; height?: number }) {
   if (!url)
     return (
@@ -169,7 +154,7 @@ export function PdfFrame({ url, title, height = 640 }: { url: string; title: str
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <path d="M7 3h8l4 4v14H7z M15 3v4h4 M10 12h6 M10 15h4" />
         </svg>
-        {reviewLive ? '검토용 PDF를 준비 중입니다.' : '예시 데이터에는 원본 미리보기가 없습니다.'}
+        검토용 PDF를 준비 중입니다.
       </div>
     );
   return <iframe title={title} src={url} className="w-full rounded-xl border border-line bg-white" style={{ height }} />;

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { reviewLive } from '../api/backend';
 import { ADMIN_NOTICE } from '../api/labels';
 import { setTeamEmail, type Dashboard } from '../api/service';
 import { Page } from '../components/Layout';
@@ -27,7 +26,6 @@ export default function Mail() {
     <Page width="normal">
       <PageHeader
         title="발송 이력"
-        demo
         lead="같은 팀·제출 버전·안내 종류의 메일은 한 번만 보냅니다. 원본, 주민번호·계좌번호·학번, 다른 팀 정보는 메일에 담지 않습니다."
         side={<Link to="/gmail" className={buttonStyles.secondary}>Gmail 연결</Link>}
       />
@@ -122,8 +120,8 @@ function EmailRow({ id, name, onSaved }: { id: string; name: string; onSaved: ()
     <li className="flex flex-col gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-32 text-sm font-bold">{name}</span>
-        <input type="email" aria-label={`${name} 팀장 이메일`} value={email} onChange={(e) => setEmail(e.target.value)} disabled={!reviewLive || busy} className={cx(inputStyle, 'max-w-xs flex-1 bg-white')} />
-        <button type="button" onClick={save} disabled={!reviewLive || busy || !email.trim()} className={buttonStyles.secondary}>
+        <input type="email" aria-label={`${name} 팀장 이메일`} value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} className={cx(inputStyle, 'max-w-xs flex-1 bg-white')} />
+        <button type="button" onClick={save} disabled={busy || !email.trim()} className={buttonStyles.secondary}>
           저장
         </button>
       </div>

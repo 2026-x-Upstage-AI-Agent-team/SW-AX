@@ -15,6 +15,7 @@ export type BatchSummary = {
 export type BatchFile = { item_id: string; name: string; size: number; team: string | null; state: string };
 
 type BatchTeam = {
+  submission_id: string | null;
   team: string;
   state: 'confirmed' | 'blocked' | 'empty' | 'superseded';
   version: number | null;

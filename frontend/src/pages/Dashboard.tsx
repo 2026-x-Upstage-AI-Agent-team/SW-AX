@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { ArrowRight, Check, ChevronDown, CircleAlert, FileUp } from 'lucide-react';
-import { reviewLive } from '../api/backend';
 import { busyStates, recoverableStates, stateLabel } from '../api/labels';
 import type { Verdict } from '../api/service';
 import { Page } from '../components/Layout';
 import { DocChips, Notice, PageHeader, StateBadge, VerdictBadge, buttonStyles, cx } from '../components/ui';
+import { useEvent } from '../context/EventContext';
 import { useOverview, type TeamRow } from '../hooks/useOverview';
 
 type Filter = 'all' | 'action' | 'ok';
@@ -28,10 +28,12 @@ function needsAction(r: TeamRow) {
 }
 
 export default function Dashboard() {
+  const { events } = useEvent();
   const { dashboard, rows, error, refresh } = useOverview();
   const [filter, setFilter] = useState<Filter>('all');
   const list = rows ?? [];
   const processing = list.filter((r) => r.submission && busyStates.has(r.submission.state)).length;
+  const queued = list.flatMap((r) => r.submission?.state === 'queued' ? [r.submission.created] : []);
   const visible = useMemo(
     () => list.filter((r) => (filter === 'all' ? true : filter === 'ok' ? !needsAction(r) : needsAction(r))),
     [list, filter],
@@ -54,10 +56,10 @@ export default function Dashboard() {
 
   return (
     <Page tone="gray">
-      <PageHeader title="업무 현황" demo side={
+      <PageHeader title="업무 현황"  side={
         <Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />원본 접수하기</Link>
       } />
-      {!dashboard ? (
+      {events?.length === 0 ? <Link to="/manage" className={buttonStyles.text}>대회를 등록해 원본 접수를 시작하세요.</Link> : !dashboard ? (
         <Notice error={error && `${error} (검토 서비스가 실행 중인지 확인해 주세요.)`} onRetry={refresh} />
       ) : (
         <>
@@ -66,17 +68,16 @@ export default function Dashboard() {
             <ActionQueue alerts={alerts} />
           </div>
           <TeamTable list={visible} total={list.length} counts={{ action: list.filter(needsAction).length, ok: list.filter((r) => !needsAction(r)).length }} filter={filter} setFilter={setFilter} />
-          {reviewLive && (
-            <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-subtle">
-              <span>Studio {dashboard.connected ? `연결됨 · 설정 ${dashboard.config}` : 'API 키 미설정'}</span>
+          <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-subtle">
+              <span>Studio {dashboard.connected ? `연결됨 · 설정 ${dashboard.config}` : '연결 대기'}</span>
               {dashboard.gmail_account ? (
                 <Link to="/gmail" className="font-semibold text-brand-strong underline underline-offset-2">
                   담당자 Gmail {dashboard.mail_ready ? '연결됨' : '인증 대기'}
                 </Link>
               ) : <span>메일 {dashboard.smtp ? 'SMTP' : '로컬 메일함'}</span>}
+              {queued.length > 0 && <span>대기 {queued.length}팀 · 최초 접수 {new Date(Math.min(...queued) * 1000).toLocaleString('ko-KR')}</span>}
               {processing > 0 && <span>처리 중 {processing}팀 · 자동 새로고침</span>}
-            </p>
-          )}
+          </p>
         </>
       )}
     </Page>
@@ -247,7 +248,6 @@ function TeamTable({
           </table>
         </div>
       )}
-      {!reviewLive && <p className="border-t border-line-soft px-5 py-3 text-xs text-subtle">예시 판정은 set01–set10 기준이며 set03–set10의 팀명은 임시 표기입니다.</p>}
     </section>
   );
 }

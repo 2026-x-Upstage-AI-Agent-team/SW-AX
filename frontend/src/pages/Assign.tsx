@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { reviewLive } from '../api/backend';
 import { docLabels, when } from '../api/labels';
 import { assignFile, filePreviewUrl, getBatch, retryFile, type BatchDetail, type FileInfo } from '../api/service';
 import { Page } from '../components/Layout';
@@ -58,7 +57,6 @@ export default function Assign() {
     <Page tone="gray">
       <PageHeader
         title="팀 배정 확인"
-        demo
         lead="후보가 한 팀이고 근거가 서로 맞을 때만 자동으로 배정합니다. 근거가 모자라거나 부딪히는 파일만 여기 남습니다. 배정을 바꾸면 파일·변경 전후 팀·근거·처리자가 기록됩니다."
       />
 
@@ -146,7 +144,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const editable = reviewLive && batch.state !== 'preparing';
+  const editable = batch.state !== 'preparing';
 
   async function submit() {
     setBusy(true);
@@ -208,7 +206,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
         {file.state === 'error' ? (
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm text-ink-2">손상된 파일이면 팀에서 다시 받아 접수해 주세요. 일시 오류라면 판독을 다시 시도할 수 있습니다.</span>
-            <button type="button" onClick={retry} disabled={!reviewLive || busy} className={buttonStyles.outline}>
+            <button type="button" onClick={retry} disabled={busy} className={buttonStyles.outline}>
               판독 다시 시도
             </button>
           </div>
@@ -273,8 +271,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
             </div>
           </fieldset>
         )}
-        {!reviewLive && <p className="text-xs text-subtle">예시 데이터에서는 배정을 저장할 수 없습니다.</p>}
-        {reviewLive && batch.state === 'preparing' && <p className="text-xs text-subtle">파일 판독이 끝나면 배정할 수 있습니다.</p>}
+        {batch.state === 'preparing' && <p className="text-xs text-subtle">파일 판독이 끝나면 배정할 수 있습니다.</p>}
         <Feedback error={error} />
       </div>
     </section>

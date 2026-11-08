@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { reviewLive } from '../api/backend';
 import { useAsync, usePolling } from '../api/client';
 import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
 import {
@@ -12,13 +11,14 @@ import {
   setTeamEmail,
   type Decision,
   type DocKey,
+  type Member,
+  type Recipient,
   type SubmissionDetail,
 } from '../api/service';
 import { Page } from '../components/Layout';
 import MailItem from '../components/MailItem';
 import {
   CheckIcon,
-  DemoBadge,
   Feedback,
   Notice,
   PdfFrame,
@@ -37,7 +37,9 @@ export default function TeamReview() {
   const { id = '' } = useParams();
   const { revision, refresh } = useEvent();
   const result = useAsync(() => getSubmission(id), [id, revision]);
-  usePolling(reviewLive && !!result.data && busyStates.has(result.data.state), refresh);
+  const submission = result.data?.id === id ? result.data : undefined;
+  const slow = !!submission && (recoverableStates.has(submission.state) || !!submission.error);
+  usePolling(!!submission && (busyStates.has(submission.state) || (slow && submission.state !== 'failed')), refresh, slow ? 15000 : 3000);
 
   return (
     <Page tone="gray">
@@ -45,7 +47,7 @@ export default function TeamReview() {
         <Link to="/" className="text-sm text-brand-strong hover:text-brand-deep">
           ← 업무 현황
         </Link>
-        {!result.data ? <Notice error={result.error} onRetry={result.reload} /> : <Review key={result.data.id} s={result.data} onSaved={refresh} />}
+        {!submission ? <Notice error={result.error} onRetry={result.reload} /> : <Review key={submission.id} s={submission} onSaved={refresh} />}
       </div>
     </Page>
   );
@@ -86,7 +88,6 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
             담당자 {s.decision}
           </span>
         )}
-        <DemoBadge />
         <div className="flex-auto" />
         {!outdated && (
           <Link to={`/intake?base=${s.id}`} className={cx(buttonStyles.primary, 'min-h-11 px-5 text-sm')}>
@@ -195,13 +196,13 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
               <p className="mt-3 whitespace-pre-line text-[13px] leading-relaxed text-ink-2">{res.staff_report}</p>
             </details>
           )}
-          <DecisionCard s={s} onSaved={onSaved} />
+          <DecisionCard key={s.revision} s={s} onSaved={onSaved} />
           <LeaderCard s={s} onSaved={onSaved} />
         </aside>
       </div>
 
       <div className="mt-2 flex flex-wrap items-start gap-6">
-        <MembersCard s={s} />
+        <MembersCard key={s.revision} s={s} onSaved={onSaved} />
         <HistoryCard s={s} />
       </div>
     </>
@@ -285,7 +286,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const locked = !!s.decision;
-  const canSave = reviewLive && s.state === 'done' && !s.held && s.current === s.id;
+  const canSave = s.state === 'done' && !s.held && s.current === s.id;
   const needsNote = s.verdict === '담당자확인' && !!decision;
 
   async function save(final: boolean) {
@@ -385,8 +386,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
           </button>
         </div>
       </fieldset>
-      {!reviewLive && <p className="text-xs text-subtle">예시 데이터에서는 저장할 수 없습니다.</p>}
-      {reviewLive && s.state !== 'done' && <p className="text-xs text-subtle">Studio 판정이 끝난 뒤 기록할 수 있습니다.</p>}
+      {s.state !== 'done' && <p className="text-xs text-subtle">Studio 판정이 끝난 뒤 기록할 수 있습니다.</p>}
       <Feedback error={error} message={message} />
     </div>
   );
@@ -421,9 +421,9 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-xs text-muted">
           팀장 이메일 (원접수에서 확인한 주소 한 개)
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!reviewLive || busy} className={inputStyle} />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} className={inputStyle} />
         </label>
-        <button type="button" onClick={saveEmail} disabled={!reviewLive || busy || email.trim() === s.email} className={buttonStyles.secondary}>
+        <button type="button" onClick={saveEmail} disabled={busy || email.trim() === s.email} className={buttonStyles.secondary}>
           저장
         </button>
       </div>
@@ -442,7 +442,7 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
   );
 }
 
-function MembersCard({ s }: { s: SubmissionDetail }) {
+function MembersCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   const members = s.fields.members;
   const r = s.fields.recipient;
   return (
@@ -484,8 +484,58 @@ function MembersCard({ s }: { s: SubmissionDetail }) {
         <dt className="text-muted">주민번호 표기</dt>
         <dd className="font-mono">{r.rrn_display || '—'}</dd>
       </dl>
+      {s.state === 'done' && s.id === s.current && !s.held && (
+        <details className="mt-4">
+          <summary className={buttonStyles.text}>원본 대조값 수정</summary>
+          <ExtractionEditor s={s} onSaved={onSaved} />
+        </details>
+      )}
       <p className="mt-3 text-xs text-subtle">명단·계좌는 원본에서 읽은 값입니다. 원본이 틀렸다면 보완본을 받아 교체해 주세요.</p>
     </section>
+  );
+}
+
+function ExtractionEditor({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
+  const [members, setMembers] = useState<Member[]>(s.fields.members);
+  const [recipient, setRecipient] = useState<Recipient>(s.fields.recipient);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const memberFields = { name: '성명', student_id: '학번', major: '전공', school: '학교' } as const;
+  const recipientFields = { bank_name: '은행', account_number: '계좌번호', account_holder: '예금주', rrn_display: '마스킹 주민번호' } as const;
+  function edit(index: number, key: keyof Member, value: string) {
+    setMembers((list) => list.map((person, i) => i === index ? { ...person, [key]: value } : person));
+  }
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      await saveReview(s.id, reviewBody(s, { members, recipient }));
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <fieldset disabled={busy} className="grid gap-3 pt-3">
+      {members.map((m, i) => (
+        <div key={i} className="grid gap-2 border-b border-line-soft pb-3 sm:grid-cols-2">
+          <label>구분<select className={inputStyle} value={m.role} onChange={(e) => edit(i,'role',e.target.value)}>
+            <option>대표</option><option>팀원</option>
+          </select></label>
+          {(Object.keys(memberFields) as (keyof typeof memberFields)[]).map((key) => <label key={key}>{memberFields[key]}
+            <input className={inputStyle} value={m[key]} onChange={(e) => edit(i,key,e.target.value)} /></label>)}
+          <button type="button" className={buttonStyles.text} onClick={() => setMembers(members.filter((_, n) => n !== i))}>이 행 삭제</button>
+        </div>
+      ))}
+      <button type="button" className={buttonStyles.outline} onClick={() => setMembers([...members,
+        { role: members.length ? '팀원' : '대표', name: '', student_id: '', major: '', school: '' }])}>명단 행 추가</button>
+      {(Object.keys(recipientFields) as (keyof typeof recipientFields)[]).map((key) => <label key={key}>{recipientFields[key]}
+        <input className={inputStyle} value={recipient[key] ?? ''} onChange={(e) => setRecipient({ ...recipient, [key]: e.target.value })} /></label>)}
+      <button type="button" onClick={save} className={buttonStyles.secondary}>대조값 저장</button>
+      <Feedback error={error} />
+    </fieldset>
   );
 }
 

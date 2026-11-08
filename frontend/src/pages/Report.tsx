@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router';
 import { Download, FileText, FileType2 } from 'lucide-react';
-import { reviewLive } from '../api/backend';
 import { useAsync, usePolling } from '../api/client';
 import { when } from '../api/labels';
 import {
@@ -46,19 +45,19 @@ export default function Report() {
   const ready = teams.filter((t) => t.pending.length === 0);
   const [order, setOrder] = useState<string[]>([]);
   const [rid, setRid] = useState<string>();
+  const previousReady = useRef<string[]>([]);
 
   // 처음에는 준비된 팀을 모두 현황 순서로 넣는다. 새로 준비된 팀은 뒤에 붙인다.
   useEffect(() => {
-    setOrder((prev) => {
-      const ids = ready.map((t) => t.submission!);
-      const kept = prev.filter((id) => ids.includes(id));
-      return prev.length ? [...kept, ...ids.filter((id) => !prev.includes(id) && !kept.includes(id))] : ids;
-    });
+    const ids = ready.map((t) => t.submission!);
+    const added = ids.filter((id) => !previousReady.current.includes(id));
+    previousReady.current = ids;
+    setOrder((prev) => [...prev.filter((id) => ids.includes(id)), ...added]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready.map((t) => t.submission).join()]);
 
   const latest = dashboard?.reports[0];
-  const activeRid = rid ?? latest?.id;
+  const activeRid = dashboard?.reports.some((item) => item.id === rid) ? rid : latest?.id;
   const chosen = order.map((id) => teams.find((t) => t.submission === id)).filter((t): t is DraftTeam => !!t);
   const held = teams.filter((t) => t.pending.length > 0);
 
@@ -75,7 +74,6 @@ export default function Report() {
     <Page tone="gray">
       <PageHeader
         title="보고서 확정"
-        demo
         lead="승인한 팀의 지급 정보와 편철 순서를 확인한 뒤 같은 버전의 HWPX와 PDF를 내려받습니다."
       />
 
@@ -253,7 +251,7 @@ function PayForm({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
               inputMode={numeric ? 'numeric' : undefined}
               placeholder="미확인"
               value={pay[key]}
-              disabled={!reviewLive || busy}
+              disabled={busy}
               onChange={(e) => setPay((p) => ({ ...p, [key]: e.target.value }))}
               className={cx(inputStyle, numeric && 'font-mono')}
             />
@@ -261,7 +259,7 @@ function PayForm({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={save} disabled={!reviewLive || busy || !dirty} className={cx(buttonStyles.secondary, 'min-h-10')}>
+        <button type="button" onClick={save} disabled={busy || !dirty} className={cx(buttonStyles.secondary, 'min-h-10')}>
           지급 정보 저장
         </button>
         <span className="text-[11px] text-subtle">금액은 원 단위 정수. 세액은 자동 계산하지 않습니다.</span>
@@ -399,11 +397,10 @@ function Generate({ event, order, disabled, onCreated }: { event: string; order:
           <strong className="text-[15px]">선택한 {order.length}팀으로 보고서 생성</strong>
           <span className="text-[13px] text-muted">같은 내용이면 기존 버전을 다시 씁니다. 지급 정보나 제출본이 바뀌면 새 버전을 만듭니다.</span>
         </div>
-        <button type="button" onClick={run} disabled={!reviewLive || disabled || busy} className={buttonStyles.primary}>
+        <button type="button" onClick={run} disabled={disabled || busy} className={buttonStyles.primary}>
           미리보기 생성
         </button>
       </div>
-      {!reviewLive && <p className="text-xs text-subtle">예시 데이터에서는 보고서를 만들 수 없습니다. 검토 서비스에 연결해 실행해 주세요.</p>}
       <Feedback error={error} />
     </div>
   );
@@ -412,8 +409,8 @@ function Generate({ event, order, disabled, onCreated }: { event: string; order:
 function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: string) => void }) {
   const [tick, setTick] = useState(0);
   const report = useAsync<ReportView>(() => getReport(rid), [rid, tick]);
-  const r = report.data;
-  usePolling(!!r && (r.state === 'queued' || r.state === 'building'), () => setTick((v) => v + 1), 2500);
+  const r = report.data?.id === rid ? report.data : undefined;
+  usePolling(!!r && ['queued', 'building', 'printing', 'verifying'].includes(r.state), () => setTick((v) => v + 1), 2500);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -448,7 +445,7 @@ function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: str
       </div>
       {r.stale && <Feedback error="생성 뒤 지급 정보나 제출본이 바뀌었습니다. 새 보고서를 생성해 주세요." />}
       {r.error && <Feedback error={r.error} />}
-      {(r.state === 'queued' || r.state === 'building') && <p className="text-sm text-muted">한글 문서를 만드는 중입니다. 완료되면 미리보기가 열립니다.</p>}
+      {['queued', 'building', 'printing', 'verifying'].includes(r.state) && <p className="text-sm text-muted">한글 문서를 만드는 중입니다. 완료되면 미리보기가 열립니다.</p>}
       {r.state === 'preview' && (
         <button type="button" disabled={busy || r.stale} onClick={() => act(() => confirmReport(r.id).then(() => undefined))} className={cx(buttonStyles.primary, 'self-start')}>
           이 버전으로 확정

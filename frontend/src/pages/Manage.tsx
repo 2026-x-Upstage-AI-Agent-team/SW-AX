@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { createEvent, createTeam, teamLabel } from '../api/intake';
+import { sendJson } from '../api/client';
 import { Page } from '../components/Layout';
 import { Notice, PageHeader, buttonStyles } from '../components/ui';
 import { useEvent } from '../context/EventContext';
@@ -7,12 +8,12 @@ import { useEvent } from '../context/EventContext';
 const input = 'h-11 w-full rounded-xl border border-line-2 bg-white px-3 text-ink';
 
 export default function Manage() {
-  const { event, events, eventsError, teams, refresh, selectEvent } = useEvent();
+  const { event, events, eventsError, teams, dashboard, refresh, selectEvent } = useEvent();
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
-  async function save(e: FormEvent<HTMLFormElement>, kind: 'event' | 'team') {
+  async function save(e: FormEvent<HTMLFormElement>, kind: 'event' | 'team' | 'overview') {
     e.preventDefault();
     const form = e.currentTarget;
     const data = new FormData(form);
@@ -25,11 +26,14 @@ export default function Manage() {
         const created = await createEvent(name);
         selectEvent(created.id);
         setMessage(created.name + ' 대회를 등록했습니다.');
+      } else if (event && kind === 'overview') {
+        await sendJson('/api/events/' + event.id + '/overview', { date: data.get('date'), place: data.get('place') }, 'PUT');
+        setMessage('지급내역서의 행사 정보를 저장했습니다.');
       } else if (event) {
         const created = await createTeam(event.id, name, String(data.get('rep') ?? ''));
         setMessage(created.name + ' 팀을 등록했습니다.');
       }
-      form.reset();
+      if (kind !== 'overview') form.reset();
       refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -56,6 +60,14 @@ export default function Manage() {
         </div>
       </form>
 
+      {event && dashboard?.overview && (
+        <form key={event.id} onSubmit={(e) => save(e, 'overview')} className="grid gap-3 rounded-[22px] border border-line bg-white p-6">
+          <h2 className="text-xl font-extrabold">지급내역서 행사 정보</h2>
+          <label>행사 일시<input name="date" maxLength={120} defaultValue={dashboard.overview.date} className={input} /></label>
+          <label>행사 장소<input name="place" maxLength={160} defaultValue={dashboard.overview.place} className={input} /></label>
+          <button className={buttonStyles.secondary} disabled={saving}>행사 정보 저장</button>
+        </form>
+      )}
       {event && (
         <section className="flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]">
           <h2 className="text-xl font-extrabold">{event.name} 참가 팀</h2>

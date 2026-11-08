@@ -70,7 +70,6 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
 function BaseUpload({ sid }: { sid: string }) {
   const { event, teams } = useEvent();
   const base = useAsync(() => getSubmission(sid), [sid]);
-  if (backend !== 'service') return <Feedback error="보완본 접수는 검토 서비스에 연결했을 때 사용할 수 있습니다. (npm run dev:service)" />;
   if (!base.data) return <Notice error={base.error} onRetry={base.reload} />;
   if (base.data.current !== base.data.id) return <Feedback error="최신 제출 버전에서만 보완 접수할 수 있습니다." />;
   return <Upload key={sid} event={event!} teams={teams ?? []} base={base.data} />;
@@ -181,7 +180,8 @@ function Detail({ eventId }: { eventId: string }) {
                 <li key={id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                   <div className="min-w-0">
                     <p className="break-all font-semibold">{team ? teamLabel(team) : id}</p>
-                    <p className="mt-1 text-xs text-muted">{submission}</p>
+                    {link?.submission_id ? <Link to={`/teams/${link.submission_id}`} className={buttonStyles.text}>{submission} · 검토 열기</Link>
+                      : <p className="mt-1 text-xs text-muted">{submission}</p>}
                   </div>
                   {job ? (
                     <div className="min-w-0 sm:text-right">
@@ -201,6 +201,7 @@ function Detail({ eventId }: { eventId: string }) {
           <h2 className="text-xl font-extrabold">
             접수 원본 <em className="ml-1 text-base not-italic text-brand-strong">{files.length}</em>
           </h2>
+          <Link to="/assign" className={buttonStyles.text}>원본 배정 확인</Link>
           <span className="text-sm text-muted">{bytes(batch.total_bytes)}</span>
         </div>
         <ol>
