@@ -16,10 +16,18 @@ repositories { mavenCentral() }
 dependencies {
     implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
+}
+
+tasks.register('staffAdmin', JavaExec) {
+    classpath = files(sourceSets.main.output.classesDirs, sourceSets.main.resources.srcDirs) + configurations.runtimeClasspath
+    mainClass = 'kr.swax.intake.StaffAdmin'
+    jvmArgs '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+    standardInput = System.in
 }
 
 def frontend = file('../frontend')

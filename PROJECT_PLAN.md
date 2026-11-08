@@ -13,7 +13,8 @@ SW중심대학 사업단 담당자는 같은 대회에 참가한 여러 팀의 0
 | 담당자 화면 A안 | 2026년 11월 8일 A안(울산대 SW중심대학사업단 팔레트, TypeScript·Tailwind CSS·React Router)을 main에 병합했다. 같은 날 `feat/connect-review-api`에서 업무 현황·팀별 검토·팀 배정·발송 이력·보고서 화면을 검토 서비스 API(`service/app.py`)에 연결했다. `npm run dev:service`로 검토 서비스에, `npm run dev`로 Spring Boot 접수 API에 붙는다. Windows PC에서 `npm install` 후 `npm run build`(타입 검사와 `vite build`)가 통과했다. 경로·헤더·본문은 API 규칙을 흉내 낸 대역 서버로만 확인했고, 실제 검토 서비스에 붙인 동작은 확인 전이다. [화면 구성](frontend/README.md) |
 | Windows 시연판 실측 | 공식 set01·02의 팀별 Studio 판정부터 HWPX/PDF 다운로드까지 검증했다. 설정 23은 두 팀의 소속 표기 차이에 `담당자확인`을, set04의 동의서 누락에 `재제출요청`을 반환했다. set04 팀장용 보완 메일은 로컬 메일함에 한 통 도착했다. 담당자 Gmail 송수신 확인은 10절에 기록했다. [실행 안내](docs/LOCAL_SERVICE.md) |
 | 테스트 자료 | 유잇 미션2 공식 ZIP(`test case/유잇_미션2_테스트set.zip`)의 10팀·29파일. 정상 기대 케이스는 set01(Nextify)과 set02(AutoAI) 두 팀이다. |
-| 다음 단계 | 운영판 워커 구현은 별도 세션에서 담당한다. 웹·API 쪽은 담당자별 대회 접근 권한을 먼저 적용하고, 미배정 원본의 수동 배정·변경 이력을 연결한다. Studio 정상 사례의 소속 표기 기준은 별도로 확정한다. |
+| 운영판 담당자 접근 | 별도 Chrome 세션에서 기존 공식 접수의 같은 원본 URL을 열었다. 배정 계정은 SHA-256이 일치하는 파일을 받았고, 다른 계정은 404, 비로그인은 401을 받았다. 시험 대회에서 권한을 회수하면 로그인 중에도 다음 다운로드가 차단됐다. [인증과 권한](docs/IMPLEMENTATION_PLAN.md#담당자-인증과-대회-권한) |
+| 다음 단계 | 운영판 워커 구현은 별도 세션에서 담당한다. 웹·API 쪽은 미배정 원본의 수동 배정과 변경 이력을 연결한다. Studio 정상 사례의 소속 표기 기준은 별도로 확정한다. |
 | 남은 검증 | set03과 set05~10의 실제 Studio 판정 대조, 공식 set04 보완 안내의 외부 수신함 대조, 운영 장애 시나리오 전체 인수 시험 |
 | 구성 프롬프트 | [Studio 구성 프롬프트](docs/STUDIO_BUILD_PROMPT.txt). 최종판정은 9.4절, 판정 후 알림은 7.1절 기준 |
 | 구현계획서 | [팀별 비동기 접수·대기열·오류 처리](docs/IMPLEMENTATION_PLAN.md). 서비스 API, 재시도·재기동 규칙과 단계별 인수 시험 |
