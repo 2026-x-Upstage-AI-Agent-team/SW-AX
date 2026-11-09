@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { useAsync, usePolling } from '../api/client';
 import { receiptName } from '../api/intake';
 import { isDemoBackend } from '../api/backend';
 import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
 import { reviewEvidence } from '../api/reviewEvidence';
 import {
-  filePreviewUrl,
   getSubmission,
   retrySubmission,
   reviewBody,
@@ -21,12 +20,12 @@ import {
   type SubmissionDetail,
 } from '../api/service';
 import { Page } from '../components/Layout';
+import DocumentPreview from '../components/DocumentPreview';
 import MailItem from '../components/MailItem';
 import {
   CheckIcon,
   Feedback,
   Notice,
-  PdfFrame,
   StateBadge,
   VerdictBadge,
   buttonStyles,
@@ -59,12 +58,14 @@ export default function TeamReview() {
 }
 
 function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
+  const [params] = useSearchParams();
+  const returnedFile = s.files.find(f => f.id === params.get('file'));
   const res = s.result;
   const docs = res?.documents;
   const evidence = reviewEvidence(res, s.verdict);
   const firstIssue = evidence.problems.find(c => c.refs.length);
   const initialRef = firstIssue?.refs[0] ?? DOC_KEYS.map((k) => docs?.[k]?.[0]).find(Boolean);
-  const [view, setView] = useState<Partial<Ref>>(initialRef ?? { id: s.files[0]?.id });
+  const [view, setView] = useState<Partial<Ref> & { evidence?: number }>(returnedFile ? { id: returnedFile.id, page: 1 } : initialRef ?? { id: s.files[0]?.id });
   const previewPanel = useRef<HTMLElement>(null);
   const file = s.files.find((f) => f.id === view.id);
   const fileDoc = (fid?: string) => DOC_KEYS.find((k) => docs?.[k]?.some((r) => r.id === fid)) ?? (s.files.find((f) => f.id === fid)?.kind as DocKey | undefined);
@@ -72,7 +73,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   const outdated = s.current !== s.id;
 
   function showEvidence(ref?: Ref) {
-    setView(ref ?? {});
+    setView(previous => ({ ...ref, evidence: (previous.evidence ?? 0) + 1 }));
     previewPanel.current?.focus();
   }
 
@@ -185,13 +186,9 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                 <span className="file-name text-ink">
                   {file.name} {view.page ? `· ${view.page}쪽` : ''} {view.row ? `· ${view.row}행` : ''}
                 </span>
-                {file.url && (
-                  <a href={filePreviewUrl(file, view.page)} target="_blank" rel="noreferrer" className="font-bold text-brand-strong">
-                    새 창으로 열기
-                  </a>
-                )}
+                <Link to={'/files/' + file.id + '/edit?review=' + encodeURIComponent(s.id)} target="_blank" rel="noreferrer" className={buttonStyles.outline}>한글 문서 편집</Link>
               </div>
-              <PdfFrame key={`${file.id}-${view.page}`} url={filePreviewUrl(file, view.page)} title={file.name} />
+              <DocumentPreview key={`${file.id}-${view.evidence ?? 'latest'}`} file={file} page={view.page} original={!!view.evidence} openLink />
             </>) : (
               <section aria-label="확정 파일 목록" className="rounded-xl bg-white p-4">
                 <h2 className="font-bold">제출 v{s.version} 확정 파일 목록 · {s.files.length}개</h2>

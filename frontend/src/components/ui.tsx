@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { CircleAlert, FileText, LoaderCircle } from 'lucide-react';
+import { useRef, useState, type ReactNode } from 'react';
+import { CircleAlert, ExternalLink, FileText, LoaderCircle, Maximize2, X } from 'lucide-react';
 import { stateLabel } from '../api/labels';
 import type { DocKey, Ref, Verdict } from '../api/service';
 
@@ -152,7 +152,7 @@ export function Card({ children, className }: { children: ReactNode; className?:
 
 /** 검토용 PDF 미리보기. 판독 중에는 준비 상태를 표시한다. */
 export function PdfFrame({ url, title, height = 640, emptyMessage = '검토용 PDF가 아직 없습니다.', children }: {
-  url: string; title: string; height?: number; emptyMessage?: string; children?: ReactNode;
+  url: string; title: string; height?: number | string; emptyMessage?: string; children?: ReactNode;
 }) {
   if (!url)
     return (
@@ -161,5 +161,30 @@ export function PdfFrame({ url, title, height = 640, emptyMessage = '검토용 P
         {children}
       </div>
     );
-  return <iframe title={title} src={url} loading="lazy" className="w-full rounded-xl border border-line bg-white" style={{ height }} />;
+  return <PreviewViewer key={url} url={url} title={title} height={height} />;
+}
+
+function PreviewViewer({ url, title, height }: { url: string; title: string; height: number | string }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="document-preview">
+      <div className="preview-tools">
+        <span className="flex items-center gap-2 font-semibold"><FileText size={17} aria-hidden="true" />문서 미리보기</span>
+        <button type="button" className={buttonStyles.text} aria-haspopup="dialog" onClick={() => {
+          dialog.current?.showModal();
+          setExpanded(true);
+        }}><Maximize2 size={16} aria-hidden="true" />크게 보기</button>
+      </div>
+      <iframe title={title} src={url} loading="lazy" className="block w-full" style={{ height }} />
+      <dialog ref={dialog} aria-label={title + ' 크게 보기'} className="preview-dialog" onClose={() => setExpanded(false)}>
+        <header className="preview-tools">
+          <h2 className="file-name min-w-0 flex-1">{title}</h2>
+          <a className={buttonStyles.text} href={url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} aria-hidden="true" />새 탭에서 열기</a>
+          <button type="button" autoFocus className={buttonStyles.outline} onClick={() => dialog.current?.close()}><X size={17} aria-hidden="true" />닫기</button>
+        </header>
+        {expanded && <iframe title={title + ' 확대 미리보기'} src={url} />}
+      </dialog>
+    </div>
+  );
 }

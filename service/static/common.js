@@ -216,3 +216,15 @@ export function previewFrame(url, page = 1, extra = "") {
     '&amp;view=FitH"></iframe>'
   );
 }
+
+export function editDocumentLink(file) {
+  const href = "/document-editor#/files/" + encodeURIComponent(file.id) + "/edit?from=" + encodeURIComponent(location.hash.slice(1));
+  return '<a target="_blank" rel="noopener" href="' + esc(href) + '">한글 문서 편집</a>';
+}
+
+export function documentPreviewFrame(file, page = 1, original = false) {
+  const query = new URLSearchParams({ page: String(page), pdf: file.url ? '1' : '0' });
+  if (original) query.set('source', 'original');
+  const url = '/document-editor#/files/' + encodeURIComponent(file.id) + '/preview?' + query;
+  return '<iframe class="docview" title="' + esc(file.name + ' 문서 미리보기') + '" src="' + esc(url) + '"></iframe>';
+}

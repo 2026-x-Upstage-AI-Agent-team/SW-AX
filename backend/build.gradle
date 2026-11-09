@@ -55,6 +55,7 @@ def buildFrontend = tasks.register('buildFrontend', Exec) {
     workingDir frontend
     commandLine npm + ['run', 'build']
     inputs.dir("${frontend}/src")
+    inputs.dir("${frontend}/scripts")
     inputs.files("${frontend}/index.html", "${frontend}/vite.config.ts", "${frontend}/tsconfig.json", "${frontend}/package.json", "${frontend}/package-lock.json")
     outputs.dir("${frontend}/dist")
 }

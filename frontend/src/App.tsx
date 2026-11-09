@@ -1,8 +1,11 @@
 import { Link, Route, Routes } from 'react-router';
 import Layout, { Page } from './components/Layout';
 import { buttonStyles } from './components/ui';
+import { EmbeddedDocumentPreview } from './components/DocumentPreview';
+import { EventProvider } from './context/EventContext';
 import Assign from './pages/Assign';
 import Dashboard from './pages/Dashboard';
+import DocumentEditor from './pages/DocumentEditor';
 import Gmail from './pages/Gmail';
 import IntakePage from './pages/intake/IntakePage';
 import Mail from './pages/Mail';
@@ -13,7 +16,9 @@ import TeamReview from './pages/TeamReview';
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="files/:id/edit" element={<DocumentEditor />} />
+      <Route path="files/:id/preview" element={<EmbeddedDocumentPreview />} />
+      <Route element={<EventProvider><Layout /></EventProvider>}>
         <Route index element={<Dashboard />} />
         <Route path="teams/:id" element={<TeamReview />} />
         <Route path="intake" element={<IntakePage view="upload" />} />

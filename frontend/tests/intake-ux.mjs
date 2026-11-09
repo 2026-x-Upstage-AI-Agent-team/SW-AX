@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { readFile, readdir } from 'node:fs/promises';
+import { unzipSync, strFromU8 } from 'fflate';
 import { chromium } from 'playwright-core';
 import { preview } from 'vite';
 
@@ -14,6 +16,8 @@ const batchPath = '/api/operations/batches/batch';
 const statusPath = '/api/operations/worker-status';
 const status = { state: 'running', online: ['prepare', 'studio', 'mail', 'report', 'printer'], checked_at: '2026-11-09T10:00:00Z', printer_last_seen: '2026-11-09T10:00:00Z' };
 const responses = { '/api/events': [event], '/api/events/test/teams': [team], '/api/dashboard': dashboard, [batchPath]: batch, [statusPath]: status };
+const versionsPath = '/api/files/original/versions';
+responses[versionsPath] = { name, versions: [] };
 let browser, server, baseURL, receiveUpload;
 
 before(async () => {
@@ -39,9 +43,10 @@ before(async () => {
 after(async () => { await browser?.close(); await server?.close(); });
 
 async function newPage(t, width = 1440) {
-  const page = await browser.newPage({ baseURL, viewport: { width, height: 850 }, locale: 'ko-KR', reducedMotion: 'reduce' });
+  const context = await browser.newContext({ baseURL, viewport: { width, height: 850 }, locale: 'ko-KR', reducedMotion: 'reduce' });
+  const page = await context.newPage();
   page.setDefaultTimeout(8000);
-  t.after(() => page.close());
+  t.after(() => context.close());
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/intake-batches' && route.request().method() === 'POST') return route.continue();
@@ -303,6 +308,114 @@ test('워커 실행 실패 원인을 표시하고 같은 화면에서 다시 시
   await start.click();
   await rail.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
   assert.equal(await rail.getByRole('alert').count(), 0);
+});
+
+test('다른 탭에서 저장한 HWPX가 미리보기와 확대 화면에 반영되고 접수 원본으로 전환할 수 있다', async t => {
+  const page = await newPage(t);
+  const { default: init, HwpDocument } = await import('../dist/rhwp/rhwp.js');
+  const assets = new URL('../dist/rhwp/assets/', import.meta.url);
+  const wasm = (await readdir(assets)).find(n => /^rhwp_bg-.*\.wasm$/.test(n));
+  await init({ module_or_path: await readFile(new URL(wasm, assets)) });
+  const doc = HwpDocument.createEmpty();
+  doc.createBlankDocument();
+  doc.insertText(0, 0, 0, '접수 원본');
+  const source = Buffer.from(doc.exportHwpx());
+  doc.free();
+  let saved;
+  const history = { name, versions: [] };
+  await page.route('**' + versionsPath, route => route.fulfill({ json: history }));
+  await page.route('**' + versionsPath + '/1/content', route => route.fulfill({ contentType: 'application/octet-stream', body: saved }));
+  await page.goto('/#/assign?file=original');
+  const reason = page.getByRole('textbox', { name: /근거/ });
+  await reason.fill('배정 확인 중');
+  await page.getByText('접수 원본', { exact: true }).waitFor();
+  const editor = await page.context().newPage();
+  await editor.route('**' + versionsPath + '/0/content', route => route.fulfill({ contentType: 'application/octet-stream', body: source }));
+  await editor.route('**' + versionsPath, async route => {
+    const request = route.request();
+    if (request.method() === 'GET') return route.fulfill({ json: history });
+    const form = await new Response(request.postDataBuffer(), { headers: { 'Content-Type': request.headers()['content-type'] } }).formData();
+    saved = Buffer.from(await form.get('document').arrayBuffer());
+    const version = { version: 1, editor: 'test', saved_at: new Date().toISOString() };
+    history.versions.push(version);
+    return route.fulfill({ json: version });
+  });
+  await editor.goto('/#/files/original/edit');
+  const canvas = editor.frameLocator('iframe').locator('#scroll-content canvas').first();
+  await editor.waitForFunction(() => document.querySelector('select[aria-label="문서 버전"]')?.disabled === false);
+  const box = await canvas.boundingBox();
+  await editor.mouse.click(box.x + box.width / 2, box.y + 100);
+  await editor.keyboard.press('Control+Home');
+  await editor.keyboard.type('SAVEDCOPY');
+  await editor.getByRole('button', { name: '새 버전으로 저장' }).click();
+  await editor.getByText('수정본 v1을 저장했습니다.').waitFor();
+  assert.ok(strFromU8(unzipSync(saved)['Contents/section0.xml']).includes('SAVEDCOPY'));
+  const choice = page.getByRole('combobox', { name: '미리보기 버전' });
+  await choice.waitFor();
+  assert.equal(await choice.locator('option:checked').innerText(), '최신 수정본 v1');
+  const sheet = page.frameLocator('iframe').getByRole('img', { name: '수정본 v1 · 1쪽' });
+  await sheet.waitFor();
+  const shown = await sheet.evaluate(async img => {
+    const svg = new DOMParser().parseFromString(await (await fetch(img.src)).text(), 'image/svg+xml');
+    return [...svg.querySelectorAll('text')].map(t => t.textContent.trim()).join('');
+  });
+  assert.ok(shown.includes('SAVEDCOPY'), '렌더링한 첫 쪽의 텍스트: ' + shown.slice(0,120));
+  assert.equal(await page.getByRole('link', { name: '수정본 내려받기' }).getAttribute('href'), versionsPath + '/1/content');
+  const src = await page.locator('iframe').getAttribute('src');
+  await page.getByRole('button', { name: '크게 보기' }).click();
+  const dialog = page.getByRole('dialog');
+  assert.equal(await dialog.locator('iframe').getAttribute('src'), src);
+  assert.equal(await dialog.getByRole('link').getAttribute('href'), src);
+  await dialog.getByRole('button', { name: '닫기' }).click();
+  await choice.selectOption('0');
+  await page.getByRole('link', { name: '원본 받기' }).waitFor();
+  assert.equal(await reason.inputValue(), '배정 확인 중');
+  await page.reload();
+  await sheet.waitFor();
+  const ref = { id: file.id, page: 2 };
+  const previewPath = '/api/files/original/preview';
+  const submission = { id: 'review', current: 'review', team_name: team.name, team: team.id, version: 1, state: 'done',
+    count: 1, verdict: '담당자확인', email: '', note: '', files: [{ ...file, url: previewPath }], history: [], mail: [], audit: [],
+    fields: { members: [], recipient: {} }, result: { issues: [], documents: { '01': [ref] },
+      checks: [{ label: '제출 시점 확인', passed: null, refs: [ref] }] } };
+  await page.route('**/api/operations/submissions/review', route => route.fulfill({ json: submission }));
+  await page.route('**' + previewPath, route => route.fulfill({ contentType: 'text/html', body: '판정에 사용한 원본' }));
+  await page.goto('/#/teams/review?file=original');
+  await sheet.waitFor();
+  await page.getByRole('complementary', { name: '검토 체크리스트' }).getByRole('button', { name: /지급확인서.*2쪽/ }).click();
+  assert.equal(await choice.inputValue(), '0');
+  assert.equal(await page.getByTitle(name, { exact: true }).getAttribute('src'), previewPath + '#page=2');
+});
+
+test('큰 문서 미리보기를 닫으면 원래 파일과 작성 중인 배정 근거가 유지된다', async t => {
+  const page = await newPage(t);
+  const previewPath = '/api/files/original/preview';
+  await page.route('**' + batchPath, route => route.fulfill({ json: { ...batch, files: [{ ...file, url: previewPath, page: 2, pages: 3 }] } }));
+  await page.route('**' + previewPath, route => route.fulfill({ contentType: 'text/html', body: '<p>시험 문서</p>' }));
+  await page.setViewportSize({ width: 1920, height: 960 });
+  await page.goto('/#/assign?file=original');
+  const inline = page.getByTitle(name, { exact: true });
+  await inline.waitFor();
+  const box = await inline.boundingBox();
+  assert.ok(box.width > 1050 && box.height >= 700);
+  const reason = page.getByRole('textbox', { name: /근거/ });
+  await reason.fill('원본을 대조하는 중');
+  const enlarge = page.getByRole('button', { name: '크게 보기' });
+  for (const width of [1920, 375]) {
+    await page.setViewportSize({ width, height: width === 375 ? 812 : 960 });
+    await enlarge.click();
+    const dialog = page.getByRole('dialog', { name: name + ' 크게 보기' });
+    const enlarged = dialog.locator('iframe');
+    assert.equal(await enlarged.getAttribute('src'), previewPath + '#page=2');
+    assert.equal(await dialog.getByRole('link', { name: '새 탭에서 열기' }).getAttribute('href'), previewPath + '#page=2');
+    assert.ok((await enlarged.boundingBox()).width >= width * .94);
+    if (width === 375) await dialog.getByRole('button', { name: '닫기' }).click();
+    else await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden' });
+    assert.ok(await enlarge.evaluate(el => el === document.activeElement));
+    assert.equal(await reason.inputValue(), '원본을 대조하는 중');
+    assert.equal(await inline.getAttribute('src'), previewPath + '#page=2');
+  }
 });
 
 test('작업 공간 너비에 맞춰 배정 목록과 원본을 배치하고 확대해도 가로로 넘치지 않는다', async t => {

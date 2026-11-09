@@ -9,7 +9,8 @@ import {
   icon,
   modal,
   notice,
-  previewFrame,
+  documentPreviewFrame,
+  editDocumentLink,
   section,
   teamOptions,
   types,
@@ -267,20 +268,20 @@ export function bindBatch(d, b, refresh) {
         modal(
           "원본 대조 · " + f.name,
           '<div class="stack">' +
+            editDocumentLink(f) +
             (f.url
               ? '<a target="_blank" rel="noopener" href="' +
                 f.url +
                 "#page=" +
                 f.page +
-                '">원문 PDF 새 창에서 보기 ↗</a>' +
-                previewFrame(f.url, f.page)
+                '">접수 원본 PDF 새 창에서 보기 ↗</a>'
               : '<div class="callout warn">' +
                 esc(f.reason) +
                 "</div>" +
                 (f.state === "error"
                   ? '<button type="button" class="sm" id="retry-file">원본 판독 재개</button>'
                   : "")) +
-            "<div><b>배정 근거</b><p>" +
+            documentPreviewFrame(f, f.page) + "<div><b>배정 근거</b><p>" +
             esc(f.reason) +
             "</p><small>후보 팀 · " +
             esc(

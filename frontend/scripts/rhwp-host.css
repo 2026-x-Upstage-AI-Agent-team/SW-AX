@@ -1,0 +1,2 @@
+/* A receipt editor always stays attached to the selected document. */
+[data-cmd="file:new-doc"], [data-cmd="file:open"], [data-recent] { display: none !important; }

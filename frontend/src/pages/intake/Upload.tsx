@@ -5,11 +5,12 @@ import { ApiError, bytes } from '../../api/client';
 import { isDemoBackend } from '../../api/backend';
 import { teamLabel, uploadBatch, type AwardEvent, type AwardTeam } from '../../api/intake';
 import { docLabels } from '../../api/labels';
+import { getEditHistory, readVersion, versionName } from '../../api/documentVersions';
 import type { SubmissionDetail } from '../../api/service';
 import { buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
 
-type Picked = { id: string; file: File };
+type Picked = { id: string; file: File; sourceId?: string };
 
 const MAX_FILES = 100;
 const MAX_TOTAL = 300 * 1024 ** 2;
@@ -44,8 +45,29 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
   const [fileError, setFileError] = useState('');
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState('');
   const [dragging, setDragging] = useState(false);
   const total = files.reduce((sum, entry) => sum + entry.file.size, 0);
+  const replaced = [...new Set([...removed, ...files.flatMap(f => f.sourceId ? [f.sourceId] : [])])];
+
+  async function useSavedEdit(id: string) {
+    if (busy || loadingEdit || files.some(f => f.sourceId === id)) return;
+    setLoadingEdit(id);
+    setFileError('');
+    try {
+      const history = await getEditHistory(id);
+      const latest = history.versions[0];
+      if (!latest) throw new Error(history.name + '에 저장된 수정본이 없습니다. 한글 문서 편집에서 먼저 저장해 주세요.');
+      const content = await readVersion(id, latest.version);
+      if (files.length >= MAX_FILES || total + content.byteLength > MAX_TOTAL) throw new Error('한 번에 100개, 합계 300 MiB까지 선택해 주세요.');
+      const file = new File([content], versionName(history.name, latest.version), { lastModified: Date.parse(latest.saved_at) });
+      setFiles(current => [...current, { id: crypto.randomUUID(), file, sourceId: id }]);
+    } catch (err) {
+      setFileError((err as Error).message);
+    } finally {
+      setLoadingEdit('');
+    }
+  }
 
   function add(list: FileList | null) {
     if (busy || !list?.length) return;
@@ -71,14 +93,14 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (busy || !files.length) return;
+    if (busy || loadingEdit || !files.length) return;
     setError('');
     setFileError('');
     setBusy(true);
     setProgress(0);
     try {
       const manifest = files.map(({ file }) => ({ name: file.name, size: file.size }));
-      const selection = JSON.stringify([event.id, target, base?.id ?? '', removed, manifest, files.map((x) => x.file.lastModified)]);
+      const selection = JSON.stringify([event.id, target, base?.id ?? '', replaced, manifest, files.map((x) => x.file.lastModified)]);
       const stored = readPending();
       const key = stored?.selection === selection ? stored.key : crypto.randomUUID();
       writePending({ selection, key });
@@ -88,7 +110,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
       else if (target) form.set('target', target);
       if (base) {
         form.set('base', base.id);
-        form.set('removed', JSON.stringify(removed));
+        form.set('removed', JSON.stringify(replaced));
       }
       form.set('manifest', JSON.stringify(manifest));
       files.forEach(({ file }) => form.append('files', file));
@@ -114,23 +136,29 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         <h2 className="text-xl font-extrabold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '제출 원본'}</h2>
         <span className="text-sm text-muted">HWP · HWPX</span>
       </div>
-      <fieldset disabled={busy} className="flex min-w-0 flex-col gap-2">
+      <fieldset disabled={busy || !!loadingEdit} className="flex min-w-0 flex-col gap-2">
         {base ? (
           <fieldset className="flex flex-col gap-2 rounded-2xl bg-canvas p-4">
             <legend className="sr-only">교체할 이전 원본</legend>
             <p className="text-sm font-bold">이전 버전 원본 중 교체·제외할 파일</p>
             <p className="text-[13px] text-muted">선택하지 않은 파일은 새 버전에 그대로 남습니다. 빠진 서류는 아래에 추가만 하면 됩니다.</p>
             {base.files.map((f) => (
-              <label key={f.id} className="flex min-h-10 items-center gap-2.5 text-sm">
-                <input
-                  type="checkbox"
-                  checked={removed.includes(f.id)}
-                  onChange={(e) => setRemoved((list) => (e.target.checked ? [...list, f.id] : list.filter((x) => x !== f.id)))}
-                  className="size-4 accent-brand"
-                />
-                <span className="file-name">{f.name}</span>
-                <span className="text-xs text-muted">{docLabels[f.kind] ?? f.kind}</span>
-              </label>
+              <div key={f.id} className="flex min-h-10 flex-wrap items-center gap-2.5 text-sm">
+                <label className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={replaced.includes(f.id)}
+                    disabled={files.some(item => item.sourceId === f.id)}
+                    onChange={(e) => setRemoved((list) => (e.target.checked ? [...list, f.id] : list.filter((x) => x !== f.id)))}
+                    className="size-4 accent-brand"
+                  />
+                  <span className="file-name">{f.name}</span>
+                  <span className="text-xs text-muted">{docLabels[f.kind] ?? f.kind}</span>
+                </label>
+                <button type="button" className={buttonStyles.text} disabled={files.some(item => item.sourceId === f.id)} onClick={() => void useSavedEdit(f.id)}>
+                  {loadingEdit === f.id ? '불러오는 중…' : '저장한 수정본 사용'}
+                </button>
+              </div>
             ))}
           </fieldset>
         ) : (
@@ -230,7 +258,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         <span>
           선택 <b>{files.length}</b>개 · {bytes(total)}
         </span>
-        <button className={buttonStyles.primary} disabled={busy || !files.length}>
+        <button className={buttonStyles.primary} disabled={busy || !!loadingEdit || !files.length}>
           {busy ? '접수 중…' : base ? '보완본 접수하기' : '원본 접수하기'}
         </button>
       </footer>

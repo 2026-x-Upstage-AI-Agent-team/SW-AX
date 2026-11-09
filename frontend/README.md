@@ -11,6 +11,8 @@ React 19 · Vite · TypeScript · Tailwind CSS v4 · React Router.
 
 왼쪽 사이드바 하단에서 **워커 실행 필요 → 실행하기**를 누른다. 휴대폰에서는 작업 메뉴를 열면 같은 버튼이 보인다. 시작 요청은 로그인한 담당자가 보낼 수 있다. 서버가 업무 워커의 PostgreSQL 연결과 같은 PC에 둔 PDF 워커의 응답을 확인하면 **워커 실행 중**으로 바뀐다. 상태는 15초마다 갱신되고, 조회에 실패하면 **다시 확인**할 수 있다. 전용 출력 PC를 분리한 구성에서는 사이드바가 업무 서버의 워커를 제어하고 전용 PC는 예약 작업으로 PDF 워커를 실행한다.
 
+팀 배정 화면은 넓은 화면의 남는 폭을 문서 미리보기에 사용한다. **크게 보기**를 누르면 창 전체에 가깝게 문서를 볼 수 있다. **닫기** 또는 Esc로 돌아오면 선택한 파일과 입력 중인 배정 근거가 유지된다.
+
 ## 실행
 
 ```powershell
@@ -19,10 +21,13 @@ npm run dev           # 접수 API(Spring Boot, 127.0.0.1:18765)에 연결
 npm run dev:service   # 검토 서비스(Windows 시연판 FastAPI, 127.0.0.1:8765)에 연결
 npm run build         # 타입 검사 후 dist/ 생성 (backend gradle 빌드가 static/ 으로 복사)
 npm run test:ux       # 빌드한 화면의 배정·접수 흐름을 Chrome과 시험용 로컬 API로 확인
+npm run test:editor   # 별도 시험 서버에서 공식 가상 HWP·HWPX를 직접 편집하고 새 버전을 다시 연다
 ```
 
 두 모드 모두 http://127.0.0.1:5173 에서 열고, `/api` 요청은 Vite가 해당 서버로 넘긴다.
 Spring Boot가 `dist/`를 정적 파일로 내보내므로 해시 라우팅(`/#/teams/...`)을 쓴다.
+
+팀 배정 확인과 팀별 검토의 **한글 문서 편집**은 같은 서버의 `/rhwp/`에서 Studio, WASM, 글꼴을 읽는다. 최초 개발 실행·빌드는 지정된 rhwp 0.9.0 배포본을 받아 SHA-256을 검증한다. 이후에는 `var/rhwp-editor-build/rhwp-chrome-0.9.0.zip`을 재사용하며, 배포된 시연 웹은 이 다운로드 없이 편집한다. `test:editor`는 `INTAKE_TEST_URL`, `INTAKE_TEST_LOGIN_A`, `INTAKE_TEST_PASSWORD_A`를 지정한 로컬 시험 서버에 가상 접수를 생성한다. [rhwp 배포본](https://github.com/edwardkim/rhwp/releases/tag/v0.9.0)
 
 | 모드 | 백엔드 | 실제로 동작하는 화면 |
 |---|---|---|

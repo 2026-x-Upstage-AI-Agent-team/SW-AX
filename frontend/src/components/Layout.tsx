@@ -114,9 +114,9 @@ export default function Layout() {
   );
 }
 
-export function Page({ children, tone = 'white', width = 'wide' }: { children: ReactNode; tone?: 'white' | 'gray'; width?: 'wide' | 'normal' }) {
+export function Page({ children, tone = 'white', width = 'wide' }: { children: ReactNode; tone?: 'white' | 'gray'; width?: 'wide' | 'normal' | 'review' }) {
   return (
-    <main id="workspace-content" tabIndex={-1} className={cx('workspace-page', width === 'normal' && 'page-normal', tone === 'white' && 'page-paper')}>
+    <main id="workspace-content" tabIndex={-1} className={cx('workspace-page', width === 'normal' && 'page-normal', width === 'review' && 'page-review', tone === 'white' && 'page-paper')}>
       {children}
     </main>
   );

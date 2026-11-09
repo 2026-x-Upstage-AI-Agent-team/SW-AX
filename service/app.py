@@ -651,4 +651,17 @@ def download_report(rid: str, kind: str):
                         filename=None if kind == "preview" else f"{REPORT_NAME}_v{r['version']}.{ext}")
 
 
+editor_dist = ROOT / "frontend/dist"
+
+
+@app.get("/document-editor")
+def editor_page():
+    if not (editor_dist / "rhwp/viewer.html").is_file():
+        raise HTTPException(503, "frontend 폴더에서 npm run build를 실행하고 서비스를 다시 시작해 주세요.")
+    return FileResponse(editor_dist / "index.html")
+
+
+for directory in ("assets", "rhwp"):
+    if (editor_dist / directory).is_dir():
+        app.mount("/" + directory, StaticFiles(directory=editor_dist / directory), name="editor-" + directory)
 app.mount("/",StaticFiles(directory=STATIC,html=True),name="staff")

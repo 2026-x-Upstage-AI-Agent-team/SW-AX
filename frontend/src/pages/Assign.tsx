@@ -5,9 +5,10 @@ import { isDemoBackend } from '../api/backend';
 import { useAsync } from '../api/client';
 import { paths, receiptName } from '../api/intake';
 import { docLabels, when } from '../api/labels';
-import { assignFile, filePreviewUrl, getBatch, isFileProcessed, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
+import { assignFile, getBatch, isFileProcessed, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
 import { Page } from '../components/Layout';
-import { Feedback, Notice, PageHeader, PdfFrame, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
+import DocumentPreview from '../components/DocumentPreview';
+import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
 type Item = { batch: BatchDetail; file: FileInfo };
@@ -16,7 +17,7 @@ type Action = 'assign' | 'outside' | 'hold';
 export default function Assign() {
   const { dashboard, dashboardError, events, eventsError, refresh } = useEvent();
   return (
-    <Page tone="gray">
+    <Page tone="gray" width="review">
       <PageHeader title="팀 배정 확인" lead="자동 배정되지 않은 원본을 확인하고 배정할 팀과 근거를 기록하세요." />
       {dashboard ? <AssignmentQueue key={dashboard.event} dashboard={dashboard} /> : !eventsError && events?.length === 0 ? (
         <p className="surface p-6">등록된 대회가 없습니다. <Link to="/manage" className={buttonStyles.text}>대회·팀 관리</Link></p>
@@ -252,12 +253,13 @@ function Detail({ item, teamName, onBack, onSaved }: { item: Item; teamName: (id
           </p>
         )}
 
-        <PdfFrame url={filePreviewUrl(file, file.page)} title={file.name} height={480}
-          emptyMessage={file.state === 'error' ? '판독에 실패해 미리보기를 열 수 없습니다.' : batch.state === 'preparing' ? '원본을 판독하고 있습니다.' : undefined}>
+        <Link to={'/files/' + file.id + '/edit'} target="_blank" rel="noreferrer" className={buttonStyles.outline + ' self-start'}>한글 문서 편집</Link>
+        <DocumentPreview key={file.id} file={file} page={file.page} height="clamp(32rem, 76dvh, 72rem)"
+          emptyMessage={file.state === 'error' ? '판독에 실패해 미리보기를 열 수 없습니다.' : batch.state === 'preparing' ? '판독이 끝나면 미리보기가 표시됩니다.' : undefined}>
           {!isDemoBackend && <a href={paths.original(batch.id, file.id)} download className={buttonStyles.outline}>
             <Download size={16} aria-hidden="true" /> 원본 받기
           </a>}
-        </PdfFrame>
+        </DocumentPreview>
 
         {file.state === 'error' ? (
           <div className="flex flex-wrap items-center gap-3">

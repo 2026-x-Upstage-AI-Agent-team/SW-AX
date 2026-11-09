@@ -10,7 +10,8 @@ import {
   issueOptions,
   modal,
   notice,
-  previewFrame,
+  documentPreviewFrame,
+  editDocumentLink,
   section,
   teamTable,
   types,
@@ -147,8 +148,9 @@ export function reviewPage(d, s) {
           "</button>",
       )
       .join("") +
+    '</div><div id="doc-edit">' + (s.files[0] ? editDocumentLink(s.files[0]) : '') +
     '</div><div id="doc-frame">' +
-    (s.files[0]?.url ? previewFrame(s.files[0].url) : "") +
+    (s.files[0] ? documentPreviewFrame(s.files[0]) : "") +
     '</div><div id="file-caption" class="muted break">' +
     esc(s.files[0]?.name) +
     '</div><details id="confirmed-files"><summary>확정 접수 목록 · ' +
@@ -256,10 +258,11 @@ export function reviewPage(d, s) {
 }
 
 export function bindReview(d, s, refresh) {
-  const select = (id, p = 1, row) => {
+  const select = (id, p = 1, row, original = false) => {
     const f = s.files.find((x) => x.id === id);
-    if (!f?.url) return;
-    $("#doc-frame").innerHTML = previewFrame(f.url, p);
+    if (!f) return;
+    $("#doc-edit").innerHTML = editDocumentLink(f);
+    $("#doc-frame").innerHTML = documentPreviewFrame(f, p, original);
     $("#file-caption").textContent = f.name + " · " + p + "쪽" + (row ? " · 작성자 " + row + "행" : "");
     document
       .querySelectorAll("[data-file]")
@@ -269,7 +272,7 @@ export function bindReview(d, s, refresh) {
   document.querySelectorAll("[data-ref]").forEach(
     (b) =>
       (b.onclick = () => {
-        select(b.dataset.ref, +b.dataset.page, b.dataset.row);
+        select(b.dataset.ref, +b.dataset.page, b.dataset.row, true);
         $("#doc-frame").scrollIntoView({ block: "nearest" });
       }),
   );

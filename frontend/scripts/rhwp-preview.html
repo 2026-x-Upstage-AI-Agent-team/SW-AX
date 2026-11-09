@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>한글 수정본 미리보기</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #edf1ef; color: #182c25; font: 14px system-ui, sans-serif; }
+    nav { position: sticky; top: 0; display: flex; justify-content: center; align-items: center; gap: 1rem; padding: .45rem; background: white; border-bottom: 1px solid #ced8d2; }
+    nav[hidden], [hidden] { display: none; }
+    button { font: inherit; padding: .3rem .65rem; background: white; color: inherit; border: 1px solid #b0bfb9; border-radius: .4rem; }
+    button:disabled { color: #77857f; }
+    img { display: block; max-width: 100%; height: auto; margin: .5rem auto; background: white; }
+    p { margin: 1rem; }
+  </style>
+  <script type="module" src="./preview.js"></script>
+</head>
+<body>
+  <nav aria-label="문서 쪽 이동" hidden><button id="previous" type="button">이전 쪽</button><span id="page" aria-live="polite"></span><button id="next" type="button">다음 쪽</button></nav>
+  <p id="status" role="status">수정본을 불러오는 중…</p>
+  <img id="sheet" alt="" hidden>
+</body>
+</html>
