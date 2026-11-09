@@ -16,7 +16,7 @@ class ReviewDecisions {
     record Member(String role,String name,String studentId,String major,String school) {}
     record Review(Integer revision,String decision,String note,List<Member> members,Map<String,String> recipient,
                   String awardType,String supportAmount,List<String> issues) {}
-    record Address(String email) {}
+    record Address(String email,UUID submission) {}
     record Recovery(String job,Boolean confirmedAbsent) {}
     private final WorkflowData data;
     private static final Set<String> ISSUES=Set.of("application","consent","identity","account","signature","affiliation","duplicate","other");
@@ -34,7 +34,21 @@ class ReviewDecisions {
                 parsed[0].validate();
             } catch(AddressException ex) {throw ApiErrors.error(422,"확인한 팀장 이메일 주소 한 개를 입력하세요.");}
         }
-        data.db.update("UPDATE award_team SET email=? WHERE id=?",address,id);
+        if (input.submission()==null) {
+            data.db.update("UPDATE award_team SET email=?,email_confirmed_submission=NULL WHERE id=? AND email<>?",address,id,address);
+        } else {
+            if (address.isEmpty()) throw ApiErrors.error(422,"원접수에서 확인한 수신 주소를 입력하세요.");
+            data.db.queryForObject("SELECT id FROM award_team WHERE id=? FOR NO KEY UPDATE",UUID.class,id);
+            if (!data.db.queryForObject("""
+                    SELECT EXISTS(SELECT FROM intake_team_confirmation c JOIN ops_submission s ON s.id=c.submission_id
+                        WHERE c.team_id=? AND c.submission_id=? AND c.state='confirmed' AND s.state='done' AND NOT ops_team_held(c.team_id))
+                    """,Boolean.class,id,input.submission())) throw ApiErrors.error(409,"현재 팀의 판정이 끝난 제출본에서 주소를 확인하세요.");
+            if (data.db.update("""
+                    UPDATE award_team SET email=?,email_confirmed_submission=?
+                    WHERE id=? AND (email<>? OR email_confirmed_submission IS DISTINCT FROM ?)
+                    """,address,input.submission(),id,address,input.submission())>0)
+                data.audit(input.submission(),staff.getName(),"원접수 대조 후 팀장 수신 주소 확인");
+        }
         return Map.of("saved",true);
     }
 

@@ -116,10 +116,12 @@ class OperationalAcceptance(unittest.TestCase):
                 self.assertLess(time.monotonic(),deadline)
                 if not run_studio(db,api,remote,cfg):
                     time.sleep(1)
-        while deliver(db,cfg):
-            pass
         dashboard = staff.get("/api/dashboard",params={"event":event}).raise_for_status().json()
         subs = {t["id"]:t["current"] for t in dashboard["teams"]}
+        for case,tid in owners.items():
+            staff.put(f"/api/teams/{tid}/email",json={"email":case+"@award.test","submission":subs[tid]}).raise_for_status()
+        while deliver(db,cfg):
+            pass
         details = {s:staff.get("/api/operations/submissions/"+subs[tid]).raise_for_status().json() for s,tid in owners.items()}
         print("Studio 최종판정",{s:d["verdict"] for s,d in details.items()},flush=True)
         for key in ("set01","set02"):

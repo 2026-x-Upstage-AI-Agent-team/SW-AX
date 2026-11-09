@@ -89,12 +89,20 @@ def read_signals(f, renderer=None):
             team = re.search(r"팀[ \t]*명[ \t]*[:：]?[ \t]+(.+)", page)
             people = list(re.finditer(r"성[ \t]*명[ \t]+([가-힣A-Za-z·]+)[ \t]+성[ \t]*별", page))
             roster = []
+            representative_emails = []
             for i, person in enumerate(people):
                 segment = page[person.end():people[i+1].start() if i+1 < len(people) else None]
                 major = re.search(r"학부\s*\(과\)[ \t]+(.*?)[ \t]+E-?mail", segment, re.I)
                 roster.append({"name": person[1], "major": " ".join(major[1].split()) if major else ""})
+                # A blank member row can still have an E-mail label. Stay inside the row marked 대표.
+                row_start = page.rfind("\n", 0, person.start()) + 1
+                row = page[row_start:person.end()] + re.split(r"성[ \t]*명", segment, maxsplit=1)[0]
+                field = re.search(r"E-?mail[ \t]*[:：]?[ \t]*([^\r\n]*)", row, re.I)
+                if field and re.search(r"(?<![가-힣])대[ \t]*표(?![가-힣])", row[:field.start()]):
+                    representative_emails.extend(re.findall(r"[^\s<>,;|@]+@[^\s<>,;|@]+", field[1]))
             if team and roster:
-                applications.append({"name": " ".join(team[1].split()), "rep": roster[0]["name"], "roster": roster, "page": p})
+                applications.append({"name": " ".join(team[1].split()), "rep": roster[0]["name"], "roster": roster,
+                                     "page": p, "representative_emails": representative_emails})
         if "개인정보" in s and ("동의서(수혜인력)" in s or "개인정보및과세정보" in s or "소속부서(학과)" in s):
             kinds.add("02")
         if "수혜인력" in s and "소속부서" in s:

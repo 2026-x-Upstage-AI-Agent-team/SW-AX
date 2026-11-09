@@ -43,6 +43,8 @@ $eventId = Read-Host '배정할 대회 UUID'
 
 수동 배정·확정 API 회귀 시험은 판독 완료 상태를 준비하기 위해 같은 로컬 시험 DB의 `AWARDS_DB_URL`, `AWARDS_DB_USER`, `AWARDS_DB_PASSWORD`를 사용합니다. 실제 한글 원본의 판독 전후는 `tests.test_operations_cases`에서 검증합니다. 해당 시험 후 같은 서버와 시험 계정으로 `npm --prefix frontend run test:review`를 실행하면 설치된 Chrome에서 근거 원문과 누락 파일 목록 이동을 검사합니다. `tests.test_operations_recovery`의 429·503이 발생한 제출 UUID를 `INTAKE_TEST_RETRY_SUBMISSION`으로 지정하면 같은 명령으로 재시도 이력 표시를 검사합니다.
 
+팀장 주소 확인 화면을 시험할 때는 복구 시험에서 팀장 메일이 보류된 현재 제출본의 UUID를 `INTAKE_TEST_RECIPIENT_SUBMISSION`으로 지정합니다. 같은 Chrome 시험이 원문에서 추출한 주소를 표시하고, 해당 제출본의 등록 주소를 확인한 뒤 보류가 풀리는지 검사합니다.
+
 판정 워커를 연결하려면 Spring Boot와 워커에 같은 `AWARDS_REVIEW_WORKER_TOKEN`을 설정합니다. 워커는 확정 원본을 배정받고 결과를 제출하며, 담당자는 접수 상세에서 팀별 진행 상태와 최종판정을 확인합니다. 회귀 시험 환경에도 같은 토큰을 설정하면 동시 배정 시험을 실행합니다. 만료 후 인계까지 검증할 때는 **시험 서버**에 `AWARDS_REVIEW_LEASE_SECONDS=15`, 시험 클라이언트에 `INTAKE_TEST_SHORT_LEASE=1`을 설정합니다. [워커 API 명세](docs/IMPLEMENTATION_PLAN.md#워커-판정-작업-배정과-결과-등록)
 
 ```powershell

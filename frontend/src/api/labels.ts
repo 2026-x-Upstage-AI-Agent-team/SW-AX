@@ -6,6 +6,7 @@ export const stateLabels: Record<string, string> = {
   assigned: '배정 완료',
   read: '파일 판독 완료',
   waiting: '대기',
+  recipient_check: '수신자 확인 필요',
   unassigned: '팀 배정 확인',
   outside: '대상 외',
   error: '파일 확인',

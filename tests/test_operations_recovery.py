@@ -66,6 +66,7 @@ class Recovery(unittest.TestCase):
         denied_creates=[]
         mode="lost"
         output_team="복구 시험팀"
+        candidate="leader@award.test"
         def upstream(request):
             nonlocal mode
             if mode=="key-recovery" and request.headers.get("Authorization")!="Bearer restored-test-key":
@@ -92,7 +93,8 @@ class Recovery(unittest.TestCase):
             remote=request.url.path.split("/")[-1]
             return httpx.Response(200,json={"id":remote,"status":response_status,"output":[
                 {"model":"Instruct - 최종판정","content":[{"text":{"enum":verdict,"reason":"공식 가상 원본 대조"}}]},
-                {"model":"Information Extract - 지급확인서","content":[{"text":{"team_name":output_team,"representative_name":"대표"}}]}]})
+                {"model":"Information Extract - 지급확인서","content":[{"text":{"team_name":output_team,"representative_name":"대표",
+                    "representative_email":candidate}}]}]})
         def tick():
             with httpx.Client(base_url="https://studio.invalid/",headers={"Authorization":"Bearer "+cfg["UPSTAGE_API_KEY"]},
                               transport=httpx.MockTransport(upstream)) as remote:
@@ -252,6 +254,7 @@ class Recovery(unittest.TestCase):
         with patch("operations.worker.configuration",return_value=cfg), patch("operations.worker.studio.client",return_value=probe):
             serve("studio",previous_config,once=True)
         self.assertEqual((execution()["phase"],execution()["remote_id"]),("superseded",None))
+        candidate="new-leader@award.test"
         verdict="재제출요청"
         for sid,output_team in ((next_sid,"다음 시험팀"),(replacement,"복구 시험팀")):
             tick()
@@ -261,6 +264,30 @@ class Recovery(unittest.TestCase):
             self.assertEqual(execution()["phase"],"done")
         self.assertEqual(len(creates),before+2)
         self.assertFalse(db.execute("SELECT 1 FROM review_mail WHERE submission_id=%s",(retired,)).fetchone())
+        # The registered address is valid, but differs from this version's extracted address.
+        while deliver(db,cfg):
+            pass
+        recipient_url=f"/api/teams/{team}/email"
+        def recipients():
+            return {m["kind"]:m["state"] for m in staff.get("/api/operations/submissions/"+replacement).json()["mail"]}
+        self.assertEqual(recipients(),{"보완 요청":"recipient_check","담당자 알림":"local"})
+        for stale in (retired,next_sid):
+            self.assertEqual(staff.put(recipient_url,json={"email":"leader@award.test","submission":stale}).status_code,409)
+        for _ in range(2):
+            staff.put(recipient_url,json={"email":"leader@award.test","submission":replacement}).raise_for_status()
+            while deliver(db,cfg):
+                pass
+        self.assertEqual(recipients(),{"보완 요청":"local","담당자 알림":"local"})
+        sid,_ = submit(("02",),replacement)
+        tick()
+        due()
+        tick()
+        while deliver(db,cfg):
+            pass
+        detail=staff.get("/api/operations/submissions/"+sid).raise_for_status().json()
+        self.assertTrue(detail["email_needs_confirmation"])
+        self.assertEqual({m["kind"]:m["state"] for m in detail["mail"]},{"보완 요청":"recipient_check","담당자 알림":"local"})
+
         # Config lookup can succeed even while Job creation is forbidden.
         mode="create-denied"
         sid,_=submit(("01",),owner=next_team)

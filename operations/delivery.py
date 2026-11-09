@@ -102,7 +102,9 @@ def deliver(db, raw_cfg):
         CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END AS address
         FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
         JOIN intake_team_confirmation c ON c.submission_id=s.id AND c.state='confirmed'
+        JOIN ops_leader_recipient r ON r.submission_id=s.id
         WHERE s.state='done' AND NOT ops_team_held(t.id)
+        AND (m.kind='담당자 알림' OR NOT r.needs_confirmation)
         AND (CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END)<>''
         AND (m.kind='담당자 알림' OR (m.kind='보완 요청' AND (s.verdict='재제출요청' OR s.decision='보완 필요'))
           OR (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))) """
@@ -114,6 +116,8 @@ def deliver(db, raw_cfg):
         db.execute("UPDATE review_mail SET state='sending',sent_to=%s,subject=%s,body=%s WHERE id=%s",
                    (m["address"],str(msg["Subject"]),msg.get_content(),m["id"]))
     with db.transaction():
+        # Read the address and its version confirmation in a fresh snapshot after taking the team lock.
+        db.execute("SELECT id FROM award_team WHERE id=%s FOR NO KEY UPDATE", (m["team"],))
         valid = db.execute(query + "AND m.id=%s AND m.state='sending' FOR UPDATE OF t,c,m", (admin,admin,m["id"])).fetchone()
         if valid and valid["address"] == m["address"]:
             final = send(msg,cfg,mailbox / (str(m["id"])+".eml"))

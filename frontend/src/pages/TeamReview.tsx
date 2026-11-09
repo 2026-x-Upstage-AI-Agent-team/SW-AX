@@ -428,6 +428,9 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const current = s.id === s.current;
+  const canConfirm = current && !s.held && s.state === 'done' && s.email_needs_confirmation !== undefined;
+  const confirmAddress = canConfirm && s.email_needs_confirmation;
   useEffect(() => setEmail(s.email), [s.email]);
 
   async function saveEmail() {
@@ -435,8 +438,8 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
     setError('');
     setMessage('');
     try {
-      await setTeamEmail(s.team, email.trim());
-      setMessage('팀장 이메일을 저장했습니다. 대기 중인 안내가 이 주소로 발송됩니다.');
+      await setTeamEmail(s.team, email.trim(), confirmAddress && email.trim() ? s.id : undefined);
+      setMessage(email.trim() ? '팀장 수신 주소를 저장했습니다.' : '팀장 안내는 수신 주소 확인을 기다립니다.');
       onSaved();
     } catch (err) {
       setError((err as Error).message);
@@ -448,13 +451,19 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
   return (
     <div className="flex flex-col gap-3 rounded-[22px] border border-line bg-white p-[22px]">
       <h2 className="text-[17px] font-extrabold">팀장 안내</h2>
+      {s.state === 'done' && s.application_emails && (
+        <p className="break-all text-sm text-ink-2">신청서 대표 이메일 · {s.application_emails.join(', ') || '확인된 주소 없음'}</p>
+      )}
+      {confirmAddress && (
+        <p className="text-sm text-caution">원접수와 신청서를 대조해 수신 주소를 확인해 주세요. 이 제출본의 팀장 안내는 주소 확인 후 발송합니다.</p>
+      )}
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-xs text-muted">
           팀장 이메일 (원접수에서 확인한 주소 한 개)
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} className={inputStyle} />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy || !current} className={inputStyle} />
         </label>
-        <button type="button" onClick={saveEmail} disabled={busy || email.trim() === s.email} className={buttonStyles.secondary}>
-          저장
+        <button type="button" onClick={saveEmail} disabled={busy || !current || (email.trim() === s.email && !(confirmAddress && email.trim()))} className={buttonStyles.secondary}>
+          {confirmAddress ? '이 제출본의 수신 주소 확인' : '저장'}
         </button>
       </div>
       <Feedback error={error} message={message} />

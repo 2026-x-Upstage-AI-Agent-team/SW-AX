@@ -114,6 +114,8 @@ export type SubmissionDetail = SubInfo & {
   team_name: string;
   rep: string;
   email: string;
+  application_emails?: string[];
+  email_needs_confirmation?: boolean;
   held: boolean;
   current: string | null;
   note: string;
@@ -191,8 +193,8 @@ export const saveReview = (sid: string, body: ReviewInput) =>
 export const retrySubmission = (sid: string, body: { job?: string; confirmed_absent?: boolean }) =>
   sendJson<SubInfo>(`/api/submissions/${enc(sid)}/retry`, { job: '', confirmed_absent: false, ...body });
 
-export const setTeamEmail = (tid: string, email: string) =>
-  sendJson<{ saved: boolean }>(`/api/teams/${enc(tid)}/email`, { email }, 'PUT');
+export const setTeamEmail = (tid: string, email: string, submission?: string) =>
+  sendJson<{ saved: boolean }>(`/api/teams/${enc(tid)}/email`, { email, submission }, 'PUT');
 
 export type AssignInput = { action: 'assign' | 'outside' | 'hold'; team?: string; reason: string; revision: number; exclude?: string[] };
 

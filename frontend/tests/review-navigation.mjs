@@ -21,7 +21,29 @@ before(async () => {
 after(async () => browser?.close());
 
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
-if (historyId) {
+const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
+if (recipientId) {
+  test('신청서와 다른 등록 주소를 현재 제출본에서 확인한다', async () => {
+    const path = '/api/operations/submissions/' + recipientId;
+    const before = await (await request.get(path)).json();
+    assert.match(before.email, /@award\.test$/);
+    assert.equal(before.email_needs_confirmation, true);
+    assert.ok(before.application_emails.length);
+    assert.ok(before.mail.some((m) => m.state === 'recipient_check'));
+    await page.goto('/#/teams/' + recipientId);
+    await page.getByText('신청서 대표 이메일 · ' + before.application_emails.join(', '), { exact: true }).waitFor();
+    const confirm = page.getByRole('button', { name: '이 제출본의 수신 주소 확인' });
+    const [saved] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith('/teams/' + before.team + '/email')),
+      confirm.click(),
+    ]);
+    assert.equal(saved.status(), 200);
+    assert.deepEqual(saved.request().postDataJSON(), { email: before.email, submission: recipientId });
+    const after = await (await request.get(path)).json();
+    assert.equal(after.email_needs_confirmation, false);
+    assert.equal(after.mail.filter((m) => m.kind === '보완 요청').length, 1);
+  });
+} else if (historyId) {
   test('처리가 끝난 제출본의 과거 재시도에서도 429와 503을 구분한다', async () => {
     await page.goto('/#/teams/' + historyId);
     for (const reason of ['HTTP 429 · RATE_LIMITED', 'HTTP 503 · SERVICE_UNAVAILABLE']) {

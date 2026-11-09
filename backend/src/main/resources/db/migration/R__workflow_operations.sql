@@ -1,7 +1,8 @@
 ALTER TABLE award_event ADD COLUMN IF NOT EXISTS event_date text NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS place text NOT NULL DEFAULT '';
 ALTER TABLE award_team ADD COLUMN IF NOT EXISTS roster jsonb NOT NULL DEFAULT '[]',
-    ADD COLUMN IF NOT EXISTS email varchar(254) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS email varchar(254) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS email_confirmed_submission uuid REFERENCES team_submission;
 ALTER TABLE intake_file_assignment ADD COLUMN IF NOT EXISTS evidence_reviewed boolean NOT NULL DEFAULT false;
 ALTER TABLE intake_batch ADD COLUMN IF NOT EXISTS uploaded_by varchar(64) REFERENCES staff_account,
     ADD COLUMN IF NOT EXISTS base_submission uuid REFERENCES team_submission,
@@ -106,11 +107,36 @@ SELECT s.*,jsonb_build_object('id',id,'team',team_id,'version',version,'state',s
     'count',file_count,'award_type',fields->>'award_type','support_amount',fields->>'support_amount',
     'status_url','/api/operations/submissions/'||id) AS info FROM ops_submission s;
 
+-- Compare the registered address to every representative address for this exact version.
+-- Older results with a 01 but no saved address require a fresh staff confirmation.
+CREATE OR REPLACE VIEW ops_leader_recipient AS
+SELECT s.id AS submission_id, candidates.emails,
+    t.email='' OR (t.email_confirmed_submission IS DISTINCT FROM s.id AND (
+        EXISTS(SELECT FROM unnest(candidates.emails) e
+               WHERE lower(e)<>lower(t.email) OR split_part(e,'@',1)<>split_part(t.email,'@',1))
+        OR (cardinality(candidates.emails)=0 AND (
+            coalesce(s.output#>'{documents,01}','[]'::jsonb)<>'[]'::jsonb
+            OR EXISTS(SELECT FROM team_submission_file sf JOIN original_analysis a ON a.file_id=sf.file_id
+                      WHERE sf.submission_id=s.id AND a.kind='01'))))) AS needs_confirmation
+FROM ops_submission s JOIN award_team t ON t.id=s.team_id
+CROSS JOIN LATERAL (SELECT ARRAY(
+    SELECT DISTINCT btrim(raw) FROM (
+        SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(s.output->'representative_emails')='array'
+            THEN s.output->'representative_emails' ELSE '[]'::jsonb END) AS raw
+        UNION ALL SELECT s.output->>'representative_email'
+        UNION ALL
+        SELECT address #>> '{}' FROM team_submission_file sf JOIN original_analysis a ON a.file_id=sf.file_id
+        CROSS JOIN LATERAL jsonb_path_query(a.signals,'$.apps[*].representative_emails[*]') address
+        WHERE sf.submission_id=s.id AND a.kind='01'
+    ) addresses WHERE btrim(raw)<>'' ORDER BY 1) AS emails) candidates;
+
 CREATE OR REPLACE VIEW ops_mail AS
 SELECT m.id,m.submission_id,s.event_id,m.created_at,jsonb_build_object('id',m.id,'submission',m.submission_id,'kind',m.kind,
-    'state',CASE WHEN s.job_state='superseded' AND m.state IN ('waiting','failed') THEN 'obsolete' ELSE m.state END,
+    'state',CASE WHEN s.job_state='superseded' AND m.state IN ('waiting','failed') THEN 'obsolete'
+                 WHEN m.state='waiting' AND m.kind<>'담당자 알림' AND r.needs_confirmation THEN 'recipient_check' ELSE m.state END,
     'sent_to',m.sent_to,'created',extract(epoch FROM m.created_at),'name',t.name,'version',s.version) AS info
-FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id;
+FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
+JOIN ops_leader_recipient r ON r.submission_id=s.id;
 
 CREATE OR REPLACE FUNCTION ops_team_held(team uuid) RETURNS boolean LANGUAGE sql STABLE AS $$
     SELECT EXISTS(SELECT FROM intake_team_confirmation WHERE team_id=team AND state IN ('blocked','empty'))

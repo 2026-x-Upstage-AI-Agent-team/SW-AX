@@ -21,7 +21,7 @@ type Alert = { key: string; text: string; sub: string; to: string; action: strin
 /** 담당자가 지금 손대야 하는 일 */
 function needsAction(r: TeamRow) {
   const s = r.submission;
-  if (r.held || !s) return true;
+  if (r.held || !s || r.leaderMail?.state === 'recipient_check') return true;
   if (r.detail?.history.some((h) => h.state === 'access')) return true;
   if (recoverableStates.has(s.state) || s.state === 'ownership') return true;
   if (s.verdict === '성공') return s.decision !== '승인';
@@ -54,6 +54,8 @@ export default function Dashboard() {
       alerts.push({ key: r.id + 'access', text: `${r.name} · Studio 접근 권한 확인`, sub: `제출 v${priorAccess.version}에서 인증 오류가 발생했습니다. 키·사용량을 확인한 뒤 재개할 수 있습니다.`, to: `/teams/${priorAccess.id}`, action: '인증 확인' });
     else if (s.verdict === '담당자확인' && !s.decision)
       alerts.push({ key: r.id + 'check', text: `${r.name} · 원본 대조가 필요합니다.`, sub: r.detail?.result?.reason ?? '판정 근거를 확인한 뒤 ‘승인’ 또는 ‘보완 필요’를 기록하면 팀장에게 결과 한 통이 발송됩니다.', to: `/teams/${s.id}`, action: '원본 대조하기' });
+    else if (r.leaderMail?.state === 'recipient_check')
+      alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내가 보류 중입니다. 신청서와 원접수의 주소를 대조해 주세요.', to: `/teams/${s.id}`, action: '주소 확인' });
     else if (s.verdict === '재제출요청' && !r.email)
       alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 이메일이 없습니다.`, sub: '보완 요청 메일이 수신자 확인을 기다립니다.', to: `/teams/${s.id}`, action: '이메일 입력' });
   }

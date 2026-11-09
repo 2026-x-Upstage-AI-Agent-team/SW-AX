@@ -19,6 +19,15 @@ from tests.test_intake_postgres import login
 
 
 class ReviewEvidence(unittest.TestCase):
+    def test_only_representative_addresses_from_submitted_applications_are_candidates(self):
+        app = {"representative_email":" studio@award.test ","members":[{"name":"팀원","email":"member@award.test"}]}
+        job = {"output":[{"model":"Information Extract - 지급확인서","content":[{"text":app}]},
+                         {"model":"Instruct - 최종판정","content":[{"text":{"enum":"재제출요청","reason":"서류 누락"}}]}]}
+        signals = {"apps":[{"representative_emails":["form@award.test"]}]}
+        file = {"id":"f","kind":"01","signals":json.dumps(signals)}
+        self.assertEqual(parse_result(job,[file])["representative_emails"],["form@award.test","studio@award.test"])
+        self.assertEqual(parse_result(job,[dict(file,kind="03")])["representative_emails"],[])
+
     def test_member_evidence_uses_the_original_file_page_and_row(self):
         def source(fid, kind, **signals):
             return {"id": fid, "kind": kind, "signals": json.dumps(signals)}
@@ -181,10 +190,31 @@ class OfficialCases(unittest.TestCase):
                     job=api.post("review-jobs/claim",json={"worker_id":"controlled","event_id":event}).raise_for_status().json()
                     self.assertEqual(job["submission_id"],detail()["teams"][0]["submission_id"])
                     self.assertEqual({x["item_id"] for x in job["files"]},{f["id"] for f in files})
+                    if case=="set04":
+                        # A worker can return only its own address. Also check the confirmed original.
+                        result.pop("representative_emails")
+                        result["representative_email"]=case+"@award.test"
                     api.put("review-jobs/"+job["review_job_id"]+"/result",headers={"X-Claim-Token":job["claim_token"]},
                             json={"state":"done","studio_job_id":"job_mock_"+job["review_job_id"],"verdict":result["verdict"],"reason":result["reason"],"output":result}).raise_for_status()
                     while deliver(db,cfg):
                         pass
+                    sid = job["submission_id"]
+                    review = staff.get("/api/operations/submissions/"+sid).raise_for_status().json()
+                    self.assertTrue(review["application_emails"])
+                    if case=="set04":
+                        self.assertGreater(len(review["application_emails"]),1)
+                        self.assertIn(case+"@award.test",review["application_emails"])
+                    self.assertTrue(review["email_needs_confirmation"])
+                    self.assertEqual({m["kind"]:m["state"] for m in review["mail"]},
+                                     {"담당자 알림":"local","보완 요청":"recipient_check"})
+                    leader, = [m for m in review["mail"] if m["kind"]=="보완 요청"]
+                    self.assertFalse((DATA/"operations/mail"/(leader["id"]+".eml")).exists())
+                    confirm_address = {"email":case+"@award.test","submission":sid}
+                    for _ in range(2):
+                        staff.put(f"/api/teams/{team}/email",json=confirm_address).raise_for_status()
+                        while deliver(db,cfg):
+                            pass
+                    self.assertEqual(staff.get("/api/mail/"+leader["id"]).json()["sent_to"],case+"@award.test")
                     notices=db.execute("SELECT id,kind,state FROM review_mail WHERE submission_id=%s",(job["submission_id"],)).fetchall()
                     self.assertEqual({m["kind"]:m["state"] for m in notices},{"담당자 알림":"local","보완 요청":"local"})
                     self.assertEqual(len(notices),2)

@@ -85,6 +85,7 @@ def parse_result(job, files):
             for start, end in av.get("page_ranges", []):
                 id_pages.update(range(start, end + 1))
     docs = {k: [] for k in ("01", "02", "03", "?")}
+    emails = set()
     member_locations = {"01": {}, "02": {}}
     for f in files:
         k = classes.get(f["id"], f["kind"])
@@ -93,6 +94,7 @@ def parse_result(job, files):
         docs[k if k in docs else "?"].append(ref)
         if k == "01":
             for form in signals.get("apps", []):
+                emails.update(form.get("representative_emails", []))
                 for row, person in enumerate(form.get("roster", []), 1):
                     member_locations[k].setdefault(person["name"], []).append(dict(ref, page=form.get("page", ref["page"]), row=row))
         if k == "02":
@@ -101,6 +103,12 @@ def parse_result(job, files):
                 page = person.get("page", ref["page"])
                 rows[page] += 1
                 member_locations[k].setdefault(person["name"], []).append(dict(ref, page=page, row=rows[page]))
+
+    if docs["01"]:
+        for node in nodes.get("Information Extract - 지급확인서", []):
+            form = unpack(node.get("text"))
+            if isinstance(form, dict) and isinstance(form.get("representative_email"), str):
+                emails.add(form["representative_email"].strip())
 
     def member_refs(kind, name, row):
         located = member_locations[kind].get(name)
@@ -158,6 +166,7 @@ def parse_result(job, files):
         k = "03" if "통장" in label else "02" if "과제" in label else "01"
         check(label, c.get("passed"), [k], "signature" if "서명" in label else "other")
     return {"verdict": final["enum"], "reason": final["reason"], "program": app.get("program_name") or "",
+            "representative_emails": sorted(emails - {""}),
             "team_name": app.get("team_name") or "", "rep": app.get("representative_name") or "",
             "members": members, "recipient": recipient, "documents": docs, "checks": checks, "issues": issues or ["other"],
             "consent_names": [b.get("name") for b in consent], "staff_report": field("Instruct - 검토보고서") or ""}

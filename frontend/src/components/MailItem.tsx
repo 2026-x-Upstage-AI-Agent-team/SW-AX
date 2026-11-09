@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { when } from '../api/labels';
 import { getMail, retryMail, type MailRow, type MailView } from '../api/service';
 import { Feedback, StateBadge, buttonStyles, cx } from './ui';
@@ -30,6 +31,9 @@ export default function MailItem({ m, onSaved, showTeam }: { m: MailRow; onSaved
         {showTeam && m.name && <strong className="text-sm">{m.name}{m.version ? ` v${m.version}` : ''}</strong>}
         <span className={cx('text-sm', !showTeam && 'font-bold')}>{m.kind}</span>
         <StateBadge state={m.state} />
+        {showTeam && m.state === 'recipient_check' && (
+          <Link to={`/teams/${m.submission}`} className={buttonStyles.text}>수신 주소 확인</Link>
+        )}
         <span className="text-xs text-subtle">
           {m.sent_to ?? '수신자 확인 필요'} · {when(m.created)}
         </span>
