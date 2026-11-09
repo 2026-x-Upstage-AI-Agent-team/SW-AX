@@ -45,6 +45,25 @@ class LocalServiceTests(unittest.TestCase):
         return self.client.post("/api/intake-batches",headers={"Idempotency-Key":key},
             files=[("files",(n,b)) for n,b in items],data={"manifest":json.dumps(manifest),"event":"wave",**fields})
 
+    def test_document_edit_versions_are_separate_from_receipt(self):
+        original, edited = official("set04")
+        receipt = self.upload([original], "edit-versions").raise_for_status().json()
+        fid = self.client.get("/api/intake-batches/" + receipt["batch_id"]).json()["files"][0]["id"]
+        path = f"/api/files/{fid}/versions"
+        def save(base, data):
+            return self.client.post(path, data={"baseVersion": str(base)}, files={"document": ("edit.hwpx", data)})
+        self.assertEqual([], self.client.get(path).json()["versions"])
+        self.assertEqual(415, save(0, original[1]).status_code)
+        first = save(0, edited[1]).raise_for_status().json()
+        self.assertTrue(first["saved_at"])
+        self.assertEqual(first, save(0, edited[1]).json())
+        other = next(data for name, data in official("set01") if name.lower().endswith(".hwpx"))
+        self.assertEqual(409, save(0, other).status_code)
+        self.assertEqual(2, save(1, other).json()["version"])
+        self.assertEqual([2, 1], [v["version"] for v in self.client.get(path).json()["versions"]])
+        for i, data in enumerate((original[1], edited[1], other)):
+            self.assertEqual(data, self.client.get(f"{path}/{i}/content").raise_for_status().content)
+
     def test_replays_and_interrupted_storage(self):
         items = official("set01")
         with ThreadPoolExecutor(2) as pool:

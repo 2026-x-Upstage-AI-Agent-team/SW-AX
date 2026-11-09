@@ -152,6 +152,41 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(409, self.send(files, key=key, target=self.team(self.event, "동명", "가")).status_code)
         self.assertEqual(1, len(self.history()))
 
+    def test_document_edits_keep_original_and_serialize_competing_saves(self):
+        original = next(f for f in self.sets["set03"] if f[0].lower().endswith(".hwp"))
+        receipt = self.send([original]).raise_for_status().headers["location"]
+        file_id = self.http.get(receipt).json()["files"][0]["item_id"]
+        path = f"/api/files/{file_id}/versions"
+        self.assertEqual({"name": original[0], "versions": []}, self.http.get(path).json())
+        versions = [next(data for name, data in self.sets[case] if name.lower().endswith(".hwpx"))
+                    for case in ("set03", "set04")]
+        self.assertNotEqual(*versions)
+
+        def save(base, contents, client=None):
+            return (client or self.http).post(path, data={"baseVersion": str(base)},
+                                              files={"document": ("edit.hwpx", contents, "application/octet-stream")})
+
+        self.assertEqual(404, self.peer.get(path).status_code)
+        self.assertEqual(404, self.peer.get(path + "/0/content").status_code)
+        self.assertEqual(404, save(0, versions[0], self.peer).status_code)
+        self.assertEqual(415, save(0, b"invalid").status_code)
+        gate = Barrier(2)
+        def compete(contents):
+            gate.wait(timeout=10)
+            return save(0, contents)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            saves = list(pool.map(compete, versions))
+        self.assertEqual([200, 409], sorted(r.status_code for r in saves))
+        winner = next(i for i, r in enumerate(saves) if r.status_code == 200)
+        first = saves[winner].json()
+        self.assertEqual(1, first["version"])
+        self.assertTrue(first["editor"] and first["saved_at"])
+        self.assertEqual(first, save(0, versions[winner]).json())
+        self.assertEqual(2, save(1, versions[1 - winner]).json()["version"])
+        self.assertEqual([2, 1], [v["version"] for v in self.http.get(path).json()["versions"]])
+        for i, content in enumerate((original[1], versions[winner], versions[1 - winner])):
+            self.assertEqual(content, self.http.get(f"{path}/{i}/content").raise_for_status().content)
+
     def test_incomplete_or_unsupported_input_creates_no_receipt(self):
         files = self.sets["set04"]
         self.assertEqual(2, len(files))

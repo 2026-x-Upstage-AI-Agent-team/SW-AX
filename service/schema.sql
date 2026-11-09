@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS files(
  excluded TEXT NOT NULL DEFAULT '[]', reason TEXT NOT NULL DEFAULT '', signals TEXT NOT NULL DEFAULT '{}',
  pages INTEGER NOT NULL DEFAULT 0, UNIQUE(batch,pos));
 CREATE INDEX IF NOT EXISTS batch_files ON files(batch,pos);
+CREATE TABLE IF NOT EXISTS document_edit_version(
+ file_id TEXT NOT NULL REFERENCES files, version INTEGER NOT NULL CHECK(version>0),
+ parent_version INTEGER NOT NULL CHECK(parent_version=version-1), editor TEXT NOT NULL,
+ saved_at TEXT NOT NULL, sha256 TEXT NOT NULL, hwpx BLOB NOT NULL CHECK(length(hwpx) BETWEEN 1 AND 41943040),
+ PRIMARY KEY(file_id,version));
 CREATE TABLE IF NOT EXISTS submissions(
  id TEXT PRIMARY KEY, team TEXT NOT NULL REFERENCES teams, version INTEGER NOT NULL, files TEXT NOT NULL,
  digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued', job TEXT, started INTEGER, created INTEGER NOT NULL,

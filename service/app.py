@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, SecretStr
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import gmail_oauth
+from .document_versions import router as document_versions
 from .db import DATA, ROOT, database, dump, initialize, now, row, rows, settings, smtp_enabled, uid
 from .documents import preview
 from .mailing import connect_gmail, mail_settings, mailbox_address
@@ -41,6 +42,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="시상금 서류 검토", lifespan=lifespan, docs_url=None, redoc_url=None)
+app.include_router(document_versions)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1","localhost","[::1]"])
 STATIC = ROOT / "service/static"
 MAX_FILE = 40 * 1024**2
