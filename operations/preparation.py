@@ -14,8 +14,9 @@ def prepare(db, api):
         JOIN intake_file f ON f.id=sf.file_id JOIN intake_batch b ON b.id=f.batch_id
         WHERE b.uploaded_by IS NULL AND j.state IN ('queued','running')
         AND NOT EXISTS(SELECT FROM original_analysis WHERE file_id=f.id) ON CONFLICT DO NOTHING""")
-    batch = db.execute("""SELECT b.id,b.event_id,b.target_team_id,b.base_submission,b.uploaded_by,p.state FROM intake_preparation p
-        JOIN intake_batch b ON b.id=p.batch_id WHERE p.state IN ('pending','ready') ORDER BY p.created_at,b.id LIMIT 1""").fetchone()
+    batch = db.execute("""SELECT b.id,b.event_id,b.target_team_id,b.base_submission,b.uploaded_by,p.state,t.intake_number FROM intake_preparation p
+        JOIN intake_batch b ON b.id=p.batch_id LEFT JOIN award_team t ON t.id=b.target_team_id
+        WHERE p.state IN ('pending','ready') ORDER BY p.created_at,b.id LIMIT 1""").fetchone()
     if not batch:
         return False
     bid = batch["id"]
@@ -53,7 +54,8 @@ def prepare(db, api):
             LEFT JOIN LATERAL (SELECT state,after_team_id,evidence_reviewed FROM intake_file_assignment
                 WHERE file_id=f.id ORDER BY revision DESC LIMIT 1) d ON true
             WHERE f.batch_id=%s ORDER BY f.position""", (bid,)).fetchall()
-        for file in files:
+        numbered = batch["intake_number"] is not None
+        for file in ([] if numbered else files):
             sig = file["signals"]
             if sig.get("mixed") or file["failed"]:
                 continue
@@ -64,18 +66,27 @@ def prepare(db, api):
                 if target:
                     db.execute("""UPDATE award_team t SET representative=%s,roster=%s WHERE id=%s AND name=%s
                       AND representative='' AND NOT EXISTS(SELECT FROM award_team x WHERE x.event_id=t.event_id
-                          AND x.name=t.name AND x.representative=%s AND x.id<>t.id)""",
+                          AND x.intake_number IS NULL AND x.name=t.name AND x.representative=%s AND x.id<>t.id)""",
                                (app["rep"],Jsonb(app["roster"]),target,app["name"],app["rep"]))
                 db.execute("""INSERT INTO award_team(id,event_id,name,representative,roster) VALUES(gen_random_uuid(),%s,%s,%s,%s)
-                    ON CONFLICT(event_id,name,representative) DO UPDATE SET roster=EXCLUDED.roster""",
+                    ON CONFLICT(event_id,name,representative) WHERE intake_number IS NULL DO UPDATE SET roster=EXCLUDED.roster""",
                            (batch["event_id"],app["name"],app["rep"],Jsonb(app["roster"])))
-        teams = db.execute("SELECT id,name,representative AS rep,roster FROM award_team WHERE event_id=%s", (batch["event_id"],)).fetchall()
+        teams = [] if numbered else db.execute("""SELECT id,name,representative AS rep,roster FROM award_team
+            WHERE event_id=%s AND intake_number IS NULL""", (batch["event_id"],)).fetchall()
         evidence_changed = False
         for file in files:
             signals = file["signals"]
             prior = file["team"]
             if file["failed"]:
                 chosen, reason = None, "열 수 없는 원본을 교체하세요."
+            elif numbered:
+                if file["kind"] == "00":
+                    chosen, reason = "outside", "00 지급내역서는 출력 양식입니다."
+                elif signals.get("mixed"):
+                    chosen, reason = None, "한 파일에 여러 양식 또는 대표의 증빙이 섞여 있습니다. 원본을 확인하세요."
+                else:
+                    # The receipt already records the operator's grouping (and any subsequent edits).
+                    continue
             else:
                 chosen, candidates, reason = match_file(file, signals, teams, prior or batch["target_team_id"])
                 if prior and chosen is None and candidates:
@@ -84,7 +95,9 @@ def prepare(db, api):
                     evidence_changed |= (set(file["candidates"]) != candidates or file["reason"] != reason)
                 db.execute("UPDATE original_analysis SET candidates=%s,reason=%s,signals=%s WHERE file_id=%s",
                            (list(candidates),reason,Jsonb(signals),file["id"]))
-            if prior and (file["failed"] or signals.get("mixed") or (not file["evidence_reviewed"] and prior != chosen)):
+            if numbered and prior and chosen == "outside":
+                state, after = "outside", None
+            elif prior and (file["failed"] or signals.get("mixed") or (not file["evidence_reviewed"] and prior != chosen)):
                 state, after = "unassigned", None
             elif file["state"] is None and chosen:
                 state, after = ("outside", None) if chosen == "outside" else ("assigned", chosen)

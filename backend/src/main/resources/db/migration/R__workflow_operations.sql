@@ -102,7 +102,7 @@ FROM intake_file_state f LEFT JOIN original_analysis a ON a.file_id=f.id LEFT JO
 
 CREATE OR REPLACE VIEW ops_submission AS
 SELECT s.id,s.team_id,t.event_id,s.version,j.review_job_id,j.state AS job_state,
-    CASE WHEN j.state='done' AND ((coalesce(j.result#>>'{output,team_name}','') NOT IN ('',t.name))
+    CASE WHEN j.state='done' AND t.intake_number IS NULL AND ((coalesce(j.result#>>'{output,team_name}','') NOT IN ('',t.name))
          OR (t.representative<>'' AND coalesce(j.result#>>'{output,rep}','') NOT IN ('',t.representative))) THEN 'ownership'
          WHEN e.phase='access' OR (e.occupies_slot AND e.phase IN ('uncertain','paused','invalid')) THEN e.phase
          WHEN j.state IN ('superseded','blocked') THEN j.state

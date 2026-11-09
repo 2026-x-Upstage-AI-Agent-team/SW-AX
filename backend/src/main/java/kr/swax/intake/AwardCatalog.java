@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 class AwardCatalog {
     record Event(UUID id, String name) {}
-    record Team(UUID id, String name, String rep) {}
+    record Team(UUID id, String name, String rep, Integer intakeNumber) {}
     record NameInput(String name, String rep) {}
 
     private final JdbcTemplate db;
@@ -42,8 +42,9 @@ class AwardCatalog {
     @Transactional
     List<Team> teams(String login, UUID event) {
         requireEvent(login, event);
-        return db.query("SELECT id, name, representative FROM award_team WHERE event_id = ? ORDER BY name, representative, id",
-                (rs, n) -> new Team(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("representative")), event);
+        return db.query("SELECT id, name, representative, intake_number FROM award_team WHERE event_id = ? ORDER BY intake_number, name, representative, id",
+                (rs, n) -> new Team(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("representative"),
+                        rs.getObject("intake_number",Integer.class)), event);
     }
 
     @Transactional
@@ -53,11 +54,11 @@ class AwardCatalog {
         String rep = label(input.rep(), 80, false);
         db.update("""
                 INSERT INTO award_team(id, event_id, name, representative) VALUES (?, ?, ?, ?)
-                ON CONFLICT (event_id, name, representative) DO NOTHING
+                ON CONFLICT (event_id, name, representative) WHERE intake_number IS NULL DO NOTHING
                 """, UUID.randomUUID(), event, name, rep);
-        UUID id = db.queryForObject("SELECT id FROM award_team WHERE event_id = ? AND name = ? AND representative = ?",
+        UUID id = db.queryForObject("SELECT id FROM award_team WHERE event_id = ? AND name = ? AND representative = ? AND intake_number IS NULL",
                 UUID.class, event, name, rep);
-        return new Team(id, name, rep);
+        return new Team(id, name, rep, null);
     }
 
     void requireEvent(String login, UUID event) {
