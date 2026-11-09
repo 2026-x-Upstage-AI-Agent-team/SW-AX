@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS review_mail (
     UNIQUE (submission_id,kind)
 );
 CREATE INDEX IF NOT EXISTS review_mail_queue ON review_mail (created_at) WHERE state='waiting';
+ALTER TABLE review_mail ADD COLUMN IF NOT EXISTS sent_at timestamptz;
 CREATE TABLE IF NOT EXISTS award_report (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_id uuid NOT NULL REFERENCES award_event,
     version integer NOT NULL, created_by varchar(64) NOT NULL REFERENCES staff_account,
@@ -109,6 +110,8 @@ LEFT JOIN studio_execution e ON e.job_id=j.review_job_id LEFT JOIN review_resolu
 CREATE OR REPLACE VIEW ops_summary AS
 SELECT s.*,jsonb_build_object('id',id,'team',team_id,'version',version,'state',state,'error',error,'job',coalesce(studio_job_id,(SELECT remote_id FROM studio_execution e WHERE e.job_id=review_job_id)),
     'created',extract(epoch FROM confirmed_at),'updated',extract(epoch FROM updated_at),'attempts',attempts,
+    'received',(SELECT extract(epoch FROM min(b.created_at)) FROM intake_team_confirmation c
+        JOIN intake_batch b ON b.id=c.batch_id WHERE c.submission_id=s.id),
     'decision',decision,'revision',revision,'verdict',verdict,'students',jsonb_array_length(coalesce(nullif(fields->'members','null'::jsonb),'[]')),
     'count',file_count,'award_type',fields->>'award_type','support_amount',fields->>'support_amount',
     'status_url','/api/operations/submissions/'||id) AS info FROM ops_submission s;
@@ -140,7 +143,8 @@ CREATE OR REPLACE VIEW ops_mail AS
 SELECT m.id,m.submission_id,s.event_id,m.created_at,jsonb_build_object('id',m.id,'submission',m.submission_id,'kind',m.kind,
     'state',CASE WHEN s.job_state='superseded' AND m.state IN ('waiting','failed') THEN 'obsolete'
                  WHEN m.state='waiting' AND m.kind<>'담당자 알림' AND r.needs_confirmation THEN 'recipient_check' ELSE m.state END,
-    'sent_to',m.sent_to,'created',extract(epoch FROM m.created_at),'name',t.name,'version',s.version) AS info
+    'sent_to',m.sent_to,'created',extract(epoch FROM m.created_at),'sent_at',extract(epoch FROM m.sent_at),
+    'name',t.name,'version',s.version) AS info
 FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
 JOIN ops_leader_recipient r ON r.submission_id=s.id;
 

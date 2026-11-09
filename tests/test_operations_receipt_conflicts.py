@@ -109,6 +109,8 @@ class ReceiptConflicts(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             corrections = dict(pool.map(correction,("02","03")))
         following = self.upload([self.docs[1,k] for k in ("01","02","03")],other)
+        following_id = following.split("/")[-1]
+        self.db.execute("UPDATE intake_batch SET created_at=created_at-interval '1 hour' WHERE id=%s",(following_id,))
         self.drain()
         one, = [r for r in corrections if self.detail(r)["teams"]]
         two, = set(corrections)-{one}
@@ -124,6 +126,11 @@ class ReceiptConflicts(unittest.TestCase):
         self.assertEqual(self.staff.put(f"{two}/teams/{team}/submission",json={"revision":second["revision"]}).status_code,409)
         next_link, = self.detail(following)["teams"]
         self.assertEqual((next_link["team"], next_link["version"]),(other,1))
+        dashboard = self.staff.get("/api/dashboard",params={"event":self.event}).raise_for_status().json()
+        next_sub = next(t["submission"] for t in dashboard["teams"] if t["id"] == other)
+        self.assertEqual(next_sub["received"], next(b["created"] for b in dashboard["batches"] if b["id"]==following_id))
+        self.assertGreater(next_sub["created"] - next_sub["received"],3500)
+        self.browser(INTAKE_TEST_QUEUE_EVENT=self.event)
         created = []
         def studio(request):
             if "configs" in request.url.path:
@@ -150,12 +157,13 @@ class ReceiptConflicts(unittest.TestCase):
         self.assertEqual(self.detail(two)["teams"],[])
         sid = current["submission_id"]
         self.staff.put(f"/api/teams/{team}/email",json={"email":"leader@award.test","submission":sid}).raise_for_status()
+        self.db.execute("UPDATE review_mail SET created_at=created_at-interval '1 hour' WHERE submission_id=%s",(sid,))
         while deliver(self.db,self.cfg):
             pass
         notices = self.detail("/api/operations/submissions/"+sid)["mail"]
         self.assertEqual({m["kind"] for m in notices},{"보완 요청","담당자 알림"})
         self.assertEqual(len(notices),2)
-        self.assertTrue(all(m["state"]=="local" for m in notices))
+        self.assertTrue(all(m["state"]=="local" and m["sent_at"]-m["created"]>3500 for m in notices))
         leader, = [m for m in notices if m["kind"]=="보완 요청"]
         self.assertIn("[01 1쪽 1행]", self.detail("/api/mail/"+leader["id"])["body"])
         self.browser(INTAKE_TEST_CONFLICT_BATCH=second["batch"]["batch_id"],INTAKE_TEST_REASON_SUBMISSION=sid)

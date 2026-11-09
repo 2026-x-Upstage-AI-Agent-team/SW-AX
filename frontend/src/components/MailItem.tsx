@@ -35,7 +35,8 @@ export default function MailItem({ m, onSaved, showTeam }: { m: MailRow; onSaved
           <Link to={`/teams/${m.submission}`} className={buttonStyles.text}>수신 주소 확인</Link>
         )}
         <span className="text-xs text-subtle">
-          {m.sent_to ?? '수신자 확인 필요'} · {when(m.created)}
+          {m.sent_to ?? '수신자 확인 필요'} · 예약 {when(m.created)}
+          {['sent', 'local'].includes(m.state) && (m.sent_at ? ' · 발송 ' + when(m.sent_at) : ' · 발송 시각 기록 없음')}
         </span>
         <button type="button" onClick={toggle} aria-expanded={open} className="ml-auto text-xs font-bold text-brand-strong">
           {open ? '접기' : '본문 보기'}

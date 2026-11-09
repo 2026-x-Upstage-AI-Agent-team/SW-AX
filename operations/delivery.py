@@ -112,8 +112,13 @@ def deliver(db, raw_cfg):
     mailbox = DATA / "operations" / "mail"
     # A prior process may have died after SMTP accepted its message.
     for item in db.execute("SELECT id FROM review_mail WHERE state='sending'").fetchall():
-        state = "local" if (mailbox / (str(item["id"]) + ".eml")).exists() else "uncertain"
-        db.execute("UPDATE review_mail SET state=%s WHERE id=%s AND state='sending'", (state,item["id"]))
+        envelope = mailbox / (str(item["id"]) + ".eml")
+        try:
+            filed_at = envelope.stat().st_mtime
+        except FileNotFoundError:
+            filed_at = None
+        db.execute("UPDATE review_mail SET state=%s,sent_at=to_timestamp(%s) WHERE id=%s AND state='sending'",
+                   ("local" if filed_at is not None else "uncertain",filed_at,item["id"]))
     db.execute("""UPDATE review_mail m SET state='obsolete' FROM review_job_status j
         WHERE m.submission_id=j.submission_id AND j.state='superseded' AND m.state IN ('waiting','failed')""")
     if not cfg.get("MAIL_READY"):
@@ -144,7 +149,8 @@ def deliver(db, raw_cfg):
             final = send(msg,cfg,mailbox / (str(m["id"])+".eml"))
         else:
             final = "waiting"
-        db.execute("UPDATE review_mail SET state=%s WHERE id=%s", (final,m["id"]))
+        db.execute("""UPDATE review_mail SET state=%s,sent_at=CASE WHEN %s THEN clock_timestamp() END WHERE id=%s""",
+                   (final,final in ("sent","local"),m["id"]))
         db.execute("INSERT INTO workflow_audit(submission_id,actor,action) VALUES(%s,'@workflow',%s)",
                    (m["submission_id"],"메일 "+final))
     return True

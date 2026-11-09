@@ -10,6 +10,7 @@ export type SubInfo = {
   team: string;
   version: number;
   created: number;
+  received?: number | null;
   updated: number;
   state: string;
   error: string;
@@ -44,6 +45,7 @@ export type MailRow = {
   state: string;
   sent_to: string | null;
   created: number;
+  sent_at?: number | null;
   version?: number;
   name?: string;
 };

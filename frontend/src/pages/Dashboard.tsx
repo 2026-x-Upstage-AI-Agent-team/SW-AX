@@ -34,7 +34,7 @@ export default function Dashboard() {
   const [filter, setFilter] = useState<Filter>('all');
   const list = rows ?? [];
   const processing = list.filter((r) => r.submission && busyStates.has(r.submission.state)).length;
-  const queued = list.flatMap((r) => r.submission?.state === 'queued' ? [r.submission.created] : []);
+  const queued = list.flatMap((r) => r.submission?.state === 'queued' ? [r.submission.received ?? r.submission.created] : []);
   const visible = useMemo(
     () => list.filter((r) => (filter === 'all' ? true : filter === 'ok' ? !needsAction(r) : needsAction(r))),
     [list, filter],

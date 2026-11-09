@@ -22,10 +22,22 @@ after(async () => browser?.close());
 
 const conflictId = process.env.INTAKE_TEST_CONFLICT_BATCH;
 const printId = process.env.INTAKE_TEST_PRINT_REPORT;
+const queueEvent = process.env.INTAKE_TEST_QUEUE_EVENT;
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
 const delayedId = process.env.INTAKE_TEST_DELAYED_SUBMISSION;
-if (conflictId) {
+if (queueEvent) {
+  test('처리 대기 중인 팀의 최초 원본 접수 시각을 표시한다', async () => {
+    const dashboard = await (await request.get('/api/dashboard?event=' + queueEvent)).json();
+    const waiting = dashboard.teams.map((t) => t.submission).filter((s) => s?.state === 'queued');
+    const first = Math.min(...waiting.map((s) => s.received));
+    assert.ok(first < Math.min(...waiting.map((s) => s.created)) - 3500);
+    await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), queueEvent);
+    await page.goto('/#/');
+    const value = await page.evaluate((t) => new Date(t * 1000).toLocaleString('ko-KR'), first);
+    await page.getByText('대기 ' + waiting.length + '팀 · 최초 접수 ' + value, { exact: true }).waitFor();
+  });
+} else if (conflictId) {
   test('충돌 접수의 원본과 최신 보완 경로를 열고 담당자 대조를 마친다', async () => {
     const { batch } = await (await request.get('/api/intake-batches/' + conflictId)).json();
     await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), batch.event_id);
@@ -41,6 +53,8 @@ if (conflictId) {
     await page.goto('/#/teams/' + process.env.INTAKE_TEST_REASON_SUBMISSION);
     const row = page.getByRole('listitem').filter({ hasText: '01 지급확인서 1쪽 첫째 행에 학번이 없습니다.' }).first();
     await row.getByRole('button', { name: '01 지급확인서 · 1쪽 · 1행' }).click();
+    const mail = page.getByRole('listitem').filter({ hasText: '보완 요청' }).filter({ hasText: 'leader@award.test' });
+    await mail.getByText(/예약 .* · 발송 /).waitFor();
   });
 } else if (printId) {
   test('실패한 보고서에서 같은 HWPX로 재출력을 요청한다', async () => {
