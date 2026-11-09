@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS studio_execution (
 );
 -- An accessible config does not prove permission to create Jobs under the same rejected key.
 ALTER TABLE studio_execution ADD COLUMN IF NOT EXISTS rejected_create_key_hash bytea;
+ALTER TABLE studio_execution ADD COLUMN IF NOT EXISTS last_polled_at timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS studio_distinct_id ON studio_execution(remote_id) WHERE remote_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS studio_one_remote ON studio_execution (occupies_slot) WHERE occupies_slot;
 CREATE TABLE IF NOT EXISTS workflow_audit (

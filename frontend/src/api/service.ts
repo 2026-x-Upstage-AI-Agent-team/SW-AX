@@ -114,6 +114,8 @@ export type SubmissionDetail = SubInfo & {
   team_name: string;
   rep: string;
   email: string;
+  last_polled_at?: number | null;
+  polling_delayed?: boolean;
   application_emails?: string[];
   email_needs_confirmation?: boolean;
   held: boolean;

@@ -22,7 +22,32 @@ after(async () => browser?.close());
 
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
-if (recipientId) {
+const delayedId = process.env.INTAKE_TEST_DELAYED_SUBMISSION;
+if (delayedId) {
+  test('지연된 판정의 마지막 조회 시각을 확인하고 처리를 재개한다', async () => {
+    const detail = await (await request.get('/api/operations/submissions/' + delayedId)).json();
+    assert.equal(detail.job, 'job_found');
+    assert.equal(detail.state, 'paused');
+    assert.equal(detail.polling_delayed, true);
+    assert.ok(detail.last_polled_at);
+    await page.goto('/#/teams/' + delayedId);
+    const time = page.getByText(/^마지막 조회 시각/).locator('time');
+    await time.waitFor();
+    const expected = new Date(detail.last_polled_at * 1000).toISOString();
+    assert.equal(await time.getAttribute('datetime'), expected);
+    const localTime = await page.evaluate((iso) => new Date(iso).toLocaleString('ko-KR', {
+      dateStyle: 'medium', timeStyle: 'medium',
+    }), expected);
+    assert.equal(await time.textContent(), localTime);
+    const [resumed] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/submissions/' + delayedId + '/retry')),
+      page.getByRole('button', { name: '처리 재개' }).click(),
+    ]);
+    assert.equal(resumed.status(), 200);
+    await page.getByText('처리 지연', { exact: true }).waitFor();
+    assert.equal(await time.getAttribute('datetime'), expected);
+  });
+} else if (recipientId) {
   test('신청서와 다른 등록 주소를 현재 제출본에서 확인한다', async () => {
     const path = '/api/operations/submissions/' + recipientId;
     const before = await (await request.get(path)).json();

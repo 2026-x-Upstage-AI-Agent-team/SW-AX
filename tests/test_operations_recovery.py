@@ -1,6 +1,7 @@
 """Exercise recovery, corrections and the outbox against a dedicated empty PostgreSQL/Spring instance."""
 import json
 import os
+import subprocess
 import unittest
 from unittest.mock import patch
 from io import BytesIO
@@ -106,27 +107,57 @@ class Recovery(unittest.TestCase):
             db.execute("UPDATE studio_execution SET due=now() WHERE job_id=(SELECT id FROM review_job WHERE submission_id=%s)",(sid,))
         def retry(**body):
             return staff.post("/api/submissions/"+sid+"/retry", json=body)
+        def submission_status():
+            return staff.get(f"/api/operations/submissions/{sid}").raise_for_status().json()
+        def set_age(minutes):
+            db.execute("UPDATE studio_execution SET started_at=now()-%s*interval '1 minute' WHERE job_id=%s",
+                       (minutes,execution()["job_id"]))
         tick()
         self.assertEqual(execution()["phase"],"uncertain")
+        self.assertIsNone(submission_status()["last_polled_at"])
         self.assertFalse(tick())
         self.assertEqual(retry().status_code,409)
         retry(job="job_found").raise_for_status()
+        set_age(15)
+        status=submission_status()
+        self.assertTrue(status["polling_delayed"])
+        self.assertIsNone(status["last_polled_at"])
+        set_age(14)
         mode="throttle"
         tick()
         self.assertGreaterEqual(execution()["delay"],20)
         self.assertTrue(execution()["occupies_slot"])
+        status=submission_status()
+        self.assertFalse(status["polling_delayed"])
+        last_poll=status["last_polled_at"]
+        self.assertAlmostEqual(last_poll,execution()["last_polled_at"].timestamp(),places=5)
+        set_age(15)
+        status=submission_status()
+        self.assertTrue(status["polling_delayed"])
+        self.assertEqual(status["last_polled_at"],last_poll)
         for mode in ("unavailable", "read-timeout", "throttle"):
             due()
             tick()
+            next_poll=submission_status()["last_polled_at"]
+            self.assertGreater(next_poll,last_poll)
+            last_poll=next_poll
         self.assertEqual(execution()["phase"],"paused")
-        detail = staff.get(f"/api/operations/submissions/{sid}").raise_for_status().json()
+        detail = submission_status()
+        self.assertTrue(detail["polling_delayed"])
         retries = [row for row in reversed(detail["audit"]) if row["attempts"]]
         self.assertEqual([(r["http_status"], r["error_code"], r["attempts"]) for r in retries],
                          [(429, "RATE_LIMITED", 1), (503, "SERVICE_UNAVAILABLE", 2),
                           (None, "TIMEOUT", 3), (429, "RATE_LIMITED", 4)])
         self.assertTrue(all(r["job"] == "job_found" and r["due"] >= r["ts"] - 1 for r in retries))
         self.assertNotIn("private upstream detail", json.dumps(retries))
-        retry().raise_for_status()
+        if os.getenv("INTAKE_TEST_STATUS_BROWSER")=="1":
+            subprocess.run(["node","--test","tests/review-navigation.mjs"],cwd=ROOT/"frontend",check=True,timeout=75,
+                           env=dict(os.environ,INTAKE_TEST_DELAYED_SUBMISSION=sid))
+        else:
+            retry().raise_for_status()
+        resumed=submission_status()
+        self.assertTrue(resumed["polling_delayed"])
+        self.assertEqual(resumed["last_polled_at"],last_poll)
         mode="denied"
         tick()
         self.assertEqual(execution()["phase"],"access")
@@ -141,6 +172,7 @@ class Recovery(unittest.TestCase):
         due()
         response_status="completed"
         tick()
+        self.assertFalse(submission_status()["polling_delayed"])
         while deliver(db,cfg):
             pass
         notices = db.execute("SELECT kind,state FROM review_mail WHERE submission_id=%s",(sid,)).fetchall()
@@ -197,11 +229,15 @@ class Recovery(unittest.TestCase):
         due()
         tick()
         self.assertEqual(execution()["phase"],"failed")
+        self.assertIsNotNone(submission_status()["last_polled_at"])
         self.assertFalse(db.execute("SELECT 1 FROM review_mail WHERE submission_id=%s",(sid,)).fetchone())
         retry().raise_for_status()
+        self.assertIsNone(submission_status()["last_polled_at"])
         tick()
         remote=execution()["remote_id"]
         self.assertNotEqual(remote,"job_4")
+        self.assertIsNone(submission_status()["last_polled_at"])
+        self.assertFalse(submission_status()["polling_delayed"])
         for mode,delay in (("unavailable",2),("read-timeout",4)):
             due()
             tick()

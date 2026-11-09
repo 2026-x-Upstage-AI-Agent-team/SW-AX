@@ -152,7 +152,7 @@ def run_studio(db, api, external, cfg):
                     FOR UPDATE OF c,j""", (jid,t["claim_token"])).fetchone()
                 if not row:
                     return False
-                db.execute("UPDATE studio_execution SET agent=%s,config=%s,config_id=%s,started_at=now() WHERE job_id=%s",
+                db.execute("UPDATE studio_execution SET agent=%s,config=%s,config_id=%s,started_at=now(),last_polled_at=NULL WHERE job_id=%s",
                            (agent,version,config_id,jid))
                 status(db,t,"creating",slot=True)
             creating = True
@@ -161,6 +161,9 @@ def run_studio(db, api, external, cfg):
                 raise ValueError("Studio 실행 번호")
             status(db,t,"polling",remote=remote,slot=True,delay=5)
             return True
+        # This is the time of the Job status request, including requests that time out.
+        db.execute("""UPDATE studio_execution SET remote_id=%s,last_polled_at=now(),started_at=coalesce(started_at,now())
+                      WHERE job_id=%s""",(remote,jid))
         job = external.get(f"responses/{remote}", params=[("include[]","all")]).raise_for_status().json()
         if job["id"] != remote:
             raise ValueError("Studio 실행 불일치")

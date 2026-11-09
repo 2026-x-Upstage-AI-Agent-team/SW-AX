@@ -139,6 +139,7 @@ class ReviewDecisions {
         data.db.update("""
             INSERT INTO studio_execution(job_id,remote_id,phase) VALUES(?,?,?)
             ON CONFLICT(job_id) DO UPDATE SET phase=excluded.phase,remote_id=excluded.remote_id,failures=0,error='',
+                last_polled_at=CASE WHEN studio_execution.remote_id=excluded.remote_id THEN studio_execution.last_polled_at END,
                 updated_at=now(),due=now(),occupies_slot=(studio_execution.occupies_slot AND excluded.remote_id IS NOT NULL)
             """,jid,remote,remote==null?"queued":"polling");
         return Map.of("saved",true);

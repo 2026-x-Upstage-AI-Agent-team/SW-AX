@@ -101,12 +101,16 @@ class WorkflowOverview {
         var node=data.one("""
             SELECT s.info||jsonb_build_object('team_name',t.name,'rep',t.representative,'email',t.email,'held',ops_team_held(t.id),
                 'application_emails',r.emails,'email_needs_confirmation',r.needs_confirmation,
+                'last_polled_at',extract(epoch FROM e.last_polled_at),
+                'polling_delayed',coalesce(e.phase IN ('polling','paused','access') AND coalesce(e.remote_id,s.studio_job_id) IS NOT NULL
+                    AND e.started_at<=now()-interval '15 minutes',false),
                 'current',c.submission_id,'note',coalesce(s.note,''),'fields',s.fields,'result',
                 CASE WHEN s.result IS NULL THEN NULL ELSE jsonb_build_object('documents','{"01":[],"02":[],"03":[],"?":[]}'::jsonb,
                  'checks','[]'::jsonb,'issues','[]'::jsonb,'members','[]'::jsonb,'recipient','{}'::jsonb,'consent_names','[]'::jsonb,
                  'staff_report','','program','','team_name',t.name,'rep',t.representative)||coalesce(nullif(s.output,'null'),'{}')
                  ||jsonb_build_object('verdict',s.verdict,'reason',s.result->>'reason') END)
             FROM ops_summary s JOIN award_team t ON t.id=s.team_id JOIN ops_leader_recipient r ON r.submission_id=s.id
+            LEFT JOIN studio_execution e ON e.job_id=s.review_job_id
             LEFT JOIN intake_team_confirmation c
             ON c.team_id=t.id AND c.state<>'superseded' WHERE s.id=?
             """,id);
