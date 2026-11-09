@@ -53,6 +53,11 @@ export const paths = {
   original: (batch: string, file: string) => `/api/intake-batches/${batch}/files/${file}/original`,
 };
 
+export function receiptName(name: string, number?: number | null) {
+  const provisional = `접수 ${number}팀`;
+  return number && name !== provisional ? `${provisional} · ${name}` : name;
+}
+
 export const teamLabel = (team: { name: string; rep?: string | null }) => team.name + (team.rep ? ' · ' + team.rep : '');
 
 export const createEvent = (name: string) => postJson<AwardEvent>(paths.events, { name });

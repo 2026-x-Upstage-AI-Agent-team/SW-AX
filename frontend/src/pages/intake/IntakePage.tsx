@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Link, NavLink, useParams, useSearchParams } from 'react-router';
+import { Link, NavLink, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { backend } from '../../api/backend';
 import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
 import { docLabels, when } from '../../api/labels';
 import { filePreviewUrl, getBatch, getSubmission, reviewBatchConflict } from '../../api/service';
 import { Page } from '../../components/Layout';
+import DeleteIntake from '../../components/DeleteIntake';
 import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
 import Upload from './Upload';
@@ -60,7 +61,7 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
       ) : backend === 'service' ? (
         view === 'history' ? <ServiceHistory /> : <ServiceDetail />
       ) : view === 'history' ? (
-        <History eventId={event.id} />
+        <History key={event.id} eventId={event.id} />
       ) : (
         <Detail eventId={event.id} />
       )}
@@ -80,6 +81,8 @@ function BaseUpload({ sid }: { sid: string }) {
 
 function History({ eventId }: { eventId: string }) {
   const { revision, refresh } = useEvent();
+  const location = useLocation();
+  const [message, setMessage] = useState(location.state?.eventId === eventId ? location.state.message : '');
   const result = useApi<BatchSummary[]>(paths.batches(eventId), revision);
   if (!result.data) return <Notice error={result.error} onRetry={refresh} />;
   return (
@@ -92,6 +95,7 @@ function History({ eventId }: { eventId: string }) {
           새로고침
         </button>
       </div>
+      <Feedback message={message} />
       {result.data.length === 0 ? (
         <p className="py-6 text-sm text-muted">아직 접수한 원본이 없습니다.</p>
       ) : (
@@ -99,7 +103,7 @@ function History({ eventId }: { eventId: string }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-canvas text-left text-[13px] text-muted">
-                {['접수번호', '접수 일시', '지정 팀', '원본', '상태'].map((h) => (
+                {['접수번호', '접수 일시', '지정 팀', '원본', '상태', '관리'].map((h) => (
                   <th key={h} scope="col" className="whitespace-nowrap px-2 py-3 font-medium">
                     {h}
                   </th>
@@ -120,6 +124,10 @@ function History({ eventId }: { eventId: string }) {
                   <td className="whitespace-nowrap px-2 py-3">
                     <StateBadge state={batch.status ?? 'received'} />
                   </td>
+                  <td className="whitespace-nowrap px-2 py-3">
+                    <DeleteIntake kind="묶음" name={'접수 ' + batch.batch_id.slice(0, 8)} path={paths.batch(batch.batch_id)}
+                      onDeleted={() => { setMessage('접수 ' + batch.batch_id.slice(0, 8) + ' 묶음을 삭제했습니다.'); refresh(); }} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -132,7 +140,9 @@ function History({ eventId }: { eventId: string }) {
 
 function Detail({ eventId }: { eventId: string }) {
   const { id = '' } = useParams();
-  const { revision, teams } = useEvent();
+  const { revision, teams, refresh } = useEvent();
+  const navigate = useNavigate();
+  const [deleted, setDeleted] = useState<{ batch: string; name: string }>();
   const result = useAsync(() => api<BatchDetails>(paths.batch(id)), [id, revision]);
   const detail = result.data?.batch.batch_id === id ? result.data : undefined;
   const links = new Map((detail?.teams ?? []).map((link) => [link.team, link]));
@@ -147,6 +157,7 @@ function Detail({ eventId }: { eventId: string }) {
   if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 접수번호가 아닙니다." />;
   return (
     <div className="flex flex-col gap-4">
+      <Feedback message={deleted?.batch === id ? deleted.name + ' 원본을 삭제했습니다.' : ''} />
       <section className={card}>
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold">접수 상세</h2>
@@ -215,6 +226,12 @@ function Detail({ eventId }: { eventId: string }) {
               <a className={buttonStyles.text} href={paths.original(batch.batch_id, file.item_id)} download>
                 원본 받기
               </a>
+              <DeleteIntake kind="원본" name={file.name} path={paths.batch(id) + '/files/' + file.item_id}
+                onDeleted={impact => {
+                  if (impact.batch_count) navigate('/intake/batches', { replace: true, state: { eventId, message: '마지막 원본과 접수 묶음을 삭제했습니다.' } });
+                  else setDeleted({ batch: id, name: file.name });
+                  refresh();
+                }} />
             </li>
           ))}
         </ol>

@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { createEvent, createTeam, teamLabel } from '../api/intake';
 import { sendJson } from '../api/client';
+import { backend } from '../api/backend';
+import DeleteIntake from '../components/DeleteIntake';
 import { Page } from '../components/Layout';
 import { Notice, PageHeader, buttonStyles } from '../components/ui';
 import { useEvent } from '../context/EventContext';
@@ -70,7 +72,16 @@ export default function Manage() {
       )}
       {event && (
         <section className="flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]">
-          <h2 className="text-xl font-extrabold">{event.name} 참가 팀</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-extrabold">{event.name} 참가 팀</h2>
+            {backend === 'intake' && <DeleteIntake key={event.id} kind="대회" name={event.name} path={'/api/events/' + event.id}
+              onDeleted={() => {
+                setError('');
+                setMessage(event.name + ' 대회를 삭제했습니다.');
+                selectEvent(events?.find(item => item.id !== event.id)?.id ?? '');
+                refresh();
+              }} />}
+          </div>
           {teams && teams.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
               {teams.map((t) => (
