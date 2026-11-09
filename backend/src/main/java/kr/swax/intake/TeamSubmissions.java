@@ -93,7 +93,10 @@ class TeamSubmissions {
         boolean blocked = !read || files.stream().anyMatch(f -> f.holds(team));
         List<IntakeStore.Item> selected = new ArrayList<>(db.query("""
                 SELECT f.id,f.name,f.size_bytes,f.sha256,sf.position FROM intake_batch b
-                JOIN team_submission_file sf ON sf.submission_id=b.base_submission JOIN intake_file f ON f.id=sf.file_id
+                CROSS JOIN LATERAL unnest(coalesce(b.inherited_files,ARRAY(
+                    SELECT file_id FROM team_submission_file WHERE submission_id=b.base_submission ORDER BY position)))
+                    WITH ORDINALITY AS sf(file_id,position)
+                JOIN intake_file f ON f.id=sf.file_id
                 WHERE b.id=? AND b.target_team_id=? AND f.id<>ALL(b.replaced) ORDER BY sf.position
                 """, (rs,n) -> new IntakeStore.Item(rs.getObject("id",UUID.class),rs.getInt("position"),rs.getString("name"),
                 rs.getInt("size_bytes"),rs.getString("sha256"),team,"assigned","",List.of(),List.of()),batch,team));
@@ -124,7 +127,8 @@ class TeamSubmissions {
             throw newerReceipt();
         }
         if (latest == null || !digest.equals(latest.digest())) {
-            latest = create(login, team, latest == null ? 1 : latest.number() + 1, digest, selected);
+            int deleted = db.queryForObject("SELECT deleted_submission_version FROM award_team WHERE id=?", Integer.class, team);
+            latest = create(login, team, Math.max(latest == null ? 0 : latest.number(), deleted) + 1, digest, selected);
         }
         if (previous != null && previous.state().equals("confirmed") && latest.id().equals(previous.submissionId())) {
             return previous;
@@ -166,7 +170,7 @@ class TeamSubmissions {
         List<IntakeStore.Item> files=intake.files(batch);
         var teams=db.queryForList("""
                 SELECT t.id FROM award_team t WHERE t.id IN (SELECT team_id FROM intake_file_state WHERE batch_id=?
-                    UNION SELECT target_team_id FROM intake_batch WHERE id=? AND base_submission IS NOT NULL
+                    UNION SELECT target_team_id FROM intake_batch WHERE id=? AND (base_submission IS NOT NULL OR inherited_files IS NOT NULL)
                       UNION SELECT team_id FROM intake_team_confirmation WHERE batch_id=?)
                 ORDER BY t.id FOR NO KEY UPDATE
                 """,UUID.class,batch,batch,batch);

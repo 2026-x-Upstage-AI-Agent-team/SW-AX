@@ -189,7 +189,7 @@ BEGIN
     END IF;
     IF current_review.verdict='재제출요청' OR (current_review.verdict='성공' AND EXISTS(
         SELECT FROM intake_team_confirmation c JOIN intake_batch b ON b.id=c.batch_id
-        WHERE c.submission_id=NEW.submission_id AND b.base_submission<>NEW.submission_id)) THEN
+        WHERE c.submission_id=NEW.submission_id AND (b.base_submission<>NEW.submission_id OR b.inherited_files IS NOT NULL))) THEN
         INSERT INTO review_mail(submission_id,kind) VALUES (NEW.submission_id,
             CASE WHEN current_review.verdict='재제출요청' THEN '보완 요청' ELSE '검토 완료' END) ON CONFLICT DO NOTHING;
     END IF;

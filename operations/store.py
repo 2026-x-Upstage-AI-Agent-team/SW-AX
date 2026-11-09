@@ -34,7 +34,7 @@ def cached_file(db, fid):
         if hashlib.sha256(data).hexdigest() != row["sha256"]:
             raise ValueError("원본 해시 불일치")
         from tempfile import NamedTemporaryFile
-        with NamedTemporaryFile(dir=path.parent, delete=False) as temp:
+        with NamedTemporaryFile(dir=path.parent, prefix=str(fid) + ".", suffix=".part", delete=False) as temp:
             temp.write(data)
         Path(temp.name).replace(path)
     return dict(row, id=str(fid), batch=str(row["batch"]), _source=str(path))

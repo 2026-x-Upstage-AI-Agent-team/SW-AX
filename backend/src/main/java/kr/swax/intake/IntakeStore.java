@@ -55,6 +55,10 @@ class IntakeStore {
     @Transactional
     Receipt receive(String login, String key, UUID event, UUID target, IntakeUpload upload, UUID base, List<UUID> replaced) {
         catalog.requireEvent(login, event);
+        if (db.queryForObject("SELECT EXISTS(SELECT FROM withdrawn_intake_request WHERE event_id=? AND request_key=?)",
+                Boolean.class, event, key)) {
+            throw ApiErrors.error(409, "삭제한 자료가 있는 접수 요청입니다. 새로 접수하려면 새 요청 키를 사용하세요.");
+        }
         if (target != null) catalog.requireTeam(event, target);
         UUID id = UUID.randomUUID();
         int inserted = db.update("""

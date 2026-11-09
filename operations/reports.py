@@ -86,7 +86,9 @@ def report_tick(db,cfg):
                 verify_pair(hwpx,pdf,report["snapshot"],refs)
                 db.execute("UPDATE award_report SET state='preview',error='' WHERE id=%s AND state='verifying'",(rid,))
             else:
-                db.execute("UPDATE award_report SET state='building' WHERE id=%s",(rid,))
+                if not db.execute("UPDATE award_report SET state='building' WHERE id=%s AND state IN ('queued','building')",
+                                  (rid,)).rowcount:
+                    return True
                 template = Path(cfg["AWARDS_REPORT_TEMPLATE"]) if cfg.get("AWARDS_REPORT_TEMPLATE") else next(ROOT.glob("0_RE*/00*지급내역서*.hwp"),None)
                 if not template or not template.is_file():
                     raise FileNotFoundError("00 양식")

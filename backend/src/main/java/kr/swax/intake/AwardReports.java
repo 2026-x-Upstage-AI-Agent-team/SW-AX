@@ -111,7 +111,8 @@ class AwardReports {
     private ObjectNode insert(String login,UUID event,List<UUID> s,JsonNode snap,UUID parent,byte[] edited) {
         return data.one("""
             INSERT INTO award_report(event_id,version,created_by,selection,snapshot,parent,hwpx,state)
-            VALUES(?,(SELECT coalesce(max(version),0)+1 FROM award_report WHERE event_id=?),?,?::uuid[],?::jsonb,?,?,?)
+            VALUES(?,(SELECT greatest(e.deleted_report_version,(SELECT max(version) FROM award_report WHERE event_id=e.id))+1
+                      FROM award_event e WHERE e.id=?),?,?::uuid[],?::jsonb,?,?,?)
             RETURNING jsonb_build_object('id',id,'version',version,'status_url','/api/reports/'||id)
             """,event,event,login,"{"+String.join(",",s.stream().map(UUID::toString).toList())+"}",snap.toString(),parent,edited,edited==null?"queued":"printing");
     }

@@ -4,11 +4,14 @@ from psycopg.types.json import Jsonb
 from pypdf.errors import PdfReadError
 
 from service.documents import match_file, preview, read_signals
+from .cleanup import clear_deleted_cache
 from .native import render
 from .store import cached_file
 
 
 def prepare(db, api):
+    if clear_deleted_cache(db):
+        return True
     db.execute("""INSERT INTO intake_preparation(batch_id)
         SELECT DISTINCT f.batch_id FROM review_job_status j JOIN team_submission_file sf ON sf.submission_id=j.submission_id
         JOIN intake_file f ON f.id=sf.file_id JOIN intake_batch b ON b.id=f.batch_id
@@ -28,25 +31,30 @@ def prepare(db, api):
         fid = item["id"]
         if db.execute("SELECT 1 FROM original_analysis WHERE file_id=%s", (fid,)).fetchone():
             continue
-        file = cached_file(db, fid)
         display = "파일%02d.%s" % (item["position"],item["name"].rsplit(".",1)[-1].lower())
-        db.execute("INSERT INTO file_preparation_log(file_id,stage,display_name) VALUES(%s,'검토 PDF 준비',%s)",(fid,display))
-        try:
-            kind, pages, signals = read_signals(file, renderer=render)
-            db.execute("""INSERT INTO original_analysis(file_id,kind,pages,signals,pdf) VALUES(%s,%s,%s,%s,%s)
-                       ON CONFLICT DO NOTHING""", (fid, kind, pages, Jsonb(signals), preview(file).read_bytes()))
-            stage = "판독 완료"
-        except (ValueError, OSError, RuntimeError, subprocess.SubprocessError, PdfReadError):
-            stage = "판독 실패"
-            db.execute("""INSERT INTO original_analysis(file_id,failed,reason) VALUES(%s,true,
-                '원본을 열 수 없습니다. 손상·암호와 한글 파일 접근 권한을 확인하세요.') ON CONFLICT DO NOTHING""", (fid,))
-        db.execute("INSERT INTO file_preparation_log(file_id,stage,display_name) VALUES(%s,%s,%s)",(fid,stage,display))
+        db.execute("""INSERT INTO file_preparation_log(file_id,stage,display_name)
+            SELECT id,'검토 PDF 준비',%s FROM intake_file WHERE id=%s FOR KEY SHARE""",(display,fid))
+        with db.transaction():
+            if not db.execute("SELECT id FROM intake_file WHERE id=%s FOR KEY SHARE", (fid,)).fetchone():
+                return True
+            file = cached_file(db, fid)
+            try:
+                kind, pages, signals = read_signals(file, renderer=render)
+                db.execute("""INSERT INTO original_analysis(file_id,kind,pages,signals,pdf) VALUES(%s,%s,%s,%s,%s)
+                           ON CONFLICT DO NOTHING""", (fid, kind, pages, Jsonb(signals), preview(file).read_bytes()))
+                stage = "판독 완료"
+            except (ValueError, OSError, RuntimeError, subprocess.SubprocessError, PdfReadError):
+                stage = "판독 실패"
+                db.execute("""INSERT INTO original_analysis(file_id,failed,reason) VALUES(%s,true,
+                    '원본을 열 수 없습니다. 손상·암호와 한글 파일 접근 권한을 확인하세요.') ON CONFLICT DO NOTHING""", (fid,))
+            db.execute("INSERT INTO file_preparation_log(file_id,stage,display_name) VALUES(%s,%s,%s)",(fid,stage,display))
         return True
     if not batch["uploaded_by"]:
         db.execute("UPDATE intake_preparation SET state='prepared' WHERE batch_id=%s",(bid,))
         return True
     with db.transaction():
-        db.execute("SELECT id FROM intake_batch WHERE id=%s FOR UPDATE", (bid,))
+        if not db.execute("SELECT id FROM intake_batch WHERE id=%s FOR UPDATE", (bid,)).fetchone():
+            return True
         db.execute("SELECT id FROM award_event WHERE id=%s FOR NO KEY UPDATE", (batch["event_id"],))
         files = db.execute("""SELECT f.id,f.name,a.kind,a.signals,a.failed,a.candidates,a.reason,
                 d.state,d.after_team_id AS team,d.evidence_reviewed
