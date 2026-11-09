@@ -127,9 +127,10 @@ def read_signals(f, renderer=None):
 
 
 def match_file(f, sig, teams, target):
-    ids = {t["id"] for t in teams}
+    # Only teams supported by evidence are stored; an empty list is scoped to the receipt.
+    sig["explicit_candidates"] = True
     if sig.get("mixed") and not sig.get("mixed_id_holders"):
-        return None, ids, "서로 다른 양식 또는 신청서가 한 파일에 있습니다. 팀별 원본을 대조하세요."
+        return None, set(), "서로 다른 양식 또는 신청서가 한 파일에 있습니다. 팀별 원본을 대조하세요."
     if f["kind"] == "00":
         return "outside", set(), "00 지급내역서는 출력 양식입니다."
     named = {t["id"] for t in teams if word(f["name"], t["name"]) or word(sig["body"], t["name"])}
@@ -192,4 +193,6 @@ def match_file(f, sig, teams, target):
         if (possible - {target}) or (f["kind"] == "01" and not matched):
             return None, possible | {target}, "지정한 팀을 서류의 소속 근거로 확인할 수 없습니다. 원접수를 대조하세요."
         return target, {target}, "담당자가 원접수에서 제출 팀을 지정했습니다."
-    return None, possible or ids, "팀 표기와 명단을 함께 확인하세요." if len(possible) > 1 else "소속 근거가 부족합니다. 원접수와 대조하세요."
+    if not possible:
+        return None, set(), "소속 근거가 부족합니다. 원접수와 대조하세요."
+    return None, possible, "팀 표기와 명단을 함께 확인하세요." if len(possible) > 1 else "후보 팀의 소속 근거를 원접수와 대조하세요."

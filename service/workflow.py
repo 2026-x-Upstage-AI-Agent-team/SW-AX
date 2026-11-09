@@ -60,21 +60,29 @@ def identify_batch(db, batch):
     synchronize(db, batch)
 
 
-def pending_file(f, team):
+def pending_file(f, team, in_receipt=True):
     if f["state"] not in {"unassigned", "error"} or team in json.loads(f["excluded"]):
         return False
     candidates = json.loads(f["candidates"])
-    return not candidates or team in candidates
+    # Earlier readers used the event roster as the fallback candidate list.
+    if candidates and not json.loads(f["signals"]).get("explicit_candidates") and f["reason"] in (
+            "서로 다른 양식 또는 신청서가 한 파일에 있습니다. 팀별 원본을 대조하세요.",
+            "소속 근거가 부족합니다. 원접수와 대조하세요."):
+        candidates = []
+    return team in candidates or (not candidates and in_receipt)
 
 
 def held(db, team):
     entry = require(db, "teams", team)
-    if row(db,"SELECT id FROM batches WHERE event=? AND state='preparing' AND (target IS NULL OR target=?) LIMIT 1",
+    if row(db,"SELECT id FROM batches WHERE event=? AND state='preparing' AND target=? LIMIT 1",
            entry["event"], team):
         return True
-    unresolved = rows(db, """SELECT f.* FROM files f JOIN batches b ON f.batch=b.id
-        WHERE b.event=? AND f.state IN ('error','unassigned')""", entry["event"])
-    return any(pending_file(f, team) for f in unresolved)
+    unresolved = rows(db, """SELECT f.*, (b.target=? OR EXISTS(
+            SELECT 1 FROM files s WHERE s.batch=b.id AND s.team=?) OR EXISTS(
+            SELECT 1 FROM batch_teams bt WHERE bt.batch=b.id AND bt.team=? AND bt.submission=?)) AS in_receipt
+        FROM files f JOIN batches b ON f.batch=b.id WHERE b.event=? AND f.state IN ('error','unassigned')""",
+        team,team,team,entry["current"],entry["event"])
+    return any(pending_file(f, team, f["in_receipt"]) for f in unresolved)
 
 
 def files_for(db, ids):

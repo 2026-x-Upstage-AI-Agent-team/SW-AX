@@ -78,7 +78,7 @@ def prepare(db, api):
                 chosen, reason = None, "열 수 없는 원본을 교체하세요."
             else:
                 chosen, candidates, reason = match_file(file, signals, teams, prior or batch["target_team_id"])
-                if prior and chosen is None:
+                if prior and chosen is None and candidates:
                     candidates.add(prior)
                 if file["state"] in (None,"unassigned") and chosen is None:
                     evidence_changed |= (set(file["candidates"]) != candidates or file["reason"] != reason)

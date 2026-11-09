@@ -231,7 +231,7 @@ class ReceiptConflicts(unittest.TestCase):
         for ext in ("pdf","hwpx"):
             self.assertEqual(self.staff.get(url+"/"+ext).status_code,409)
 
-    def test_complete_payout_can_confirm_with_zero_tax(self):
+    def test_separate_unassigned_receipt_preserves_confirmed_pdf(self):
         sid, fields = self.report_submission()
         self.staff.put(f"/api/submissions/{sid}/review",json=fields).raise_for_status()
         url = self.report_preview(sid)
@@ -244,6 +244,44 @@ class ReceiptConflicts(unittest.TestCase):
         payouts, = [t for t in section.iter(HP+"tbl") if "차인지급액" in text_of(t.find(HP+"tr"))]
         cells = payouts.findall(HP+"tr")[1].findall(HP+"tc")
         self.assertEqual([text_of(c).strip() for c in cells[-3:]],["100,000","0","100,000"])
+        unidentified, = [("미상.hwpx",content) for name,content in official_files("set04") if "신분증" in name]
+        receipt = self.upload([self.docs[0,"01"],unidentified])
+        self.assertEqual(self.staff.get(url+"/pdf").raise_for_status().content,pdf)
+        self.drain()
+        data = self.detail(receipt)
+        unknown = data["files"][1]
+        self.assertEqual((unknown["state"],unknown["candidates"]),("unassigned",[]))
+        self.assertEqual(self.staff.put(f"{receipt}/teams/{self.teams[0]}/submission",json={"revision":data["revision"]}).status_code,409)
+        self.assertFalse(self.detail(url)["stale"])
+        self.assertEqual(self.staff.get(url+"/pdf").raise_for_status().content,pdf)
+        # Existing installations can still have the old all-teams fallback stored for this file.
+        for old_roster in (self.teams,[self.teams[1]]):
+            self.db.execute("""UPDATE original_analysis SET candidates=%s::uuid[],signals=signals-'explicit_candidates'
+                WHERE file_id=%s""",(old_roster,unknown["item_id"]))
+            self.assertEqual(self.staff.get(url+"/pdf").raise_for_status().content,pdf)
+        # An unresolved correction explicitly targeting the published team still holds its final report.
+        related = self.upload([unidentified],self.teams[1],sid)
+        self.assertTrue(self.detail(url)["stale"])
+        self.assertEqual(self.staff.get(url+"/pdf").status_code,409)
+        correction = self.detail(related)
+        self.staff.put(related+"/files/"+correction["files"][0]["item_id"]+"/assignment",
+            json={"action":"outside","revision":correction["revision"],"reason":"다른 접수의 원본임을 대조"}).raise_for_status()
+        self.drain()
+        self.assertEqual(self.staff.get(url+"/pdf").raise_for_status().content,pdf)
+        # A different receipt can still implicate this team through the ID itself.
+        conflict = self.upload([("Nextify.hwpx",self.docs[1,"03"][1])])
+        self.drain()
+        batch = self.detail(conflict)
+        suspect, = batch["files"]
+        self.assertEqual((suspect["state"],set(suspect["candidates"])),("unassigned",set(self.teams)))
+        self.assertEqual(self.staff.get(url+"/pdf").status_code,409)
+        self.staff.put(conflict+"/files/"+suspect["item_id"]+"/assignment",
+            json={"action":"hold","exclude":[self.teams[1]],"revision":batch["revision"],"reason":"원접수 대조"}).raise_for_status()
+        self.assertEqual(self.staff.get(url+"/pdf").raise_for_status().content,pdf)
+        recipient = dict(fields["recipient"],tax_amount="10",net_amount="99990")
+        self.staff.put(f"/api/submissions/{sid}/review",json=dict(fields,revision=1,recipient=recipient)).raise_for_status()
+        self.assertTrue(self.detail(url)["stale"])
+        self.assertEqual(self.staff.get(url+"/pdf").status_code,409)
 
     def test_failed_pdf_can_reprint_identical_hwpx(self):
         sid, fields = self.report_submission()

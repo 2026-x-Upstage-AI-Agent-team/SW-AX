@@ -182,6 +182,9 @@ class LocalServiceTests(unittest.TestCase):
                 con.execute("UPDATE reports SET state='preview' WHERE id=?",(rid,))
             self.assertEqual(self.client.get(url).json()["missing_payouts"],missing)
             self.assertEqual(self.client.post(url+"/confirm").status_code,409 if missing else 200)
+        self.upload([("미상.hwpx",official("set01")[0][1])],"other-receipt",target="B").raise_for_status()
+        self.assertFalse(self.client.get(url).json()["stale"])
+        self.assertEqual(self.client.post(url+"/confirm").status_code,200)
 
     def test_explicit_same_origin_requests(self):
         self.assertEqual(403,self.client.post("/api/events",headers={"Origin":"https://outside.test"},json={"name":"x"}).status_code)

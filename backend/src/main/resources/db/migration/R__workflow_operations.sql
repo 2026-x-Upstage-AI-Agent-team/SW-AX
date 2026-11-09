@@ -154,8 +154,18 @@ CREATE OR REPLACE FUNCTION ops_team_held(team uuid) RETURNS boolean LANGUAGE sql
         JOIN intake_preparation p ON p.batch_id=b.id JOIN intake_file_state f ON f.batch_id=b.id
         LEFT JOIN original_analysis a ON a.file_id=f.id
         WHERE t.id=team AND p.state NOT IN ('conflict','conflict_reviewed') AND f.state='unassigned' AND team<>ALL(f.excluded)
-        AND (b.target_team_id IS NULL OR b.target_team_id=team OR team=ANY(a.candidates))
-        AND (coalesce(cardinality(a.candidates),0)=0 OR team=ANY(a.candidates)))
+        AND CASE WHEN coalesce(cardinality(a.candidates),0)>0
+            -- Older readers filled candidates with the event roster when there was no evidence.
+            AND (a.signals @> '{"explicit_candidates":true}' OR
+                 a.reason NOT IN ('서로 다른 양식 또는 신청서가 한 파일에 있습니다. 팀별 원본을 대조하세요.',
+                                  '소속 근거가 부족합니다. 원접수와 대조하세요.'))
+            THEN team=ANY(a.candidates)
+            ELSE b.target_team_id=team
+                OR EXISTS(SELECT FROM intake_team_confirmation c WHERE c.batch_id=b.id AND c.team_id=team AND c.state<>'superseded')
+                OR EXISTS(SELECT FROM intake_file_state sibling WHERE sibling.batch_id=b.id AND sibling.team_id=team)
+                OR team=(SELECT d.before_team_id FROM intake_file_assignment d
+                         WHERE d.file_id=f.id ORDER BY d.revision DESC LIMIT 1)
+            END)
 $$;
 
 CREATE OR REPLACE FUNCTION queue_review_notices() RETURNS trigger LANGUAGE plpgsql AS $$
