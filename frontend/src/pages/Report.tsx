@@ -5,6 +5,7 @@ import { useAsync, usePolling } from '../api/client';
 import { when } from '../api/labels';
 import {
   confirmReport,
+  retryReportPrint,
   createReport,
   getDraft,
   getReport,
@@ -445,6 +446,11 @@ function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: str
       </div>
       {r.stale && <Feedback error="생성 뒤 지급 정보나 제출본이 바뀌었습니다. 새 보고서를 생성해 주세요." />}
       {r.error && <Feedback error={r.error} />}
+      {r.can_retry_print && !r.stale && (
+        <button type="button" disabled={busy} onClick={() => act(() => retryReportPrint(r.id).then(() => undefined))} className={cx(buttonStyles.outline, 'self-start')}>
+          같은 HWPX로 PDF 다시 출력
+        </button>
+      )}
       {['queued', 'building', 'printing', 'verifying'].includes(r.state) && <p className="text-sm text-muted">한글 문서를 만드는 중입니다. 완료되면 미리보기가 열립니다.</p>}
       {r.state === 'preview' && (
         <button type="button" disabled={busy || r.stale} onClick={() => act(() => confirmReport(r.id).then(() => undefined))} className={cx(buttonStyles.primary, 'self-start')}>

@@ -157,6 +157,7 @@ export type ReportView = {
   error: string;
   parent: string | null;
   stale: boolean;
+  can_retry_print?: boolean;
   teams: string[];
 };
 
@@ -214,6 +215,7 @@ export const createReport = (event: string, submissions: string[]) =>
   sendJson<{ id: string; version: number; status_url?: string }>('/api/reports', { event, submissions });
 
 export const confirmReport = (rid: string) => sendJson<{ saved: boolean }>(`/api/reports/${enc(rid)}/confirm`, {});
+export const retryReportPrint = (rid: string) => sendJson<{ id: string; version: number }>(`/api/reports/${enc(rid)}/retry-print`, {});
 
 export const uploadEditedReport = async (rid: string, file: File) => {
     const form = new FormData();

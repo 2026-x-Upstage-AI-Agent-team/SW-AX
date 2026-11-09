@@ -1,21 +1,27 @@
 """Official fictional HWP inputs, real Hancom/OCR and PostgreSQL, controlled Studio responses."""
+import hashlib
 import json
 import os
 import subprocess
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Barrier
 from uuid import uuid4
 
 import httpx
+from pypdf import PdfWriter
 
 from operations.delivery import deliver
 from operations.preparation import prepare
+from operations.printer import print_one, worker_api
+from operations.reports import report_tick
 from operations.store import configuration, connect
 from operations.studio_worker import run_studio
 from reporting.merge_hwpx import compile_sections, save
+from service.db import ROOT
 from tests.official_inputs import official_files
 from tests.test_intake_postgres import login
 
@@ -160,3 +166,57 @@ class ReceiptConflicts(unittest.TestCase):
         self.assertTrue(checked["reviewed_at"])
         self.assertEqual(self.detail(two)["teams"],[])
         self.assertEqual(self.staff.put(f"{two}/teams/{team}/submission",json={"revision":second["revision"]}).status_code,409)
+
+    def test_failed_pdf_can_reprint_identical_hwpx(self):
+        team = self.teams[1]
+        receipt = self.upload([self.docs[1,k] for k in ("01","02","03")],team)
+        self.drain()
+        job = self.worker.post("review-jobs/claim",json={"event_id":self.event,"worker_id":"report-test"}).raise_for_status().json()
+        sid = job["submission_id"]
+        result = {"documents":{k:[{"id":f["item_id"],"page":1}] for k,f in zip(("01","02","03"),self.detail(receipt)["files"],strict=True)}}
+        self.worker.put("review-jobs/"+job["review_job_id"]+"/result",headers={"X-Claim-Token":job["claim_token"]},
+            json={"state":"done","studio_job_id":"job_print_"+sid,"verdict":"성공","reason":"원본 대조","output":result}).raise_for_status()
+        fields = json.loads((ROOT/"test case"/"유잇_set01-set02_출력검증입력.json").read_text(encoding="utf-8-sig"))["teams"][1]
+        self.staff.put(f"/api/submissions/{sid}/review",json=dict(fields,decision="승인",note="가상 원본 대조",revision=0,
+            award_type="최우수상",support_amount="100000",issues=[])).raise_for_status()
+        rid = self.staff.post("/api/reports",json={"event":self.event,"submissions":[sid]}).raise_for_status().json()["id"]
+        url = "/api/reports/"+rid
+        self.assertTrue(report_tick(self.db,self.cfg))
+        with worker_api(self.url,self.cfg["AWARDS_OUTPUT_WORKER_TOKEN"]) as printer:
+            job = printer.post("claim",json={"worker_id":"first"}).raise_for_status().json()
+            token = {"X-Claim-Token":job["claim_token"]}
+            original = printer.get(rid+"/hwpx",headers=token).raise_for_status().content
+            printer.put(rid+"/failure",headers=token).raise_for_status()
+            failed = self.detail(url)
+            self.assertEqual((failed["state"],failed["can_retry_print"]),("failed",True))
+            with httpx.Client(base_url=self.url,trust_env=False) as peer:
+                self.db.execute("INSERT INTO event_staff(event_id,login) VALUES(%s,%s)",(self.event,os.environ["INTAKE_TEST_LOGIN_B"]))
+                login(peer,os.environ["INTAKE_TEST_LOGIN_B"],os.environ["INTAKE_TEST_PASSWORD_B"])
+                self.assertEqual(peer.post(url+"/retry-print").status_code,404)
+            self.browser(INTAKE_TEST_PRINT_REPORT=rid)
+            for _ in range(2):
+                self.assertEqual(self.staff.post(url+"/retry-print").raise_for_status().json(),{"id":rid,"version":failed["version"]})
+            self.assertEqual(printer.get(rid+"/hwpx",headers=token).status_code,409)
+            self.assertTrue(print_one(printer,"restored"))
+            self.assertFalse(print_one(printer,"restored"))
+        self.assertTrue(report_tick(self.db,self.cfg))
+        verified = self.detail(url)
+        self.assertEqual((verified["state"],verified["version"],verified["can_retry_print"]),("preview",failed["version"],False))
+        self.staff.post(url+"/confirm").raise_for_status()
+        self.assertEqual(hashlib.sha256(self.staff.get(url+"/hwpx").raise_for_status().content).hexdigest(),job["sha256"])
+        self.assertEqual(original,self.staff.get(url+"/hwpx").raise_for_status().content)
+        self.assertTrue(self.staff.get(url+"/pdf").raise_for_status().content.startswith(b"%PDF-"))
+        edited = self.staff.post(url+"/edited",files={"file":("동일_편집본.hwpx",original)}).raise_for_status().json()["id"]
+        with worker_api(self.url,self.cfg["AWARDS_OUTPUT_WORKER_TOKEN"]) as printer:
+            lease = printer.post("claim",json={"worker_id":"wrong-pages"}).raise_for_status().json()
+            self.assertEqual(lease["id"],edited)
+            bad = PdfWriter()
+            bad.add_blank_page(width=595,height=842)
+            pdf = BytesIO()
+            bad.write(pdf)
+            printer.put(edited+"/pdf",content=pdf.getvalue(),headers={"X-Claim-Token":lease["claim_token"],
+                "X-Hwpx-Sha256":lease["sha256"],"Content-Type":"application/pdf"}).raise_for_status()
+        self.assertTrue(report_tick(self.db,self.cfg))
+        failed_verification = self.detail("/api/reports/"+edited)
+        self.assertEqual((failed_verification["state"],failed_verification["can_retry_print"]),("failed",False))
+        self.assertEqual(self.staff.post("/api/reports/"+edited+"/retry-print").status_code,409)

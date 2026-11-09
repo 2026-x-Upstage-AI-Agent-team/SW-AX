@@ -21,6 +21,7 @@ before(async () => {
 after(async () => browser?.close());
 
 const conflictId = process.env.INTAKE_TEST_CONFLICT_BATCH;
+const printId = process.env.INTAKE_TEST_PRINT_REPORT;
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
 const delayedId = process.env.INTAKE_TEST_DELAYED_SUBMISSION;
@@ -40,6 +41,19 @@ if (conflictId) {
     await page.goto('/#/teams/' + process.env.INTAKE_TEST_REASON_SUBMISSION);
     const row = page.getByRole('listitem').filter({ hasText: '01 지급확인서 1쪽 첫째 행에 학번이 없습니다.' }).first();
     await row.getByRole('button', { name: '01 지급확인서 · 1쪽 · 1행' }).click();
+  });
+} else if (printId) {
+  test('실패한 보고서에서 같은 HWPX로 재출력을 요청한다', async () => {
+    const report = await (await request.get('/api/reports/' + printId)).json();
+    await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), report.event);
+    await page.goto('/#/report');
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/' + printId + '/retry-print')),
+      page.getByRole('button', { name: '같은 HWPX로 PDF 다시 출력' }).click(),
+    ]);
+    assert.equal(response.status(), 202);
+    assert.deepEqual(await response.json(), { id: printId, version: report.version });
+    await page.getByText('전용 PC 출력 대기', { exact: true }).first().waitFor();
   });
 } else if (delayedId) {
   test('지연된 판정의 마지막 조회 시각과 총 시도 횟수를 확인하고 처리를 재개한다', async () => {

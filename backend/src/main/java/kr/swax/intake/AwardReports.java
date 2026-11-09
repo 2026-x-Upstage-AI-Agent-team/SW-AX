@@ -92,7 +92,9 @@ class AwardReports {
         data.scope(login,WorkflowData.Resource.REPORT,id);
         return data.one("""
             SELECT jsonb_build_object('id',id,'event',event_id,'version',version,'state',state,'created',extract(epoch FROM created_at),
-                'error',error,'parent',parent,'selection',selection,'snapshot',snapshot) FROM award_report WHERE id=? AND created_by=?
+                'error',error,'parent',parent,'selection',selection,'snapshot',snapshot,
+                'can_retry_print',state='failed' AND hwpx IS NOT NULL AND pdf IS NULL AND print_token IS NOT NULL)
+            FROM award_report WHERE id=? AND created_by=?
             """,id,login);
     }
     private List<UUID> ids(JsonNode report) {return report.path("selection").valueStream().map(v->UUID.fromString(v.asString())).toList();}
@@ -118,6 +120,20 @@ class AwardReports {
         if(!current(r) || data.db.update("UPDATE award_report SET state='confirmed' WHERE id=? AND state IN ('preview','confirmed')",id)!=1)
             throw ApiErrors.error(409,"최신 보고서 미리보기를 확인한 뒤 확정하세요.");
         return Map.of("saved",true);
+    }
+    @PostMapping("/api/reports/{id}/retry-print")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    Object retryPrint(Principal staff,@PathVariable UUID id) {
+        var r=report(staff.getName(),id);
+        if (!current(r)) throw ApiErrors.error(409,"지급 정보나 증빙이 변경됐습니다. 새 보고서를 생성하세요.");
+        int retried=data.db.update("""
+            UPDATE award_report SET state='printing',error='',printer=NULL,print_token=NULL,print_until=NULL
+            WHERE id=? AND state='failed' AND hwpx IS NOT NULL AND pdf IS NULL AND print_token IS NOT NULL
+            """,id);
+        if (retried==0 && !data.db.queryForObject("""
+            SELECT EXISTS(SELECT FROM award_report WHERE id=? AND state IN ('printing','verifying','preview','confirmed'))
+            """,Boolean.class,id)) throw ApiErrors.error(409,"한글 PC에서 출력에 실패한 보고서만 다시 출력할 수 있습니다.");
+        return Map.of("id",id,"version",r.path("version").asInt());
     }
     @PostMapping("/api/reports/{id}/edited")
     @ResponseStatus(HttpStatus.ACCEPTED)
