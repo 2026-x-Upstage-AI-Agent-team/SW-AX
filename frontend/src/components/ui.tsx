@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { CircleAlert, FileText, LoaderCircle } from 'lucide-react';
 import { stateLabel } from '../api/labels';
 import type { DocKey, Ref, Verdict } from '../api/service';
 
@@ -90,10 +91,13 @@ export function CheckIcon({ state }: { state: CheckState }) {
 
 export function Notice({ error, onRetry }: { error?: string; onRetry?: () => void }) {
   return (
-    <div role={error ? 'alert' : 'status'} className={cx('rounded-2xl px-5 py-4 text-sm', error ? 'bg-alert-soft text-alert-strong' : 'bg-canvas text-muted')}>
-      {error ?? '불러오는 중…'}
+    <div role={error ? 'alert' : 'status'} className={cx('flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm', error ? 'bg-alert-soft text-alert-strong' : 'bg-canvas text-muted')}>
+      <p className="flex items-center gap-2 font-medium">
+        {error ? <CircleAlert size={18} className="shrink-0" aria-hidden="true" /> : <LoaderCircle size={18} className="shrink-0 motion-safe:animate-spin" aria-hidden="true" />}
+        {error ?? '불러오는 중…'}
+      </p>
       {error && onRetry && (
-        <button type="button" onClick={onRetry} className="ml-2 font-bold underline underline-offset-2">
+        <button type="button" onClick={onRetry} className="action action-outline">
           다시 조회
         </button>
       )}
@@ -147,15 +151,15 @@ export function Card({ children, className }: { children: ReactNode; className?:
 }
 
 /** 검토용 PDF 미리보기. 판독 중에는 준비 상태를 표시한다. */
-export function PdfFrame({ url, title, height = 640 }: { url: string; title: string; height?: number }) {
+export function PdfFrame({ url, title, height = 640, emptyMessage = '검토용 PDF가 아직 없습니다.', children }: {
+  url: string; title: string; height?: number; emptyMessage?: string; children?: ReactNode;
+}) {
   if (!url)
     return (
-      <div className="flex w-full flex-col items-center justify-center gap-2 rounded-xl bg-white px-6 text-center text-base font-medium text-muted" style={{ height: Math.min(height, 360) }}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-          <path d="M7 3h8l4 4v14H7z M15 3v4h4 M10 12h6 M10 15h4" />
-        </svg>
-        검토용 PDF를 준비 중입니다.
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-line-2 bg-canvas px-4 py-3">
+        <p className="flex items-center gap-2 text-sm font-semibold text-ink-2"><FileText size={20} aria-hidden="true" className="shrink-0" />{emptyMessage}</p>
+        {children}
       </div>
     );
-  return <iframe title={title} src={url} className="w-full rounded-xl border border-line bg-white" style={{ height }} />;
+  return <iframe title={title} src={url} loading="lazy" className="w-full rounded-xl border border-line bg-white" style={{ height }} />;
 }

@@ -8,6 +8,7 @@
     "dev:service": "vite --mode service",
     "typecheck": "tsc --noEmit",
     "test:review": "node --test tests/review-navigation.mjs",
+    "test:ux": "node --test tests/intake-ux.mjs",
     "prebuild": "node -e \"require('node:fs/promises').rm('dist', { recursive: true, force: true })\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"

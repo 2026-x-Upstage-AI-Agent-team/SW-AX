@@ -40,6 +40,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
   const [removed, setRemoved] = useState<string[]>([]);
   const [files, setFiles] = useState<Picked[]>([]);
   const [error, setError] = useState('');
+  const [fileError, setFileError] = useState('');
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -47,29 +48,31 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
 
   function add(list: FileList | null) {
     if (busy || !list?.length) return;
+    setError('');
     const added = Array.from(list);
     if (files.length + added.length > MAX_FILES || total + added.reduce((n, f) => n + f.size, 0) > MAX_TOTAL) {
-      setError('한 번에 100개, 합계 300 MiB까지 선택해 주세요.');
+      setFileError('한 번에 100개, 합계 300 MiB까지 선택해 주세요.');
       return;
     }
     for (const file of added) {
       if (!/\.(hwp|hwpx)$/i.test(file.name) || /^00(?:\D|$)/.test(file.name)) {
-        setError(file.name + ' 파일은 접수할 수 없습니다. 00 지급내역서를 제외한 HWP·HWPX를 선택해 주세요.');
+        setFileError(file.name + ' 파일은 접수할 수 없습니다. 00 지급내역서를 제외한 HWP·HWPX를 선택해 주세요.');
         return;
       }
       if (!file.size || file.size > MAX_FILE) {
-        setError(file.name + ' 파일이 비었거나 40 MiB를 초과합니다.');
+        setFileError(file.name + ' 파일이 비었거나 40 MiB를 초과합니다.');
         return;
       }
     }
     setFiles((current) => [...current, ...added.map((file) => ({ id: crypto.randomUUID(), file }))]);
-    setError('');
+    setFileError('');
   }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || !files.length) return;
     setError('');
+    setFileError('');
     setBusy(true);
     setProgress(0);
     try {
@@ -158,6 +161,8 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         />
         <button
           type="button"
+          aria-label="제출 원본 파일 선택"
+          aria-describedby={fileError ? 'upload-limits upload-file-error' : 'upload-limits'}
           onClick={() => picker.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
@@ -178,8 +183,9 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
             <FileUp size={25} strokeWidth={1.7} />
           </span>
           <strong className="text-base text-ink">{dragging ? '여기에 놓아 파일 추가' : '파일을 끌어오거나 선택하세요'}</strong>
-          <span className="text-[13px] text-muted">00 지급내역서 제외 · 파일당 40 MiB · 합계 300 MiB</span>
+          <span id="upload-limits" className="text-[13px] text-muted">00 지급내역서 제외 · 최대 100개 · 파일당 40 MiB · 합계 300 MiB</span>
         </button>
+        {fileError && <p id="upload-file-error" role="alert" className="rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">{fileError}</p>}
         {files.length > 0 && (
           <ol className="mt-2">
             {files.map(({ id, file }) => (
@@ -193,6 +199,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
                   onClick={() => {
                     setFiles((list) => list.filter((item) => item.id !== id));
                     setError('');
+                    setFileError('');
                   }}
                 >
                   제거
@@ -208,9 +215,10 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         </p>
       )}
       {busy && (
-        <div role="status" className="flex items-center gap-2.5 text-sm">
-          <progress max={100} value={progress} className="max-w-1/2 accent-brand" />
-          {progress === 100 ? '원본 저장 확인 중' : '원본 전송 중 ' + progress + '%'}
+        <div className="flex flex-wrap items-center gap-2.5 text-sm">
+          <span role="status">{progress === 100 ? '서버에서 원본 저장 확인 중' : '원본 전송 중'}</span>
+          <progress aria-label={progress === 100 ? '원본 저장 확인' : '원본 전송률'} max={100} value={progress === 100 ? undefined : progress} className="max-w-1/2 accent-brand" />
+          {progress < 100 && <span aria-hidden="true" className="tabular-nums">{progress}%</span>}
         </div>
       )}
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-sm">
@@ -218,7 +226,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           선택 <b>{files.length}</b>개 · {bytes(total)}
         </span>
         <button className={buttonStyles.primary} disabled={busy || !files.length}>
-          {base ? '보완본 접수하기' : '원본 접수하기'}
+          {busy ? '접수 중…' : base ? '보완본 접수하기' : '원본 접수하기'}
         </button>
       </footer>
     </form>

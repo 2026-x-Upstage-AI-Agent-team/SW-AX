@@ -62,8 +62,11 @@ export default function Layout() {
   const { event } = useEvent();
   const { pathname } = useLocation();
   const navigation = useNavigationType();
+  const previousPath = useRef(pathname);
   const close = () => menuDialog.current?.close();
   useEffect(() => {
+    if (previousPath.current === pathname) return;
+    previousPath.current = pathname;
     if (menuDialog.current?.open) menuDialog.current.close();
     if (navigation !== 'POP') window.scrollTo(0, 0);
   }, [pathname, navigation]);
