@@ -35,29 +35,29 @@ export function StateBadge({ state, size = 'sm' }: { state: string; size?: 'sm' 
 export function DocChips({ documents }: { documents?: Partial<Record<DocKey, Ref[]>> }) {
   if (!documents) return <span className="text-xs text-subtle">—</span>;
   return (
-    <ul className="flex flex-wrap gap-1.5" aria-label="접수 서류">
+    <ul className="flex flex-wrap gap-1.5 text-[13px] font-semibold tabular-nums" aria-label="접수 서류">
       {(['01', '02', '03'] as const).map((code) => {
         const n = documents[code]?.length ?? 0;
         if (n === 0)
           return (
-            <li key={code} className="rounded-lg border border-dashed border-alert-strong px-[7px] py-[3px] font-mono text-xs text-alert-strong">
+            <li key={code} className="rounded-lg border border-dashed border-alert-strong px-[7px] py-[3px] text-alert-strong">
               {code} 없음
             </li>
           );
         if (n > 1)
           return (
-            <li key={code} className="rounded-lg bg-alert-tint px-2 py-1 font-mono text-xs text-alert-strong">
+            <li key={code} className="rounded-lg bg-alert-tint px-2 py-1 text-alert-strong">
               {code} ×{n}
             </li>
           );
         return (
-          <li key={code} className="rounded-lg bg-canvas px-2 py-1 font-mono text-xs text-ink">
+          <li key={code} className="rounded-lg bg-canvas px-2 py-1 text-ink">
             {code}
           </li>
         );
       })}
       {(documents['?']?.length ?? 0) > 0 && (
-        <li className="rounded-lg bg-caution-tint px-2 py-1 font-mono text-xs text-caution">기타 {documents['?']!.length}</li>
+        <li className="rounded-lg bg-caution-tint px-2 py-1 text-caution">기타 {documents['?']!.length}</li>
       )}
     </ul>
   );
@@ -150,7 +150,7 @@ export function Card({ children, className }: { children: ReactNode; className?:
 export function PdfFrame({ url, title, height = 640 }: { url: string; title: string; height?: number }) {
   if (!url)
     return (
-      <div className="flex w-full flex-col items-center justify-center gap-2 rounded-xl bg-white px-6 text-center text-sm text-subtle" style={{ height: Math.min(height, 360) }}>
+      <div className="flex w-full flex-col items-center justify-center gap-2 rounded-xl bg-white px-6 text-center text-base font-medium text-muted" style={{ height: Math.min(height, 360) }}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <path d="M7 3h8l4 4v14H7z M15 3v4h4 M10 12h6 M10 15h4" />
         </svg>

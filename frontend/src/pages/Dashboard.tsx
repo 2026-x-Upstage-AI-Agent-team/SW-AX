@@ -217,7 +217,7 @@ function TeamTable({
                       )}
                       <div className="mt-0.5 text-xs text-subtle">
                         {r.rep && <span>{r.rep} · </span>}
-                        <span className="font-mono">{s ? `v${s.version}` : '제출본 없음'}</span>
+                        <span className="font-semibold tabular-nums">{s ? `v${s.version}` : '제출본 없음'}</span>
                       </div>
                     </td>
                     <td data-label="접수 서류" className="team-docs px-3 py-4 align-top">{s ? <DocChips documents={r.detail?.result?.documents} /> : '—'}</td>

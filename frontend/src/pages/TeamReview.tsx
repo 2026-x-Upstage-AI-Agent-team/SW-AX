@@ -87,7 +87,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
         <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{s.team_name}</h1>
         <span className="text-[13px] text-subtle">
           {s.rep && `대표 ${s.rep} · `}
-          <span className="font-mono">제출 v{s.version}</span> · 원본 {s.count}개
+          <span className="font-semibold tabular-nums">제출 v{s.version}</span> · 원본 {s.count}개
         </span>
         {s.state === 'done' && s.verdict ? <VerdictBadge verdict={s.verdict} size="md" /> : <StateBadge state={s.state} size="md" />}
         {s.decision && (
@@ -142,7 +142,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                   key={r.id}
                   type="button"
                   onClick={() => setView(r)}
-                  className={cx('min-h-9 rounded-lg px-3 text-xs', view.id === r.id ? 'bg-alert-tint font-bold text-alert-strong' : 'bg-canvas text-ink-2')}
+                  className={cx('file-name min-h-9 rounded-lg px-3 text-left', view.id === r.id ? 'bg-alert-tint font-bold text-alert-strong' : 'bg-canvas text-ink-2')}
                 >
                   {i + 1}번째 · {s.files.find((f) => f.id === r.id)?.name}
                 </button>
@@ -152,7 +152,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
           <div className="flex flex-col gap-2 bg-paper p-3 sm:p-5">
             {file ? (<>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-                <span className="break-all">
+                <span className="file-name text-ink">
                   {file.name} {view.page ? `· ${view.page}쪽` : ''} {view.row ? `· ${view.row}행` : ''}
                 </span>
                 {file.url && (
@@ -169,7 +169,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                   {s.files.map((f) => (
                     <li key={f.id}>
                       <button type="button" onClick={() => showEvidence({ id: f.id, page: f.page || 1 })}
-                        className="min-h-10 break-all text-left text-sm font-bold text-brand-strong underline underline-offset-2">
+                        className="file-name min-h-10 text-left font-bold text-brand-strong underline underline-offset-2">
                         {f.name}
                       </button>
                     </li>

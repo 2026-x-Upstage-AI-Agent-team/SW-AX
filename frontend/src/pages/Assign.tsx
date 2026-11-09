@@ -91,7 +91,7 @@ export default function Assign() {
             </ul>
             {others.length > 0 && (
               <>
-                <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone} className="w-full border-t border-line px-[22px] py-3 text-left text-xs font-bold text-muted">
+                <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone} className="w-full border-t border-line px-[22px] py-3 text-left text-sm font-bold text-ink-2">
                   배정·처리된 파일 {others.length} {showDone ? '접기' : '보기'}
                 </button>
                 {showDone && (
@@ -122,8 +122,8 @@ function FileRow({ item, active, onClick, teamName }: { item: Item; active: bool
         onClick={onClick}
         className={cx('flex min-h-16 w-full flex-col items-start gap-1 border-l-[3px] px-[22px] py-3.5 text-left', active ? 'border-brand bg-brand-tint' : 'border-transparent hover:bg-canvas')}
       >
-        <span className="break-all font-mono text-[13px] text-ink">{f.name}</span>
-        <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+        <span className="file-name text-ink">{f.name}</span>
+        <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink-2">
           <StateBadge state={f.state} />
           {f.kind !== '?' && <span>{docLabels[f.kind] ?? f.kind}</span>}
           {f.team && <span>· {teamName(f.team)}</span>}
@@ -182,13 +182,13 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
     <section aria-labelledby="detail-h" className="flex min-w-0 flex-[999_1_600px] flex-col gap-4">
       <div className="flex flex-col gap-5 rounded-[22px] border border-line bg-white p-[26px]">
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
-          <h2 id="detail-h" className="break-all font-mono text-lg font-medium">
+          <h2 id="detail-h" className="file-name text-lg font-bold">
             {file.name}
           </h2>
-          <span className="rounded-full bg-canvas px-2.5 py-1 text-xs text-ink-2">본문 분류 · {docLabels[file.kind] ?? file.kind}</span>
+          <span className="rounded-full bg-canvas px-2.5 py-1 text-sm font-semibold text-ink-2">본문 분류 · {docLabels[file.kind] ?? file.kind}</span>
           <StateBadge state={file.state} />
         </div>
-        <p className="text-xs text-subtle">
+        <p className="text-sm font-medium text-muted">
           접수 {when(batch.created)} · {file.pages ? `${file.pages}쪽` : '판독 전'}
           {batch.base && ' · 보완 접수'}
         </p>
@@ -228,7 +228,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
               ))}
             </div>
             {action === 'assign' && (
-              <label className="flex max-w-sm flex-col gap-1.5 text-xs text-muted">
+              <label className="flex max-w-sm flex-col gap-1.5 text-sm font-semibold text-ink-2">
                 배정할 팀
                 <select value={team} onChange={(e) => setTeam(e.target.value)} className={inputStyle}>
                   <option value="">팀 선택</option>
@@ -244,7 +244,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
             )}
             {action === 'hold' && (
               <fieldset className="flex flex-col gap-1.5">
-                <legend className="mb-1 text-xs text-muted">관련이 없다고 확인한 팀 (이 팀들은 먼저 진행합니다)</legend>
+                <legend className="mb-1 text-sm font-semibold text-ink-2">관련이 없다고 확인한 팀 (이 팀들은 먼저 진행합니다)</legend>
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
                   {teams.map((t) => (
                     <label key={t.id} className="flex min-h-9 items-center gap-2 text-sm">
@@ -260,7 +260,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
                 </div>
               </fieldset>
             )}
-            <label className="flex flex-col gap-1.5 text-xs text-muted">
+            <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink-2">
               근거 (원래 접수 경로 등, 2자 이상)
               <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} className={cx(inputStyle, 'h-auto py-2.5')} />
             </label>
@@ -271,7 +271,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
             </div>
           </fieldset>
         )}
-        {batch.state === 'preparing' && <p className="text-xs text-subtle">파일 판독이 끝나면 배정할 수 있습니다.</p>}
+        {batch.state === 'preparing' && <p className="text-sm font-medium text-muted">파일 판독이 끝나면 배정할 수 있습니다.</p>}
         <Feedback error={error} />
       </div>
     </section>
@@ -281,7 +281,7 @@ function Detail({ item, teamName, onSaved }: { item: Item; teamName: (id?: strin
 function Stat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
   return (
     <div className={cx('flex flex-col gap-1 rounded-[18px] bg-white px-[22px] py-5', warn && 'outline-2 outline-[#f5c37a] outline')}>
-      <span className={cx('text-[13px]', warn ? 'font-bold text-caution' : 'text-muted')}>{label}</span>
+      <span className={cx('text-sm font-semibold', warn ? 'text-caution' : 'text-ink-2')}>{label}</span>
       <span className="text-[32px] font-extrabold">{value}</span>
     </div>
   );

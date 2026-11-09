@@ -207,7 +207,7 @@ function Detail({ eventId }: { eventId: string }) {
         <ol>
           {files.map((file) => (
             <li key={file.item_id} className="flex flex-wrap items-center gap-2.5 border-b border-line-soft py-3 text-sm">
-              <span className="flex-[1_1_160px] break-all">{file.name}</span>
+              <span className="file-name flex-[1_1_160px]">{file.name}</span>
               <small className="whitespace-nowrap text-muted">{bytes(file.size)}</small>
               <a className={buttonStyles.text} href={paths.original(batch.batch_id, file.item_id)} download>
                 원본 받기
@@ -339,11 +339,11 @@ function ServiceDetail() {
                 <tr key={f.id} className="border-b border-line-soft align-top">
                   <td className="px-2 py-3">
                     {f.url ? (
-                      <a href={filePreviewUrl(f)} target="_blank" rel="noreferrer" className="break-all text-brand-strong underline underline-offset-2">
+                      <a href={filePreviewUrl(f)} target="_blank" rel="noreferrer" className="file-name text-brand-strong underline underline-offset-2">
                         {f.name}
                       </a>
                     ) : (
-                      <span className="break-all">{f.name}</span>
+                      <span className="file-name">{f.name}</span>
                     )}
                     <div className="text-xs text-subtle">
                       {bytes(f.size)}

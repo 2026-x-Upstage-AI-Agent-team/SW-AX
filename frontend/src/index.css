@@ -4,7 +4,7 @@
    brand(#4AA36A)는 사이트 원색, brand-strong은 흰 글자 대비 4.5:1을 맞춘 버튼·링크용 색. */
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, "Apple SD Gothic Neo", "Malgun Gothic", monospace;
 
   --color-brand: #4aa36a;
   --color-brand-strong: #226649;
@@ -94,7 +94,11 @@
   }
 
   .page-title { font-size: clamp(1.9rem, 2.15vw + .6rem, 2.65rem); line-height: 1.14; font-weight: 760; letter-spacing: -.055em; }
-  .page-lead { color: var(--color-muted); font-size: .96rem; line-height: 1.65; }
+  .page-lead { color: var(--color-ink-2); font-size: 1rem; font-weight: 500; line-height: 1.65; }
+  .file-name {
+    min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: keep-all;
+    font-family: var(--font-sans); font-size: 1rem; font-weight: 600; line-height: 1.55;
+  }
   .surface { min-width: 0; border: 1px solid var(--color-line); border-radius: 1.2rem; background: white; box-shadow: 0 2px 5px #1b392404; }
   .panel-title { font-size: 1.12rem; font-weight: 720; line-height: 1.4; letter-spacing: -.035em; }
   .action { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .48rem; border-radius: .72rem; padding: .55rem 1rem; font-size: .89rem; font-weight: 650; line-height: 1.35; text-align: center; }

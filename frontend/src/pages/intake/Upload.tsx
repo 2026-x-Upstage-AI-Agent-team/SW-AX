@@ -123,7 +123,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
                   onChange={(e) => setRemoved((list) => (e.target.checked ? [...list, f.id] : list.filter((x) => x !== f.id)))}
                   className="size-4 accent-brand"
                 />
-                <span className="break-all">{f.name}</span>
+                <span className="file-name">{f.name}</span>
                 <span className="text-xs text-muted">{docLabels[f.kind] ?? f.kind}</span>
               </label>
             ))}
@@ -184,7 +184,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           <ol className="mt-2">
             {files.map(({ id, file }) => (
               <li key={id} className="flex flex-wrap items-center gap-2.5 border-b border-line-soft py-3 text-sm">
-                <span className="flex-[1_1_160px] break-all">{file.name}</span>
+                <span className="file-name flex-[1_1_160px]">{file.name}</span>
                 <small className="whitespace-nowrap text-muted">{bytes(file.size)}</small>
                 <button
                   type="button"
