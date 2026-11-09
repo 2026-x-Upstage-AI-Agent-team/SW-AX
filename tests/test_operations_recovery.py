@@ -2,6 +2,7 @@
 import json
 import os
 import unittest
+from unittest.mock import patch
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
@@ -13,6 +14,7 @@ from pypdf import PdfWriter
 from operations.delivery import deliver
 from operations.store import configuration, connect
 from operations.studio_worker import run_studio
+from operations.worker import serve
 from tests.test_intake_postgres import login, mark_batch_read
 from service.db import ROOT
 
@@ -41,9 +43,9 @@ class Recovery(unittest.TestCase):
         doc = PdfWriter()
         doc.add_blank_page(width=595,height=842)
         doc.write(pdf)
-        def submit(kinds,base=None,removed=()):
+        def submit(kinds,base=None,removed=(),owner=team):
             files = [inputs[k] for k in kinds]
-            fields = {"event":event,"target":team,"manifest":json.dumps([{"name":n,"size":len(v)} for n,v in files])}
+            fields = {"event":event,"target":owner,"manifest":json.dumps([{"name":n,"size":len(v)} for n,v in files])}
             if base:
                 fields.update(base=base,removed=json.dumps(list(removed)))
             batch = staff.post("/api/intake-batches",data=fields,headers={"Idempotency-Key":str(uuid4())},
@@ -52,7 +54,7 @@ class Recovery(unittest.TestCase):
             for i,(k,item) in enumerate(zip(kinds,items,strict=True)):
                 db.execute("INSERT INTO original_analysis(file_id,kind,pages,pdf) VALUES(%s,%s,1,%s)",(item["item_id"],k,pdf.getvalue()))
                 staff.put(f"/api/intake-batches/{batch}/files/{item['item_id']}/assignment",
-                          json={"action":"assign","revision":i,"reason":"원본 대조","team":team}).raise_for_status()
+                          json={"action":"assign","revision":i,"reason":"원본 대조","team":owner}).raise_for_status()
             db.execute("UPDATE intake_preparation SET state='ready' WHERE batch_id=%s",(batch,))
             api.put(f"review-jobs/preparations/{batch}/confirm").raise_for_status()
             return staff.get("/api/intake-batches/"+batch).raise_for_status().json()["teams"][0]["submission_id"],items
@@ -61,9 +63,17 @@ class Recovery(unittest.TestCase):
         response_status="queued"
         verdict="재제출요청"
         creates=[]
+        denied_creates=[]
         mode="lost"
+        output_team="복구 시험팀"
         def upstream(request):
             nonlocal mode
+            if mode=="key-recovery" and request.headers.get("Authorization")!="Bearer restored-test-key":
+                self.assertEqual(request.method,"GET","키 확인 전에는 새 작업을 요청하지 않습니다.")
+                return httpx.Response(401)
+            if mode=="create-denied" and request.method=="POST" and request.headers.get("Authorization")!="Bearer creation-restored":
+                denied_creates.append(request.url.path)
+                return httpx.Response(403)
             if "configs" in request.url.path:
                 return httpx.Response(200,json={"id":"cfg_test"})
             if request.method=="POST":
@@ -82,9 +92,10 @@ class Recovery(unittest.TestCase):
             remote=request.url.path.split("/")[-1]
             return httpx.Response(200,json={"id":remote,"status":response_status,"output":[
                 {"model":"Instruct - 최종판정","content":[{"text":{"enum":verdict,"reason":"공식 가상 원본 대조"}}]},
-                {"model":"Information Extract - 지급확인서","content":[{"text":{"team_name":"복구 시험팀","representative_name":"대표"}}]}]})
+                {"model":"Information Extract - 지급확인서","content":[{"text":{"team_name":output_team,"representative_name":"대표"}}]}]})
         def tick():
-            with httpx.Client(base_url="https://studio.invalid/",transport=httpx.MockTransport(upstream)) as remote:
+            with httpx.Client(base_url="https://studio.invalid/",headers={"Authorization":"Bearer "+cfg["UPSTAGE_API_KEY"]},
+                              transport=httpx.MockTransport(upstream)) as remote:
                 return run_studio(db,api,remote,cfg)
         def execution():
             return db.execute("""SELECT e.*,extract(epoch FROM due-updated_at) AS delay FROM studio_execution e
@@ -149,10 +160,17 @@ class Recovery(unittest.TestCase):
         response_status="queued"
         tick()
         # A second correction makes the running v2 obsolete before its terminal response.
+        mode="denied"
+        due()
+        tick()
+        self.assertEqual(execution()["phase"],"access")
+        old_remote=execution()["remote_id"]
         third,duplicates=submit(("02","02"),second,(added[0]["item_id"],))
+        mode="regular"
         due()
         response_status="completed"
         tick()
+        self.assertEqual((execution()["phase"],execution()["remote_id"]),("superseded",old_remote))
         self.assertFalse(db.execute("SELECT 1 FROM review_mail WHERE submission_id=%s",(second,)).fetchone())
         sid=third
         verdict="담당자확인"
@@ -211,6 +229,58 @@ class Recovery(unittest.TestCase):
         tick()
         self.assertEqual(execution()["phase"],"done")
         self.assertFalse(db.execute("SELECT 1 FROM review_mail WHERE submission_id=%s",(sid,)).fetchone())
+
+        # A 401 before creation holds all new Jobs even after the failing version is replaced.
+        mode="key-recovery"
+        sid,_=submit(("01","03"))
+        tick()
+        self.assertEqual((execution()["phase"],execution()["remote_id"]),("access",None))
+        retired=sid
+        next_team=staff.post(f"/api/events/{event}/teams",json={"name":"다음 시험팀","rep":"대표"}).raise_for_status().json()["id"]
+        next_sid,_=submit(("01","03"),owner=next_team)
+        replacement,_=submit(("02",),retired)
+        before=len(creates)
+        retry().raise_for_status()
+        self.assertFalse(tick())
+        self.assertEqual(len(creates),before)
+        self.assertEqual(execution()["phase"],"access")
+        cfg["UPSTAGE_API_KEY"]="restored-test-key"
+        due()  # The next scheduled read uses the restored credentials.
+        previous_config=dict(cfg,UPSTAGE_API_KEY="expired-test-key",AWARDS_API_URL=url)
+        probe=httpx.Client(base_url="https://studio.invalid/",headers={"Authorization":"Bearer expired-test-key"},
+                           transport=httpx.MockTransport(upstream))
+        with patch("operations.worker.configuration",return_value=cfg), patch("operations.worker.studio.client",return_value=probe):
+            serve("studio",previous_config,once=True)
+        self.assertEqual((execution()["phase"],execution()["remote_id"]),("superseded",None))
+        verdict="재제출요청"
+        for sid,output_team in ((next_sid,"다음 시험팀"),(replacement,"복구 시험팀")):
+            tick()
+            self.assertEqual(execution()["phase"],"polling")
+            due()
+            tick()
+            self.assertEqual(execution()["phase"],"done")
+        self.assertEqual(len(creates),before+2)
+        self.assertFalse(db.execute("SELECT 1 FROM review_mail WHERE submission_id=%s",(retired,)).fetchone())
+        # Config lookup can succeed even while Job creation is forbidden.
+        mode="create-denied"
+        sid,_=submit(("01",),owner=next_team)
+        tick()
+        self.assertEqual(execution()["phase"],"access")
+        replacement_b,_=submit(("02",),sid,owner=next_team)
+        due()
+        self.assertFalse(tick())
+        self.assertEqual(execution()["phase"],"access")
+        self.assertEqual(len(denied_creates),1)
+        cfg["UPSTAGE_API_KEY"]="creation-restored"
+        due()
+        tick()
+        self.assertEqual((execution()["phase"],execution()["remote_id"]),("superseded",None))
+        sid=replacement_b
+        output_team="다음 시험팀"
+        tick()
+        due()
+        tick()
+        self.assertEqual(execution()["phase"],"done")
 
     def test_upload_while_studio_is_slow(self):
         import threading

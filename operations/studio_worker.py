@@ -1,4 +1,5 @@
 """Durable Studio execution. Each tick runs under the database-wide Studio worker lock."""
+import hashlib
 import random
 import re
 from datetime import datetime, timezone
@@ -10,12 +11,13 @@ from service import studio
 from service.documents import preview
 from .store import cached_file
 
+ACCESS_CHECK_SECONDS = 60
 
-def status(db, task, phase, error="", *, delay=0, failures=0, slot=False, remote=None, http_status=None, error_code=None):
+def status(db, task, phase, error="", *, delay=0, failures=0, slot=False, remote=None, http_status=None, error_code=None, rejected_key=None):
     with db.transaction():
         db.execute("""UPDATE studio_execution SET phase=%s,error=%s,failures=%s,occupies_slot=%s,
-            remote_id=coalesce(%s,remote_id),updated_at=now(),due=now()+%s*interval '1 second' WHERE job_id=%s""",
-                   (phase, error, failures, slot, remote, delay, task["id"]))
+            remote_id=coalesce(%s,remote_id),updated_at=now(),due=now()+%s*interval '1 second',rejected_create_key_hash=%s WHERE job_id=%s""",
+                   (phase, error, failures, slot, remote, delay, rejected_key, task["id"]))
         if task["phase"] != phase or error != task["error"] or failures or error_code:
             db.execute("""INSERT INTO workflow_audit(submission_id,actor,action,stage,remote_id,attempts,due,http_status,error_code)
                 SELECT %s,'@workflow',%s,phase,remote_id,failures,due,%s,%s FROM studio_execution WHERE job_id=%s""",
@@ -26,20 +28,19 @@ def choose(db):
     return db.execute("""SELECT j.id,j.submission_id,j.worker_id,j.claim_token,j.studio_job_id,
         j.lease_until>now() AS leased,j.work_state,coalesce(e.phase,'queued') AS phase,e.remote_id,
         coalesce(e.failures,0) AS failures,coalesce(e.error,'') AS error,coalesce(e.occupies_slot,false) AS slot,
-        extract(epoch FROM now()-e.started_at) AS elapsed,r.state AS effective,e.agent,e.config,e.config_id,
+        extract(epoch FROM now()-e.started_at) AS elapsed,r.state AS effective,e.agent,e.config,e.config_id,e.rejected_create_key_hash,
         (e.due IS NULL OR e.due<=now()) AS ready
         FROM review_job j JOIN review_job_status r ON r.review_job_id=j.id
         JOIN team_submission s ON s.id=j.submission_id LEFT JOIN studio_execution e ON e.job_id=j.id
-        WHERE e.occupies_slot OR (r.state IN ('queued','running') AND NOT ops_team_held(s.team_id)
+        WHERE e.occupies_slot OR e.phase='access' OR (r.state IN ('queued','running') AND NOT ops_team_held(s.team_id)
             AND EXISTS(SELECT FROM intake_team_confirmation c JOIN intake_preparation p ON p.batch_id=c.batch_id
                 WHERE c.submission_id=s.id AND c.state='confirmed' AND p.state IN ('ready','prepared'))
             AND (e.phase IS NULL OR e.phase IN ('queued','polling')) AND (e.due IS NULL OR e.due<=now())
-            AND (j.work_state='queued' OR j.lease_until<=now() OR j.worker_id='studio-dispatch')
-            AND NOT EXISTS(SELECT FROM studio_execution WHERE phase='access'))
-        ORDER BY coalesce(e.occupies_slot,false) DESC,j.registered_at,j.id LIMIT 1""").fetchone()
+            AND (j.work_state='queued' OR j.lease_until<=now() OR j.worker_id='studio-dispatch'))
+        ORDER BY coalesce(e.occupies_slot,false) DESC,coalesce(e.phase='access',false) DESC,j.registered_at,j.id LIMIT 1""").fetchone()
 
 
-def backoff(db, task, exc, creating):
+def backoff(db, task, exc, creating, api_key):
     response = exc.response if isinstance(exc, httpx.HTTPStatusError) else None
     code = response.status_code if response is not None else 0
     if response is not None:
@@ -49,7 +50,9 @@ def backoff(db, task, exc, creating):
     audit = {"http_status": code or None, "error_code": error_code}
     remote = bool(task["remote_id"] or task["studio_job_id"])
     if code in (401, 402, 403):
-        status(db, task, "access", f"Upstage 조직 키·사용량을 확인하고 재개하세요. HTTP {code}", slot=remote, **audit)
+        rejected_key = hashlib.sha256(api_key.encode()).digest() if creating else None
+        status(db, task, "access", f"Upstage 조직 키·사용량을 확인하고 재개하세요. HTTP {code}",
+               slot=remote, delay=ACCESS_CHECK_SECONDS, rejected_key=rejected_key, **audit)
     elif creating and (not code or code == 408 or code >= 500):
         status(db, task, "uncertain", "생성 응답이 불명확합니다. Studio에서 기존 실행을 확인하세요.", slot=True, **audit)
     elif not code or code in (408, 429) or code >= 500:
@@ -72,7 +75,7 @@ def backoff(db, task, exc, creating):
 
 def run_studio(db, api, external, cfg):
     t = choose(db)
-    if not t or not t["ready"] or t["phase"] in ("uncertain", "paused", "access", "invalid"):
+    if not t or not t["ready"] or t["phase"] in ("uncertain", "paused", "invalid"):
         return False
     jid = t["id"]
     if t["phase"] == "creating":
@@ -80,6 +83,23 @@ def run_studio(db, api, external, cfg):
         return True
     active = t["effective"] in ("queued", "running")
     remote = t["remote_id"] or t["studio_job_id"]
+    if t["phase"] == "access" and not remote:
+        # The organisation-wide hold survives corrections. Only a read checks the key, never a Job creation.
+        db.execute("UPDATE studio_execution SET due=now()+%s*interval '1 second' WHERE job_id=%s AND phase='access'",
+                   (ACCESS_CHECK_SECONDS,jid))
+        agent = t["agent"] or cfg.get("UPSTAGE_AGENT_ID")
+        key = cfg.get("UPSTAGE_API_KEY")
+        if not agent or not key or t["rejected_create_key_hash"] == hashlib.sha256(key.encode()).digest():
+            return False
+        version = t["config"] or cfg.get("UPSTAGE_CONFIG_ID", studio.CONFIG)
+        try:
+            config = external.get(f"agents/{agent}/configs/{version}").raise_for_status().json()
+            if not isinstance(config, dict) or not config.get("id"):
+                return False
+        except (httpx.HTTPError, ValueError):
+            return False
+        status(db,t,"superseded" if t["effective"]=="superseded" else "queued")
+        return True
     if t["effective"] in ("done", "failed"):
         status(db,t,t["effective"])
         return True
@@ -121,7 +141,7 @@ def run_studio(db, api, external, cfg):
             agent = t["agent"] or cfg.get("UPSTAGE_AGENT_ID")
             version = t["config"] or cfg.get("UPSTAGE_CONFIG_ID", studio.CONFIG)
             if not agent or not cfg.get("UPSTAGE_API_KEY"):
-                status(db, t, "access", "서버의 Studio 에이전트와 조직 키를 설정한 뒤 재개하세요.")
+                status(db, t, "access", "서버의 Studio 에이전트와 조직 키를 설정하세요.", delay=ACCESS_CHECK_SECONDS)
                 return True
             config_id = t["config_id"] or external.get(f"agents/{agent}/configs/{version}").raise_for_status().json()["id"]
             body = studio.payload(files, config_id, agent)
@@ -162,7 +182,7 @@ def run_studio(db, api, external, cfg):
         else:
             body = {"state":"failed","studio_job_id":remote,"reason":"Studio 실행이 실패 종료됐습니다. 원본과 실행 이력을 확인하세요."}
     except httpx.HTTPError as exc:
-        backoff(db,t,exc,creating)
+        backoff(db,t,exc,creating,cfg.get("UPSTAGE_API_KEY",""))
         return True
     except (ValueError,KeyError,TypeError,AttributeError,OSError):
         status(db,t,"uncertain" if creating else "invalid","Studio의 실행 이력·결과 노드·원본을 확인하세요.",

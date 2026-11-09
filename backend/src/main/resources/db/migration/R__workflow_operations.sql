@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS studio_execution (
     updated_at timestamptz NOT NULL DEFAULT now(), due timestamptz NOT NULL DEFAULT now(),
     failures integer NOT NULL DEFAULT 0, error text NOT NULL DEFAULT '', occupies_slot boolean NOT NULL DEFAULT false
 );
+-- An accessible config does not prove permission to create Jobs under the same rejected key.
+ALTER TABLE studio_execution ADD COLUMN IF NOT EXISTS rejected_create_key_hash bytea;
 CREATE UNIQUE INDEX IF NOT EXISTS studio_distinct_id ON studio_execution(remote_id) WHERE remote_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS studio_one_remote ON studio_execution (occupies_slot) WHERE occupies_slot;
 CREATE TABLE IF NOT EXISTS workflow_audit (
@@ -83,7 +85,7 @@ CREATE OR REPLACE VIEW ops_submission AS
 SELECT s.id,s.team_id,t.event_id,s.version,j.review_job_id,j.state AS job_state,
     CASE WHEN j.state='done' AND ((coalesce(j.result#>>'{output,team_name}','') NOT IN ('',t.name))
          OR (t.representative<>'' AND coalesce(j.result#>>'{output,rep}','') NOT IN ('',t.representative))) THEN 'ownership'
-         WHEN e.occupies_slot AND e.phase IN ('uncertain','paused','access','invalid') THEN e.phase
+         WHEN e.phase='access' OR (e.occupies_slot AND e.phase IN ('uncertain','paused','invalid')) THEN e.phase
          WHEN j.state IN ('superseded','blocked') THEN j.state
          WHEN j.state IN ('queued','running','failed') AND e.phase IN ('creating','polling','uncertain','access','paused','invalid','failed') THEN e.phase
          ELSE coalesce(j.state,'queued') END AS state,

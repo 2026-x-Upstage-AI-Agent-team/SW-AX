@@ -22,6 +22,7 @@ type Alert = { key: string; text: string; sub: string; to: string; action: strin
 function needsAction(r: TeamRow) {
   const s = r.submission;
   if (r.held || !s) return true;
+  if (r.detail?.history.some((h) => h.state === 'access')) return true;
   if (recoverableStates.has(s.state) || s.state === 'ownership') return true;
   if (s.verdict === '성공') return s.decision !== '승인';
   return s.verdict !== null;
@@ -46,8 +47,11 @@ export default function Dashboard() {
   for (const r of list) {
     const s = r.submission;
     if (!s) continue;
+    const priorAccess = r.detail?.history.find((h) => h.id !== s.id && h.state === 'access');
     if (recoverableStates.has(s.state) || s.state === 'ownership')
       alerts.push({ key: r.id + 'state', text: `${r.name} · ${stateLabel(s.state)}`, sub: s.error || '처리를 재개하거나 원본을 확인해 주세요.', to: `/teams/${s.id}`, action: '열기' });
+    else if (priorAccess)
+      alerts.push({ key: r.id + 'access', text: `${r.name} · Studio 접근 권한 확인`, sub: `제출 v${priorAccess.version}에서 인증 오류가 발생했습니다. 키·사용량을 확인한 뒤 재개할 수 있습니다.`, to: `/teams/${priorAccess.id}`, action: '인증 확인' });
     else if (s.verdict === '담당자확인' && !s.decision)
       alerts.push({ key: r.id + 'check', text: `${r.name} · 원본 대조가 필요합니다.`, sub: r.detail?.result?.reason ?? '판정 근거를 확인한 뒤 ‘승인’ 또는 ‘보완 필요’를 기록하면 팀장에게 결과 한 통이 발송됩니다.', to: `/teams/${s.id}`, action: '원본 대조하기' });
     else if (s.verdict === '재제출요청' && !r.email)

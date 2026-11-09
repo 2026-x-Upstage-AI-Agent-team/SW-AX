@@ -31,6 +31,9 @@ def serve(role, cfg, once=False):
                         heartbeat = 0
                         while True:
                             if role in ("studio","mail") and time.monotonic() >= heartbeat:
+                                if role == "studio":
+                                    cfg = configuration()
+                                    remote.headers["Authorization"] = "Bearer " + cfg.get("UPSTAGE_API_KEY", "")
                                 mail = mail_settings(cfg) if role == "mail" else {}
                                 configured = bool(cfg.get("UPSTAGE_API_KEY") and cfg.get("UPSTAGE_AGENT_ID")) if role=="studio" else bool(mail.get("MAIL_READY"))
                                 db.execute("""INSERT INTO workflow_health(role,configured,config,mail_mode) VALUES(%s,%s,%s,%s)

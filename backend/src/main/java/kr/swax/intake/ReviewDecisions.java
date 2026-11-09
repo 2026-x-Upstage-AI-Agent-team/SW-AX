@@ -94,7 +94,17 @@ class ReviewDecisions {
             FROM review_job j LEFT JOIN studio_execution e ON e.job_id=j.id WHERE j.submission_id=? FOR UPDATE OF j
             """,id);
         String phase=job.path("phase").asString(""), state=job.path("state").asString("");
-        if(!state.equals("failed")&&!Set.of("uncertain","access","paused","invalid","failed").contains(phase))
+        if (phase.equals("access")) {
+            // Recheck the organisation credentials even when this submission was superseded.
+            if (data.db.update("""
+                    UPDATE studio_execution SET due=now(),rejected_create_key_hash=NULL
+                    WHERE job_id=? AND phase='access' AND (due>now() OR rejected_create_key_hash IS NOT NULL)
+                    """,
+                    UUID.fromString(job.path("id").asString()))>0)
+                data.audit(id,staff.getName(),"Studio 인증 재확인 요청");
+            return Map.of("saved",true);
+        }
+        if(!state.equals("failed")&&!Set.of("uncertain","paused","invalid","failed").contains(phase))
             return Map.of("saved",true);
         // A lost creation response must be resolvable even if a correction superseded its version.
         if (!job.path("slot").asBoolean(false)) data.lockCurrent(id);
