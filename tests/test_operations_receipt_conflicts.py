@@ -10,8 +10,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Barrier
 from uuid import uuid4
+from zipfile import ZipFile
 
 import httpx
+from lxml import etree
 from pypdf import PdfWriter
 
 from operations.delivery import deliver
@@ -20,6 +22,7 @@ from operations.printer import print_one, worker_api
 from operations.reports import report_tick
 from operations.store import configuration, connect
 from operations.studio_worker import run_studio
+from reporting.fill_award_form import HP, text_of
 from reporting.merge_hwpx import compile_sections, save
 from service.db import ROOT
 from tests.official_inputs import official_files
@@ -175,7 +178,7 @@ class ReceiptConflicts(unittest.TestCase):
         self.assertEqual(self.detail(two)["teams"],[])
         self.assertEqual(self.staff.put(f"{two}/teams/{team}/submission",json={"revision":second["revision"]}).status_code,409)
 
-    def test_failed_pdf_can_reprint_identical_hwpx(self):
+    def report_submission(self):
         team = self.teams[1]
         receipt = self.upload([self.docs[1,k] for k in ("01","02","03")],team)
         self.drain()
@@ -185,8 +188,66 @@ class ReceiptConflicts(unittest.TestCase):
         self.worker.put("review-jobs/"+job["review_job_id"]+"/result",headers={"X-Claim-Token":job["claim_token"]},
             json={"state":"done","studio_job_id":"job_print_"+sid,"verdict":"성공","reason":"원본 대조","output":result}).raise_for_status()
         fields = json.loads((ROOT/"test case"/"유잇_set01-set02_출력검증입력.json").read_text(encoding="utf-8-sig"))["teams"][1]
-        self.staff.put(f"/api/submissions/{sid}/review",json=dict(fields,decision="승인",note="가상 원본 대조",revision=0,
-            award_type="최우수상",support_amount="100000",issues=[])).raise_for_status()
+        fields["recipient"].update(gross_amount="100000",tax_amount="0",net_amount="100000")
+        return sid, dict(fields,decision="승인",note="가상 원본 대조",revision=0,
+                         award_type="최우수상",support_amount="100000",issues=[])
+
+    def report_preview(self, sid):
+        url = self.staff.post("/api/reports",json={"event":self.event,"submissions":[sid]}).raise_for_status().json()["status_url"]
+        self.assertTrue(report_tick(self.db,self.cfg))
+        with worker_api(self.url,self.cfg["AWARDS_OUTPUT_WORKER_TOKEN"]) as printer:
+            self.assertTrue(print_one(printer,"report-test"))
+        self.assertTrue(report_tick(self.db,self.cfg))
+        self.assertEqual(self.detail(url)["state"],"preview")
+        return url
+
+    def test_each_missing_payout_blocks_final_confirmation(self):
+        sid, fields = self.report_submission()
+        for rev,(key,label,blank) in enumerate((("gross_amount","지급총액",None),("tax_amount","세액"," "),
+                                                ("net_amount","차인지급액",""))):
+            with self.subTest(field=key):
+                recipient = dict(fields["recipient"])
+                if blank is None:
+                    del recipient[key]
+                else:
+                    recipient[key] = blank
+                self.staff.put(f"/api/submissions/{sid}/review",json=dict(fields,recipient=recipient,revision=rev)).raise_for_status()
+                draft = next(t for t in self.detail(f"/api/events/{self.event}/draft")["teams"] if t["submission"]==sid)
+                self.assertEqual(draft["missing_payouts"],[label])
+                url = self.report_preview(sid)
+                self.assertEqual(self.detail(url)["missing_payouts"],["AutoAI · "+label])
+                self.assertEqual(self.staff.get(url+"/preview").status_code,200)
+                if rev==0:
+                    self.browser(INTAKE_TEST_PAYOUT_REPORT=url.rsplit("/",1)[1])
+                blocked = self.staff.post(url+"/confirm")
+                self.assertEqual(blocked.status_code,409)
+                self.assertIn("AutoAI · "+label,blocked.json()["detail"])
+                self.assertEqual(self.detail(url)["state"],"preview")
+                for ext in ("pdf","hwpx"):
+                    self.assertEqual(self.staff.get(url+"/"+ext).status_code,409)
+        # A pre-upgrade confirmation cannot publish a snapshot with missing amounts.
+        self.db.execute("UPDATE award_report SET state='confirmed' WHERE id=%s",(url.rsplit("/",1)[1],))
+        self.assertEqual(self.staff.get(url+"/preview").status_code,200)
+        for ext in ("pdf","hwpx"):
+            self.assertEqual(self.staff.get(url+"/"+ext).status_code,409)
+
+    def test_complete_payout_can_confirm_with_zero_tax(self):
+        sid, fields = self.report_submission()
+        self.staff.put(f"/api/submissions/{sid}/review",json=fields).raise_for_status()
+        url = self.report_preview(sid)
+        self.assertEqual(self.detail(url)["missing_payouts"],[])
+        self.staff.post(url+"/confirm").raise_for_status()
+        pdf = self.staff.get(url+"/pdf").raise_for_status().content
+        self.assertTrue(pdf.startswith(b"%PDF-"))
+        with ZipFile(BytesIO(self.staff.get(url+"/hwpx").raise_for_status().content)) as archive:
+            section = etree.fromstring(archive.read("Contents/section0.xml"))
+        payouts, = [t for t in section.iter(HP+"tbl") if "차인지급액" in text_of(t.find(HP+"tr"))]
+        cells = payouts.findall(HP+"tr")[1].findall(HP+"tc")
+        self.assertEqual([text_of(c).strip() for c in cells[-3:]],["100,000","0","100,000"])
+
+    def test_failed_pdf_can_reprint_identical_hwpx(self):
+        sid, fields = self.report_submission()
+        self.staff.put(f"/api/submissions/{sid}/review",json=fields).raise_for_status()
         rid = self.staff.post("/api/reports",json={"event":self.event,"submissions":[sid]}).raise_for_status().json()["id"]
         url = "/api/reports/"+rid
         self.assertTrue(report_tick(self.db,self.cfg))

@@ -163,6 +163,26 @@ class LocalServiceTests(unittest.TestCase):
         self.client.post("/api/submissions/s/retry",json={})
         self.assertEqual(("polling","job_known",0),(sub()["state"],sub()["job"],sub()["attempts"]))
 
+    def test_report_checks_only_included_teams_and_requires_all_payouts(self):
+        result = {"documents":{k:[{"id":k}] for k in ("01","02","03")}}
+        result["documents"]["?"] = []
+        fields = {"award_type":"대상","support_amount":"100","members":[],
+                  "recipient":{"gross_amount":"100","tax_amount":0,"net_amount":"100"}}
+        with db.database(True) as con:
+            for team in ("A","B"):
+                con.execute("INSERT INTO teams(id,event,name,current) VALUES(?,'wave',?,?)",(team,team,team))
+                con.execute("""INSERT INTO submissions(id,team,version,files,digest,created,updated,decision,result,fields)
+                    VALUES(?,?,1,'[]','test',1,1,'승인',?,?)""",(team,team,db.dump(result),db.dump(fields)))
+            fields["recipient"]["tax_amount"] = " "
+            con.execute("UPDATE submissions SET fields=? WHERE id='B'",(db.dump(fields),))
+        for selection,missing in ((["A","B"],["B · 세액"]),(["A"],[])):
+            rid = self.client.post("/api/reports",json={"event":"wave","submissions":selection}).raise_for_status().json()["id"]
+            url = "/api/reports/"+rid
+            with db.database(True) as con:
+                con.execute("UPDATE reports SET state='preview' WHERE id=?",(rid,))
+            self.assertEqual(self.client.get(url).json()["missing_payouts"],missing)
+            self.assertEqual(self.client.post(url+"/confirm").status_code,409 if missing else 200)
+
     def test_explicit_same_origin_requests(self):
         self.assertEqual(403,self.client.post("/api/events",headers={"Origin":"https://outside.test"},json={"name":"x"}).status_code)
         self.assertEqual(400,self.client.get("/api/dashboard",headers={"Host":"outside.test"}).status_code)

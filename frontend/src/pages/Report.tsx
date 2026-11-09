@@ -32,10 +32,10 @@ const PAY_FIELDS: Array<[keyof Pay, string, boolean]> = [
 
 const payOf = (t: DraftTeam): Pay => ({
   award_type: t.award_type ?? '',
-  support_amount: t.support_amount ?? '',
-  gross_amount: t.recipient?.gross_amount ?? '',
-  tax_amount: t.recipient?.tax_amount ?? '',
-  net_amount: t.recipient?.net_amount ?? '',
+  support_amount: String(t.support_amount ?? ''),
+  gross_amount: String(t.recipient?.gross_amount ?? ''),
+  tax_amount: String(t.recipient?.tax_amount ?? ''),
+  net_amount: String(t.recipient?.net_amount ?? ''),
 });
 
 export default function Report() {
@@ -243,6 +243,7 @@ function PayForm({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
 
   return (
     <div className="flex flex-col gap-2.5">
+      {t.missing_payouts.length > 0 && <p className="text-xs text-caution">확정 전 입력할 항목 · {t.missing_payouts.join(', ')}</p>}
       <div className="grid grid-cols-2 gap-2.5">
         {PAY_FIELDS.map(([key, label, numeric]) => (
           <label key={key} className={cx('flex flex-col gap-1.5 text-xs text-muted', key === 'award_type' && 'col-span-2')}>
@@ -277,7 +278,7 @@ function Tables({ teams }: { teams: DraftTeam[] }) {
   );
   const head = 'border-b border-line px-2 py-2.5 font-medium';
   const cell = 'px-2 py-2.5';
-  const unknown = (v?: string) => (v ? v : <span className="text-caution">미확인</span>);
+  const unknown = (v?: string | number) => (v == null || v === '' ? <span className="text-caution">미확인</span> : v);
   return (
     <>
       <div className="flex flex-col gap-3 rounded-[20px] bg-white p-5">
@@ -409,7 +410,8 @@ function Generate({ event, order, disabled, onCreated }: { event: string; order:
 
 function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: string) => void }) {
   const [tick, setTick] = useState(0);
-  const report = useAsync<ReportView>(() => getReport(rid), [rid, tick]);
+  const { revision } = useEvent();
+  const report = useAsync<ReportView>(() => getReport(rid), [rid, tick, revision]);
   const r = report.data?.id === rid ? report.data : undefined;
   usePolling(!!r && ['queued', 'building', 'printing', 'verifying'].includes(r.state), () => setTick((v) => v + 1), 2500);
   const [busy, setBusy] = useState(false);
@@ -445,6 +447,7 @@ function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: str
         <span className="text-xs text-subtle">{r.teams.join(' → ')}</span>
       </div>
       {r.stale && <Feedback error="생성 뒤 지급 정보나 제출본이 바뀌었습니다. 새 보고서를 생성해 주세요." />}
+      {!r.stale && r.missing_payouts.length > 0 && <Feedback error={`확정 전 지급 정보를 입력하세요. ${r.missing_payouts.join(' / ')}`} />}
       {r.error && <Feedback error={r.error} />}
       {r.can_retry_print && !r.stale && (
         <button type="button" disabled={busy} onClick={() => act(() => retryReportPrint(r.id).then(() => undefined))} className={cx(buttonStyles.outline, 'self-start')}>
@@ -453,11 +456,11 @@ function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: str
       )}
       {['queued', 'building', 'printing', 'verifying'].includes(r.state) && <p className="text-sm text-muted">한글 문서를 만드는 중입니다. 완료되면 미리보기가 열립니다.</p>}
       {r.state === 'preview' && (
-        <button type="button" disabled={busy || r.stale} onClick={() => act(() => confirmReport(r.id).then(() => undefined))} className={cx(buttonStyles.primary, 'self-start')}>
+        <button type="button" disabled={busy || r.stale || r.missing_payouts.length > 0} onClick={() => act(() => confirmReport(r.id).then(() => undefined))} className={cx(buttonStyles.primary, 'self-start')}>
           이 버전으로 확정
         </button>
       )}
-      {r.state === 'confirmed' && !r.stale && (
+      {r.state === 'confirmed' && !r.stale && r.missing_payouts.length === 0 && (
         <>
           <div role="group" aria-label={`보고서 v${r.version} 다운로드`} className="grid gap-2 sm:grid-cols-2">
             <a href={reportFileUrl(r.id, 'hwpx')} download className="file-download">

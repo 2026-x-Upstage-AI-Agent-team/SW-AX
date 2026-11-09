@@ -120,9 +120,9 @@ export function bindReports(d) {
       t.recipient.bank_name || "미확인",
       t.recipient.account_number || "미확인",
       t.recipient.account_holder || "미확인",
-      t.recipient.gross_amount || "미확인",
-      t.recipient.tax_amount || "미확인",
-      t.recipient.net_amount || "미확인",
+      t.recipient.gross_amount === "" ? "미확인" : t.recipient.gross_amount,
+      t.recipient.tax_amount === "" ? "미확인" : t.recipient.tax_amount,
+      t.recipient.net_amount === "" ? "미확인" : t.recipient.net_amount,
     ]);
     target.innerHTML =
       "<h3>전체 학생 " +
@@ -160,6 +160,7 @@ export function bindReports(d) {
 export function reportPage(r) {
   const url = "/api/reports/" + r.id,
     ready = ["preview", "confirmed"].includes(r.state) && !r.stale;
+  const missing = r.missing_payouts;
   return (
     '<a class="back" href="#report">← 지급내역서 목록</a>' +
     head("시상금 지급내역서 · v" + r.version, r.teams.join(" → "), badge(r.state)) +
@@ -167,13 +168,16 @@ export function reportPage(r) {
       ? '<div class="callout warn">제출본 또는 지급정보가 변경됐습니다. 목록에서 새 보고서를 생성하세요.</div>'
       : "") +
     (r.error ? '<div class="callout warn">' + esc(r.error) + "</div>" : "") +
+    (missing.length && !r.stale
+      ? '<div class="callout warn">확정 전 지급 정보를 입력하세요. ' + esc(missing.join(" / ")) + "</div>"
+      : "") +
     (ready
       ? '<section class="panel">' +
         section(
           "PDF 미리보기",
           r.state === "preview"
-            ? '<button class="primary" id="confirm-report">' + icon("check") + "이 버전 확정</button>"
-            : '<div class="actions"><a class="button primary" href="' +
+            ? '<button class="primary" id="confirm-report"' + (missing.length ? " disabled" : "") + ">" + icon("check") + "이 버전 확정</button>"
+            : missing.length ? "" : '<div class="actions"><a class="button primary" href="' +
                 url +
                 '/hwpx">' +
                 icon("download") +
@@ -185,7 +189,7 @@ export function reportPage(r) {
         ) +
         previewFrame(url + "/preview", 1, "reportview") +
         "</section>" +
-        (r.state === "confirmed"
+        (r.state === "confirmed" && !missing.length
           ? '<section class="panel">' +
             section("한글에서 편집한 버전") +
             '<label class="field">다운로드한 HWPX를 수정했다면 편집본을 선택해 새 PDF를 만드세요.<input id="edited-file" type="file" accept=".hwpx"></label><button class="sm" id="send-edited" style="margin-top:9px">편집본으로 새 버전 생성</button></section>'

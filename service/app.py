@@ -24,8 +24,8 @@ from .documents import preview
 from .mailing import connect_gmail, mail_settings, mailbox_address
 from .studio import CONFIG, ISSUES
 from .worker import REPORT_NAME, Worker
-from .workflow import (audit, check_report, effective_fields, enqueue_mail, files_for, held,
-                       report_snapshot, require, synchronize)
+from .workflow import (audit, check_report, effective_fields, enqueue_mail, files_for, held, missing_payouts,
+                       pending_payouts, report_snapshot, require, require_payouts, synchronize)
 
 
 @asynccontextmanager
@@ -205,7 +205,7 @@ def payment_draft(event: str):
             if not fields.get("award_type") or fields.get("support_amount") in ("",None):
                 pending.append("시상구분·지원액 입력")
             result.append(dict(team=team["name"],submission=team["current"],rep=team["rep"],
-                               version=s["version"] if s else None,pending=pending,**fields))
+                               version=s["version"] if s else None,pending=pending,missing_payouts=missing_payouts(fields),**fields))
         return {"teams":result}
 
 
@@ -540,14 +540,16 @@ def view_report(rid: str):
             stale = False
         except HTTPException:
             stale = True
+        snapshot = json.loads(r["snapshot"])
         return {k:r[k] for k in ("id","version","state","created","error","parent")} | {"stale":stale,
-                "teams":[t["team_name"] for t in json.loads(r["snapshot"])["teams"]]}
+                "missing_payouts":pending_payouts(snapshot),"teams":[t["team_name"] for t in snapshot["teams"]]}
 
 
 @app.post("/api/reports/{rid}/confirm")
 def confirm(rid: str):
     with database(True) as db:
         r = require(db,"reports",rid)
+        require_payouts(json.loads(r["snapshot"]))
         check_report(db,r)
         if r["state"] not in ("preview","confirmed"):
             raise HTTPException(409,"미리보기가 완성된 버전을 확인하세요.")
@@ -587,6 +589,8 @@ def download_report(rid: str, kind: str):
         r = require(db,"reports",rid)
         if r["state"] not in ("preview","confirmed") or (kind != "preview" and r["state"] != "confirmed"):
             raise HTTPException(409,"미리본 버전을 확정한 뒤 내려받으세요.")
+        if kind != "preview":
+            require_payouts(json.loads(r["snapshot"]))
         check_report(db,r)
     ext = "pdf" if kind == "preview" else kind
     path = DATA/"reports"/rid/"output"/(REPORT_NAME+"."+ext)

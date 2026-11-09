@@ -149,6 +149,7 @@ export type DraftTeam = Fields & {
   rep: string;
   version: number | null;
   pending: string[];
+  missing_payouts: string[];
 };
 
 export type ReportView = {
@@ -159,6 +160,7 @@ export type ReportView = {
   error: string;
   parent: string | null;
   stale: boolean;
+  missing_payouts: string[];
   can_retry_print?: boolean;
   teams: string[];
 };

@@ -22,6 +22,7 @@ after(async () => browser?.close());
 
 const conflictId = process.env.INTAKE_TEST_CONFLICT_BATCH;
 const printId = process.env.INTAKE_TEST_PRINT_REPORT;
+const payoutId = process.env.INTAKE_TEST_PAYOUT_REPORT;
 const queueEvent = process.env.INTAKE_TEST_QUEUE_EVENT;
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
@@ -55,6 +56,16 @@ if (queueEvent) {
     await row.getByRole('button', { name: '01 지급확인서 · 1쪽 · 1행' }).click();
     const mail = page.getByRole('listitem').filter({ hasText: '보완 요청' }).filter({ hasText: 'leader@award.test' });
     await mail.getByText(/예약 .* · 발송 /).waitFor();
+  });
+} else if (payoutId) {
+  test('지급액 미입력 항목을 팀별로 표시하고 보고서 확정을 막는다', async () => {
+    const report = await (await request.get('/api/reports/' + payoutId)).json();
+    await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), report.event);
+    await page.goto('/#/report');
+    await page.getByText('확정 전 입력할 항목 · 지급총액', { exact: true }).waitFor();
+    await page.getByText('확정 전 지급 정보를 입력하세요. AutoAI · 지급총액', { exact: true }).waitFor();
+    assert.ok(await page.getByRole('button', { name: '이 버전으로 확정' }).isDisabled());
+    assert.equal(await page.getByRole('link', { name: /PDF 내려받기/ }).count(), 0);
   });
 } else if (printId) {
   test('실패한 보고서에서 같은 HWPX로 재출력을 요청한다', async () => {

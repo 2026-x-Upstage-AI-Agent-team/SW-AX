@@ -133,6 +133,23 @@ def effective_fields(sub):
         "members": result.get("members", []), "recipient": result.get("recipient", {}), "award_type": "", "support_amount": ""}
 
 
+def missing_payouts(fields):
+    recipient = fields.get("recipient") or {}
+    return [label for key,label in (("gross_amount","지급총액"),("tax_amount","세액"),("net_amount","차인지급액"))
+            if recipient.get(key) is None or str(recipient[key]).strip() in ("", "미확인")]
+
+
+def pending_payouts(snapshot):
+    return [team["team_name"]+" · "+", ".join(missing) for team in snapshot["teams"]
+            if (missing := missing_payouts(team))]
+
+
+def require_payouts(snapshot):
+    missing = pending_payouts(snapshot)
+    if missing:
+        raise HTTPException(409, "지급 정보 미입력 ("+" / ".join(missing)+").")
+
+
 def report_snapshot(db, event, selection):
     if not selection or len(set(selection)) != len(selection):
         raise HTTPException(422, "보고서에 포함할 팀을 한 번씩 선택하세요.")

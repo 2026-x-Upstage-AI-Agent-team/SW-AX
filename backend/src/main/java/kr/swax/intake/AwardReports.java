@@ -20,10 +20,35 @@ class AwardReports {
     private final WorkflowData data;
     AwardReports(WorkflowData data) {this.data=data;}
 
+    private static boolean missingAmount(JsonNode amount) {
+        String value=amount.asString("").strip();
+        return value.isEmpty() || value.equals("미확인");
+    }
+    private static List<String> missingPayouts(JsonNode fields) {
+        var recipient=fields.path("recipient");
+        var missing=new ArrayList<String>();
+        if(missingAmount(recipient.path("gross_amount"))) missing.add("지급총액");
+        if(missingAmount(recipient.path("tax_amount"))) missing.add("세액");
+        if(missingAmount(recipient.path("net_amount"))) missing.add("차인지급액");
+        return missing;
+    }
+    private static List<String> pendingPayouts(JsonNode snapshot) {
+        var pending=new ArrayList<String>();
+        for(var team:snapshot.path("teams")){
+            var missing=missingPayouts(team);
+            if(!missing.isEmpty()) pending.add(team.path("team_name").asString()+" · "+String.join(", ",missing));
+        }
+        return pending;
+    }
+    private static void requirePayouts(JsonNode snapshot) {
+        var pending=pendingPayouts(snapshot);
+        if(!pending.isEmpty()) throw ApiErrors.error(409,"지급 정보 미입력 ("+String.join(" / ",pending)+").");
+    }
+
     @GetMapping("/api/events/{event}/draft")
     Object draft(Principal staff,@PathVariable UUID event) {
         data.catalog.requireEvent(staff.getName(),event);
-        return Map.of("teams",data.list("""
+        var teams=data.list("""
             SELECT coalesce(s.fields,'{"members":[],"recipient":{},"award_type":"","support_amount":""}') ||
                 jsonb_build_object('team',t.name,'rep',t.representative,'submission',s.id,'version',s.version,'pending',
                 array_remove(ARRAY[CASE WHEN s.id IS NULL OR ops_team_held(t.id) THEN '팀 배정 확인' END,
@@ -31,7 +56,9 @@ class AwardReports {
                   CASE WHEN coalesce(s.fields->>'award_type','')='' OR coalesce(s.fields->>'support_amount','')='' THEN '시상구분·지원액 입력' END],NULL))
             FROM award_team t LEFT JOIN intake_team_confirmation c ON c.team_id=t.id AND c.state<>'superseded'
             LEFT JOIN ops_submission s ON s.id=c.submission_id WHERE t.event_id=? ORDER BY t.name,t.id
-            """,event));
+            """,event);
+        for(var team:teams) ((ObjectNode)team).set("missing_payouts",data.json.valueToTree(missingPayouts(team)));
+        return Map.of("teams",teams);
     }
     private ObjectNode snapshot(UUID event,List<UUID> selection) {
         if(selection==null||selection.isEmpty()||selection.contains(null)||new HashSet<>(selection).size()!=selection.size())
@@ -111,12 +138,14 @@ class AwardReports {
     Object view(Principal staff,@PathVariable UUID id) {
         var r=report(staff.getName(),id);
         r.put("stale",!current(r));
+        r.set("missing_payouts",data.json.valueToTree(pendingPayouts(r.path("snapshot"))));
         r.set("teams",data.json.valueToTree(r.path("snapshot").path("teams").valueStream().map(t->t.path("team_name").asString()).toList()));
         r.remove(List.of("snapshot","selection")); return r;
     }
     @PostMapping("/api/reports/{id}/confirm")
     Object confirm(Principal staff,@PathVariable UUID id) {
         var r=report(staff.getName(),id);
+        requirePayouts(r.path("snapshot"));
         if(!current(r) || data.db.update("UPDATE award_report SET state='confirmed' WHERE id=? AND state IN ('preview','confirmed')",id)!=1)
             throw ApiErrors.error(409,"최신 보고서 미리보기를 확인한 뒤 확정하세요.");
         return Map.of("saved",true);
@@ -163,6 +192,7 @@ class AwardReports {
     ResponseEntity<byte[]> download(Principal staff,@PathVariable UUID id,@PathVariable String kind) {
         var r=report(staff.getName(),id);
         boolean preview=kind.equals("preview");
+        if(!preview) requirePayouts(r.path("snapshot"));
         if(!current(r)||!(r.path("state").asString().equals("confirmed")||(preview&&r.path("state").asString().equals("preview"))))
             throw ApiErrors.error(409,"현재 보고서의 출력과 확정 상태를 확인하세요.");
         boolean hwpx=kind.equals("hwpx");

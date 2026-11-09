@@ -145,7 +145,8 @@ class OperationalAcceptance(unittest.TestCase):
             self.assertEqual(len(d["fields"]["members"]),3 if s=="set01" else 4)
             body=dict(d["fields"],revision=d["revision"],decision="승인",note="가상 제출 원본과 대조",
                       award_type=award,support_amount="100000",issues=[])
-            if d["decision"]!="승인":
+            body["recipient"] = dict(body["recipient"],gross_amount="100000",tax_amount="0",net_amount="100000")
+            if d["decision"]!="승인" or any(d["fields"].get(k)!=body[k] for k in ("recipient","award_type","support_amount")):
                 staff.put("/api/submissions/"+d["id"]+"/review",json=body).raise_for_status()
             selection.append(d["id"])
         def order(client):
