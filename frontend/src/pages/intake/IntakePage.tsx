@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { Link, NavLink, useParams, useSearchParams } from 'react-router';
 import { backend } from '../../api/backend';
 import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
 import { docLabels, when } from '../../api/labels';
-import { filePreviewUrl, getBatch, getSubmission } from '../../api/service';
+import { filePreviewUrl, getBatch, getSubmission, reviewBatchConflict } from '../../api/service';
 import { Page } from '../../components/Layout';
 import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
@@ -117,7 +118,7 @@ function History({ eventId }: { eventId: string }) {
                   <td className="whitespace-nowrap px-2 py-3">{batch.team_name ? teamLabel({ name: batch.team_name, rep: batch.team_rep }) : '미지정'}</td>
                   <td className="whitespace-nowrap px-2 py-3">{batch.file_count}개</td>
                   <td className="whitespace-nowrap px-2 py-3">
-                    <StateBadge state="received" />
+                    <StateBadge state={batch.status ?? 'received'} />
                   </td>
                 </tr>
               ))}
@@ -139,7 +140,8 @@ function Detail({ eventId }: { eventId: string }) {
   for (const team of links.keys()) teamIds.add(team);
   const pending = detail?.files.some((file) => file.state === 'unassigned' || (file.team && !links.has(file.team)))
     || detail?.teams?.some(({ review_job }) => review_job?.state === 'queued' || review_job?.state === 'running');
-  usePolling(Boolean(detail?.batch.event_id === eventId && !result.error && pending), result.reload, 3000);
+  const conflicted = detail?.batch.status === 'conflict' || detail?.batch.status === 'conflict_reviewed';
+  usePolling(Boolean(detail?.batch.event_id === eventId && !conflicted && !result.error && pending), result.reload, 3000);
   if (result.error || !detail) return <Notice error={result.error} onRetry={result.reload} />;
   const { batch, files } = detail;
   if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 접수번호가 아닙니다." />;
@@ -148,7 +150,7 @@ function Detail({ eventId }: { eventId: string }) {
       <section className={card}>
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold">접수 상세</h2>
-          <StateBadge state="received" />
+          <StateBadge state={batch.status ?? 'received'} />
         </div>
         <dl className="grid grid-cols-[86px_minmax(0,1fr)] gap-3 text-sm">
           <dt className="text-muted">접수번호</dt>
@@ -159,7 +161,8 @@ function Detail({ eventId }: { eventId: string }) {
           <dd>{batch.team_name ? teamLabel({ name: batch.team_name, rep: batch.team_rep }) : '미지정 · 혼합 접수'}</dd>
         </dl>
       </section>
-      <section className={card} aria-labelledby="review-jobs-title">
+      {batch.status === 'conflict' && <CorrectionNotice id={batch.batch_id} current={batch.current_submission} onSaved={result.reload} />}
+      {!conflicted && <section className={card} aria-labelledby="review-jobs-title">
         <div className="flex items-center justify-between">
           <h2 id="review-jobs-title" className="text-xl font-extrabold">팀별 판정 작업</h2>
           <button type="button" onClick={result.reload} className={buttonStyles.text}>새로고침</button>
@@ -195,13 +198,13 @@ function Detail({ eventId }: { eventId: string }) {
             })}
           </ul>
         )}
-      </section>
+      </section>}
       <section className={card}>
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold">
             접수 원본 <em className="ml-1 text-base not-italic text-brand-strong">{files.length}</em>
           </h2>
-          <Link to="/assign" className={buttonStyles.text}>원본 배정 확인</Link>
+          {!conflicted && <Link to="/assign" className={buttonStyles.text}>원본 배정 확인</Link>}
           <span className="text-sm text-muted">{bytes(batch.total_bytes)}</span>
         </div>
         <ol>
@@ -279,6 +282,29 @@ function ServiceHistory() {
   );
 }
 
+function CorrectionNotice({ id, current, onSaved }: { id: string; current?: string | null; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const { refresh } = useEvent();
+  async function finish() {
+    setSaving(true);
+    setError('');
+    try {
+      await reviewBatchConflict(id);
+      onSaved();
+      refresh();
+    } catch (err) { setError((err as Error).message); }
+    finally { setSaving(false); }
+  }
+  return <div className={card}>
+    <strong>보완 기준 제출본이 변경됐습니다.</strong>
+    <p>아래 접수 원본을 최신 확정본과 대조하고, 반영할 파일만 다시 접수해 주세요.</p>
+    {current && <Link to={'/intake?base=' + current} className={buttonStyles.text}>최신 제출본에서 보완 접수</Link>}
+    <button type="button" className={cx(buttonStyles.outline, 'self-start')} disabled={saving} onClick={finish}>이 접수의 대조 완료</button>
+    <Feedback error={error} />
+  </div>;
+}
+
 function ServiceDetail() {
   const { id = '' } = useParams();
   const { dashboard, revision, refresh } = useEvent();
@@ -304,7 +330,8 @@ function ServiceDetail() {
           <dd>{b.target ? teamName(b.target) : '미지정 · 혼합 접수'}{b.base && ' · 보완 접수'}</dd>
         </dl>
         {b.state === 'preparing' && <p className="text-sm text-muted">원본을 PDF로 바꾸고 본문을 읽는 중입니다. 화면이 자동으로 새로고침됩니다.</p>}
-        {pending > 0 && (
+        {b.state === 'conflict' && <CorrectionNotice id={b.id} current={dashboard?.teams.find((t) => t.id === b.target)?.current} onSaved={result.reload} />}
+        {pending > 0 && b.state !== 'conflict' && b.state !== 'conflict_reviewed' && (
           <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>
             팀 배정 확인 {pending}개
           </Link>

@@ -183,6 +183,7 @@ export const getBatch = (bid: string) => api<BatchDetail>(`${batches}/${enc(bid)
 export const getDraft = (event: string) => api<{ teams: DraftTeam[] }>(`/api/events/${enc(event)}/draft`);
 export const getMail = (mid: string) => api<MailView>(`/api/mail/${enc(mid)}`);
 export const getReport = (rid: string) => api<ReportView>(`/api/reports/${enc(rid)}`);
+export const reviewBatchConflict = (id: string) => sendJson<{ saved: boolean }>(`/api/intake-batches/${enc(id)}/conflict-review`, {}, 'PUT');
 
 export const filePreviewUrl = (f: Pick<FileInfo, 'url'>, page?: number) => (f.url ? f.url + (page ? `#page=${page}` : '') : '');
 export const reportFileUrl = (rid: string, kind: 'preview' | 'hwpx' | 'pdf') => `/api/reports/${enc(rid)}/${kind}`;

@@ -6,6 +6,7 @@ export type AwardTeam = { id: string; name: string; rep: string };
 
 export type BatchSummary = {
   batch_id: string;
+  status: string;
   created_at: string;
   team_name: string | null;
   team_rep: string | null;
@@ -30,6 +31,8 @@ type BatchTeam = {
 export type BatchDetails = {
   batch: {
     batch_id: string;
+    status: string;
+    current_submission?: string | null;
     event_id: string;
     created_at: string;
     team_name: string | null;

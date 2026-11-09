@@ -18,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 class IntakeStore {
     record Receipt(UUID batchId, String status, String statusUrl) {}
     record Summary(UUID batchId, UUID eventId, String eventName, UUID targetTeamId, String teamName,
-                   String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status, int revision) {}
+                   String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status, int revision,
+                   UUID currentSubmission) {}
     record Item(UUID itemId, int position, String name, int size, String sha256, UUID team, String state, String reason,
                 List<UUID> excluded, List<UUID> candidates) {
         boolean holds(UUID owner) {
@@ -31,10 +32,14 @@ class IntakeStore {
 
     private static final String SUMMARY = """
             SELECT b.id, b.event_id, e.name AS event_name, b.target_team_id, t.name AS team_name,
-                   t.representative, b.created_at, b.assignment_revision, totals.file_count, totals.total_bytes
+                   t.representative, b.created_at, b.assignment_revision, totals.file_count, totals.total_bytes,
+                   CASE WHEN p.state IN ('conflict','conflict_reviewed') THEN p.state ELSE 'received' END AS status,
+                   c.submission_id AS current_submission
             FROM intake_batch b JOIN award_event e ON e.id = b.event_id
             JOIN event_staff a ON a.event_id = b.event_id AND a.login = ?
             LEFT JOIN award_team t ON t.id = b.target_team_id
+            LEFT JOIN intake_preparation p ON p.batch_id=b.id
+            LEFT JOIN intake_team_confirmation c ON p.state='conflict' AND c.team_id=t.id AND c.state='confirmed'
             CROSS JOIN LATERAL (
                 SELECT count(*) AS file_count, sum(size_bytes) AS total_bytes FROM intake_file WHERE batch_id = b.id
             ) totals
@@ -142,7 +147,8 @@ class IntakeStore {
         return new Summary(rs.getObject("id", UUID.class), rs.getObject("event_id", UUID.class),
                 rs.getString("event_name"), rs.getObject("target_team_id", UUID.class), rs.getString("team_name"),
                 rs.getString("representative"), rs.getObject("created_at", OffsetDateTime.class),
-                rs.getInt("file_count"), rs.getLong("total_bytes"), "received", rs.getInt("assignment_revision"));
+                rs.getInt("file_count"), rs.getLong("total_bytes"), rs.getString("status"), rs.getInt("assignment_revision"),
+                rs.getObject("current_submission",UUID.class));
     }
 
     private static Receipt receipt(UUID id) {

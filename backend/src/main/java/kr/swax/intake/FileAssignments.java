@@ -38,6 +38,8 @@ class FileAssignments {
     @Transactional
     Saved assign(String login, UUID batch, UUID file, Command command) {
         Batch current = batchForFile(login, batch, file, true);
+        if (db.queryForObject("SELECT EXISTS(SELECT FROM intake_preparation WHERE batch_id=? AND state IN ('conflict','conflict_reviewed'))",
+                Boolean.class,batch)) throw TeamSubmissions.correctionConflict();
         if (command.revision() == null || command.revision() < 0) {
             throw ApiErrors.error(422, "조회한 접수 목록의 버전을 보내 주세요.");
         }

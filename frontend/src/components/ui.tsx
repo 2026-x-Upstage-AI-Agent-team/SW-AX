@@ -24,7 +24,7 @@ export function StateBadge({ state, size = 'sm' }: { state: string; size?: 'sm' 
   const tone =
     ['failed', 'error', 'invalid', 'access', 'ownership'].includes(state)
       ? 'bg-alert-tint text-alert-strong'
-      : ['uncertain', 'paused', 'unassigned', 'review', 'waiting', 'blocked'].includes(state)
+      : ['uncertain', 'paused', 'unassigned', 'review', 'waiting', 'blocked', 'conflict'].includes(state)
         ? 'bg-caution-tint text-caution'
         : ['sent', 'local', 'done', 'assigned', 'confirmed', 'preview', 'received'].includes(state)
           ? 'bg-brand-tint text-brand-strong'

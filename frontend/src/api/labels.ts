@@ -2,6 +2,8 @@
 
 export const stateLabels: Record<string, string> = {
   preparing: '파일 판독 중',
+  conflict: '보완본 담당자 확인',
+  conflict_reviewed: '보완본 확인 완료',
   review: '팀 배정 확인',
   assigned: '배정 완료',
   read: '파일 판독 완료',

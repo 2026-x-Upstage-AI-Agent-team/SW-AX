@@ -41,6 +41,10 @@ export default function Dashboard() {
   );
 
   const alerts: Alert[] = [];
+  for (const b of dashboard?.batches ?? []) {
+    if (b.state === 'conflict')
+      alerts.push({ key: b.id, text: '같은 제출본에 보완 접수가 겹쳤습니다.', sub: '접수 원본과 최신 제출본을 대조해 주세요.', to: '/intake/batches/' + b.id, action: '보완본 확인' });
+  }
   const pendingFiles = dashboard?.batches.reduce((n, b) => n + (b.pending ?? 0), 0) ?? 0;
   if (pendingFiles > 0)
     alerts.push({ key: 'assign', text: `팀 배정을 확인할 파일이 ${pendingFiles}개 있습니다.`, sub: '배정이 끝나야 해당 팀의 판정과 누락 안내가 진행됩니다.', to: '/assign', action: '팀 배정 확인' });

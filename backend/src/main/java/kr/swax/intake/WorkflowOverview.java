@@ -46,8 +46,8 @@ class WorkflowOverview {
             """,event));
         result.put("batches",data.list("""
             SELECT jsonb_build_object('id',b.id,'created',extract(epoch FROM b.created_at),'count',count(*),
-                'pending',count(*) FILTER(WHERE f.info->>'state' IN ('unassigned','error','waiting')),
-                'state',CASE WHEN p.state IN ('ready','pending') THEN 'preparing'
+                'pending',count(*) FILTER(WHERE coalesce(p.state,'') NOT IN ('conflict','conflict_reviewed') AND f.info->>'state' IN ('unassigned','error','waiting')),
+                'state',CASE WHEN p.state IN ('conflict','conflict_reviewed') THEN p.state WHEN p.state IN ('ready','pending') THEN 'preparing'
                     WHEN bool_or(f.info->>'state' IN ('unassigned','error')) THEN 'review' ELSE 'assigned' END)
             FROM intake_batch b JOIN ops_file f ON f.batch_id=b.id LEFT JOIN intake_preparation p ON p.batch_id=b.id
             WHERE b.event_id=? GROUP BY b.id,p.state ORDER BY b.created_at DESC
@@ -83,7 +83,8 @@ class WorkflowOverview {
         data.scope(staff.getName(),BATCH,id);
         var node=data.one("""
             SELECT jsonb_build_object('id',b.id,'event',b.event_id,'revision',b.assignment_revision,'created',extract(epoch FROM b.created_at),
-                'target',target_team_id,'base',base_submission,'state',CASE WHEN p.state IN ('pending','ready') THEN 'preparing'
+                'target',target_team_id,'base',base_submission,'reviewed_by',p.reviewed_by,'reviewed_at',extract(epoch FROM p.reviewed_at),
+                'state',CASE WHEN p.state IN ('conflict','conflict_reviewed') THEN p.state WHEN p.state IN ('pending','ready') THEN 'preparing'
                 WHEN EXISTS(SELECT FROM intake_file_state WHERE batch_id=b.id AND state='unassigned') THEN 'review' ELSE 'assigned' END)
             FROM intake_batch b LEFT JOIN intake_preparation p ON p.batch_id=b.id WHERE b.id=?
             """,id);
@@ -94,6 +95,17 @@ class WorkflowOverview {
             """,id)));
         node.set("teams",data.json.valueToTree(TeamSubmissions.links(data.db,id).stream().filter(l->l.submissionId()!=null).toList()));
         return node;
+    }
+    @PutMapping("/api/intake-batches/{id}/conflict-review")
+    Object reviewConflict(Principal staff,@PathVariable UUID id) {
+        data.scope(staff.getName(),BATCH,id);
+        int saved=data.db.update("""
+            UPDATE intake_preparation SET state='conflict_reviewed',reviewed_by=?,reviewed_at=clock_timestamp()
+            WHERE batch_id=? AND state='conflict'
+            """,staff.getName(),id);
+        if (saved==0 && !data.db.queryForObject("SELECT EXISTS(SELECT FROM intake_preparation WHERE batch_id=? AND state='conflict_reviewed')",
+                Boolean.class,id)) throw ApiErrors.error(409,"보완본이 충돌한 접수만 확인 처리할 수 있습니다.");
+        return Map.of("saved",true);
     }
     @GetMapping("/api/operations/submissions/{id}")
     Object submission(Principal staff,@PathVariable UUID id) {
@@ -137,6 +149,8 @@ class WorkflowOverview {
     Object retryFile(Principal staff,@PathVariable UUID batch,@PathVariable UUID file) {
         data.scope(staff.getName(),BATCH,batch);
         data.db.queryForObject("SELECT id FROM intake_batch WHERE id=? FOR UPDATE",UUID.class,batch);
+        if (data.db.queryForObject("SELECT EXISTS(SELECT FROM intake_preparation WHERE batch_id=? AND state IN ('conflict','conflict_reviewed'))",
+                Boolean.class,batch)) throw TeamSubmissions.correctionConflict();
         if (data.db.update("DELETE FROM original_analysis a USING intake_file f WHERE a.file_id=f.id AND f.id=? AND f.batch_id=? AND a.failed",file,batch)==0)
             throw ApiErrors.error(409,"이 접수에서 판독에 실패한 파일만 재시도할 수 있습니다.");
         data.db.update("UPDATE intake_preparation SET state='pending' WHERE batch_id=?",batch);

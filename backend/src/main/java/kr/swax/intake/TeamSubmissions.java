@@ -57,6 +57,8 @@ class TeamSubmissions {
                 UUID.class, receipt.event(), team).isEmpty()) {
             throw ApiErrors.error(422, "같은 대회의 팀을 지정해 주세요.");
         }
+        if (db.queryForObject("SELECT EXISTS(SELECT FROM intake_preparation WHERE batch_id=? AND state IN ('conflict','conflict_reviewed'))",
+                Boolean.class,batch)) throw correctionConflict();
         return reconcile(login, batch, team, receiptLink(batch, team), intake.files(batch), true);
     }
 
@@ -96,11 +98,7 @@ class TeamSubmissions {
                 """, (rs,n) -> new IntakeStore.Item(rs.getObject("id",UUID.class),rs.getInt("position"),rs.getString("name"),
                 rs.getInt("size_bytes"),rs.getString("sha256"),team,"assigned","",List.of(),List.of()),batch,team));
         selected.addAll(files.stream().filter(f -> team.equals(f.team())).toList());
-        if (previous == null && db.queryForObject("""
-                SELECT EXISTS(SELECT FROM intake_batch b WHERE b.id=? AND b.target_team_id=? AND b.base_submission IS NOT NULL
-                    AND NOT EXISTS(SELECT FROM intake_team_confirmation c WHERE c.team_id=? AND c.state='confirmed'
-                    AND c.submission_id=b.base_submission))
-                """,Boolean.class,batch,team,team)) throw newerReceipt();
+        if (explicit && staleCorrection(batch)) throw correctionConflict();
         if (blocked || selected.isEmpty()) {
             if (explicit) throw ApiErrors.error(409, blocked ? "이 팀에 속할 수 있는 미배정 원본이 남아 있습니다."
                     : "이 팀에 배정된 원본이 없습니다.");
@@ -164,7 +162,7 @@ class TeamSubmissions {
                 SELECT p.state FROM intake_preparation p JOIN intake_batch b ON b.id=p.batch_id
                 WHERE b.id=? FOR UPDATE OF b,p
                 """,String.class,batch);
-        if (phases.isEmpty() || phases.getFirst().equals("pending")) return;
+        if (phases.isEmpty() || !Set.of("ready","prepared").contains(phases.getFirst())) return;
         List<IntakeStore.Item> files=intake.files(batch);
         var teams=db.queryForList("""
                 SELECT t.id FROM award_team t WHERE t.id IN (SELECT team_id FROM intake_file_state WHERE batch_id=?
@@ -172,6 +170,10 @@ class TeamSubmissions {
                       UNION SELECT team_id FROM intake_team_confirmation WHERE batch_id=?)
                 ORDER BY t.id FOR NO KEY UPDATE
                 """,UUID.class,batch,batch,batch);
+        if (staleCorrection(batch)) {
+            db.update("UPDATE intake_preparation SET state='conflict' WHERE batch_id=?",batch);
+            return;
+        }
         for (UUID team : teams) {
             Link previous=receiptLink(batch,team);
             if (previous==null && files.stream().anyMatch(f -> f.holds(team))) continue;
@@ -185,6 +187,20 @@ class TeamSubmissions {
             reconcile("@workflow",batch,team,previous,files,false);
         }
         db.update("UPDATE intake_preparation SET state='prepared' WHERE batch_id=?",batch);
+    }
+
+    // Check after locking the target team. A replay of a receipt that already confirmed is harmless.
+    private boolean staleCorrection(UUID batch) {
+        return db.queryForObject("""
+                SELECT EXISTS(SELECT FROM intake_batch b WHERE b.id=? AND b.base_submission IS NOT NULL
+                    AND NOT EXISTS(SELECT FROM intake_team_confirmation WHERE batch_id=b.id AND team_id=b.target_team_id)
+                    AND NOT EXISTS(SELECT FROM intake_team_confirmation WHERE team_id=b.target_team_id
+                        AND state='confirmed' AND submission_id=b.base_submission))
+                """,Boolean.class,batch);
+    }
+
+    static RuntimeException correctionConflict() {
+        return ApiErrors.error(409,"보완 기준 제출본이 변경됐습니다. 접수 원본과 최신 확정본을 대조한 뒤 보완 접수하세요.");
     }
 
     private Link receiptLink(UUID batch, UUID team) {

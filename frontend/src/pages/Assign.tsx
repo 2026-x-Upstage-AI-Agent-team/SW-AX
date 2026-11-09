@@ -43,8 +43,9 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
 
   // 배정이 끝나지 않은 접수와 최근 접수 3건의 파일을 읽는다.
   const { data: batches, error, reload } = useAsync(() => {
-    const open = dashboard.batches.filter((b) => b.pending > 0 || b.state !== 'assigned').map((b) => b.id);
-    const recent = dashboard.batches.slice(0, 3).map((b) => b.id);
+    const assignable = dashboard.batches.filter((b) => b.state !== 'conflict' && b.state !== 'conflict_reviewed');
+    const open = assignable.filter((b) => b.pending > 0 || b.state !== 'assigned').map((b) => b.id);
+    const recent = assignable.slice(0, 3).map((b) => b.id);
     return Promise.all([...new Set([...open, ...recent])].map(getBatch));
   }, [dashboard.batches]);
 
@@ -87,7 +88,8 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
     }
   }, [pickedId, batches, error]);
 
-  if (error || !batches || (dashboard.batches.length > 0 && batches.length === 0)) return <Notice error={error} onRetry={reload} />;
+  if (error || !batches || (batches.length === 0 && dashboard.batches.some((b) => b.state !== 'conflict' && b.state !== 'conflict_reviewed')))
+    return <Notice error={error} onRetry={reload} />;
 
   return (
     <>

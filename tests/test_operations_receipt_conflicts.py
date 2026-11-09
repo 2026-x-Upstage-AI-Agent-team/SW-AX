@@ -1,15 +1,20 @@
 """Official fictional HWP inputs, real Hancom/OCR and PostgreSQL, controlled Studio responses."""
 import json
 import os
+import subprocess
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Barrier
 from uuid import uuid4
 
 import httpx
 
+from operations.delivery import deliver
 from operations.preparation import prepare
 from operations.store import configuration, connect
+from operations.studio_worker import run_studio
 from reporting.merge_hwpx import compile_sections, save
 from tests.official_inputs import official_files
 from tests.test_intake_postgres import login
@@ -36,8 +41,12 @@ class ReceiptConflicts(unittest.TestCase):
                 kind = "03" if "신분증" in name else name[:2]
                 self.docs[index,kind] = (name,content)
 
-    def upload(self, files):
+    def upload(self, files, team=None, base=None):
         fields = {"event":self.event,"manifest":json.dumps([{"name":n,"size":len(b)} for n,b in files])}
+        if team:
+            fields["target"] = team
+        if base:
+            fields["base"] = base
         response = self.staff.post("/api/intake-batches", data=fields, headers={"Idempotency-Key":str(uuid4())},
                                    files=[("files",(n,b)) for n,b in files]).raise_for_status()
         self.assertEqual(response.status_code, 202)
@@ -51,6 +60,11 @@ class ReceiptConflicts(unittest.TestCase):
 
     def detail(self, receipt):
         return self.staff.get(receipt).raise_for_status().json()
+
+    def browser(self, **scenario):
+        if os.getenv("INTAKE_TEST_STATUS_BROWSER")=="1":
+            subprocess.run(["node","--test","tests/review-navigation.mjs"],cwd=ROOT/"frontend",
+                           env=dict(os.environ,**scenario),check=True,timeout=80)
 
     def test_named_combined_ids_hold_both_teams(self):
         with TemporaryDirectory() as directory:
@@ -76,3 +90,71 @@ class ReceiptConflicts(unittest.TestCase):
             self.assertEqual(assign(team,batch["revision"]).status_code,409)
             self.assertEqual(self.staff.put(f"{receipt}/teams/{team}/submission",json={"revision":batch["revision"]}).status_code,409)
         self.assertEqual(self.worker.post("review-jobs/claim",json={"worker_id":"mixed","event_id":self.event}).status_code,204)
+
+    def test_two_corrections_and_next_team(self):
+        team, other = self.teams
+        first = self.upload([self.docs[0,"01"]],team)
+        self.drain()
+        base = self.detail(first)["teams"][0]["submission_id"]
+        gate = Barrier(2)
+        def correction(kind):
+            gate.wait(timeout=10)
+            return self.upload([self.docs[0,kind]],team,base), self.docs[0,kind][1]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            corrections = dict(pool.map(correction,("02","03")))
+        following = self.upload([self.docs[1,k] for k in ("01","02","03")],other)
+        self.drain()
+        one, = [r for r in corrections if self.detail(r)["teams"]]
+        two, = set(corrections)-{one}
+        current, = self.detail(one)["teams"]
+        second = self.detail(two)
+        self.assertEqual(current["version"],2)
+        self.assertEqual((second["batch"]["status"],second["batch"]["current_submission"],second["teams"]),
+                         ("conflict",current["submission_id"],[]))
+        self.assertEqual(self.detail("/api/operations/batches/" + second["batch"]["batch_id"])["state"],"conflict")
+        self.assertEqual(self.staff.get(two+"/files/"+second["files"][0]["item_id"]+"/original").content,corrections[two])
+        for receipt in (one,two,two):
+            self.worker.put("review-jobs/preparations/"+receipt.split("/")[-1]+"/confirm").raise_for_status()
+        self.assertEqual(self.staff.put(f"{two}/teams/{team}/submission",json={"revision":second["revision"]}).status_code,409)
+        next_link, = self.detail(following)["teams"]
+        self.assertEqual((next_link["team"], next_link["version"]),(other,1))
+        created = []
+        def studio(request):
+            if "configs" in request.url.path:
+                return httpx.Response(200,json={"id":"cfg_offline"})
+            if request.method == "POST":
+                created.append(len(json.loads(request.content)["input"][0]["content"]))
+                return httpx.Response(200,json={"id":"job_isolation_"+str(len(created))})
+            is_next = request.url.path.endswith("_2")
+            values = {"Instruct - 최종판정":{"enum":"성공" if is_next else "재제출요청",
+                      "reason":"증빙 확인" if is_next else "01 지급확인서 1쪽 첫째 행에 학번이 없습니다."},
+                      "Information Extract - 지급확인서":{"team_name":"AutoAI" if is_next else "Nextify",
+                        "representative_name":"김종훈" if is_next else "박찬건"}}
+            return httpx.Response(200,json={"id":request.url.path.split("/")[-1],"status":"completed",
+                "output":[{"model":n,"content":[{"text":v}]} for n,v in values.items()]})
+        with httpx.Client(base_url="https://studio.test/",transport=httpx.MockTransport(studio)) as remote:
+            for _ in range(4):
+                self.db.execute("UPDATE studio_execution SET due=now() WHERE phase='polling'")
+                self.assertTrue(run_studio(self.db,self.worker,remote,self.cfg))
+            self.assertFalse(run_studio(self.db,self.worker,remote,self.cfg))
+        self.assertEqual(created,[2,3])
+        self.assertEqual(self.detail(following)["teams"][0]["review_job"]["verdict"],"성공")
+        self.assertEqual(self.detail(one)["teams"][0]["review_job"]["verdict"],"재제출요청")
+        self.assertEqual(self.db.execute("SELECT count(*) AS n FROM team_submission WHERE team_id=%s",(team,)).fetchone()["n"],2)
+        self.assertEqual(self.detail(two)["teams"],[])
+        sid = current["submission_id"]
+        self.staff.put(f"/api/teams/{team}/email",json={"email":"leader@award.test","submission":sid}).raise_for_status()
+        while deliver(self.db,self.cfg):
+            pass
+        notices = self.detail("/api/operations/submissions/"+sid)["mail"]
+        self.assertEqual({m["kind"] for m in notices},{"보완 요청","담당자 알림"})
+        self.assertEqual(len(notices),2)
+        self.assertTrue(all(m["state"]=="local" for m in notices))
+        self.browser(INTAKE_TEST_CONFLICT_BATCH=second["batch"]["batch_id"])
+        for _ in range(2):
+            self.staff.put(two+"/conflict-review",json={}).raise_for_status()
+        checked = self.detail("/api/operations/batches/"+second["batch"]["batch_id"])
+        self.assertEqual((checked["state"],checked["reviewed_by"]),("conflict_reviewed",os.environ["INTAKE_TEST_LOGIN_A"]))
+        self.assertTrue(checked["reviewed_at"])
+        self.assertEqual(self.detail(two)["teams"],[])
+        self.assertEqual(self.staff.put(f"{two}/teams/{team}/submission",json={"revision":second["revision"]}).status_code,409)

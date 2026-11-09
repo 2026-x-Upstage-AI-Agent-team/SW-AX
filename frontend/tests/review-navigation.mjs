@@ -20,10 +20,25 @@ before(async () => {
 });
 after(async () => browser?.close());
 
+const conflictId = process.env.INTAKE_TEST_CONFLICT_BATCH;
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
 const delayedId = process.env.INTAKE_TEST_DELAYED_SUBMISSION;
-if (delayedId) {
+if (conflictId) {
+  test('충돌 접수의 원본과 최신 보완 경로를 열고 담당자 대조를 마친다', async () => {
+    const { batch } = await (await request.get('/api/intake-batches/' + conflictId)).json();
+    await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), batch.event_id);
+    await page.goto('/#/intake/batches/' + conflictId);
+    await page.getByText('보완본 담당자 확인', { exact: true }).waitFor();
+    assert.ok(await page.locator('a[download]').count());
+    await page.getByRole('link', { name: '최신 제출본에서 보완 접수' }).click();
+    await page.getByRole('heading', { name: /Nextify 보완본 \(v2/ }).waitFor();
+    assert.ok(page.url().endsWith('base=' + batch.current_submission));
+    await page.goBack();
+    await page.getByRole('button', { name: '이 접수의 대조 완료' }).click();
+    await page.getByText('보완본 확인 완료', { exact: true }).waitFor();
+  });
+} else if (delayedId) {
   test('지연된 판정의 마지막 조회 시각과 총 시도 횟수를 확인하고 처리를 재개한다', async () => {
     const detail = await (await request.get('/api/operations/submissions/' + delayedId)).json();
     assert.equal(detail.job, 'job_found');

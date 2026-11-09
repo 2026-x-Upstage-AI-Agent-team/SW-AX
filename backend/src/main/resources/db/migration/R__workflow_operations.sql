@@ -10,9 +10,14 @@ ALTER TABLE intake_batch ADD COLUMN IF NOT EXISTS uploaded_by varchar(64) REFERE
 
 -- Existing receipts keep their manual assignments. New receipts enter preparation on upload.
 CREATE TABLE IF NOT EXISTS intake_preparation (
-    batch_id uuid PRIMARY KEY REFERENCES intake_batch, state text NOT NULL DEFAULT 'pending'
-        CHECK (state IN ('pending','ready','prepared')), created_at timestamptz NOT NULL DEFAULT now()
+    batch_id uuid PRIMARY KEY REFERENCES intake_batch, state text NOT NULL DEFAULT 'pending',
+    created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE intake_preparation DROP CONSTRAINT IF EXISTS intake_preparation_state_check;
+ALTER TABLE intake_preparation ADD CONSTRAINT intake_preparation_state_check
+    CHECK (state IN ('pending','ready','prepared','conflict','conflict_reviewed'));
+ALTER TABLE intake_preparation ADD COLUMN IF NOT EXISTS reviewed_by varchar(64) REFERENCES staff_account,
+    ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
 -- Receipts uploaded before preparation was introduced also need a path to manual confirmation.
 INSERT INTO intake_preparation(batch_id) SELECT id FROM intake_batch ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS original_analysis (
@@ -144,7 +149,7 @@ CREATE OR REPLACE FUNCTION ops_team_held(team uuid) RETURNS boolean LANGUAGE sql
     OR EXISTS(SELECT FROM award_team t JOIN intake_batch b ON b.event_id=t.event_id
         JOIN intake_preparation p ON p.batch_id=b.id JOIN intake_file_state f ON f.batch_id=b.id
         LEFT JOIN original_analysis a ON a.file_id=f.id
-        WHERE t.id=team AND f.state='unassigned' AND team<>ALL(f.excluded)
+        WHERE t.id=team AND p.state NOT IN ('conflict','conflict_reviewed') AND f.state='unassigned' AND team<>ALL(f.excluded)
         AND (b.target_team_id IS NULL OR b.target_team_id=team OR team=ANY(a.candidates))
         AND (coalesce(cardinality(a.candidates),0)=0 OR team=ANY(a.candidates)))
 $$;
