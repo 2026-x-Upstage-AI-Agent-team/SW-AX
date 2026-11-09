@@ -54,7 +54,7 @@ class PostgresIntakeTest(unittest.TestCase):
         cls.addClassCleanup(cls.peer.close)
         for client, suffix in ((cls.http, "A"), (cls.peer, "B")):
             login(client, os.environ["INTAKE_TEST_LOGIN_" + suffix], os.environ["INTAKE_TEST_PASSWORD_" + suffix])
-        cls.sets = {f"set{i:02}":official_files(f"set{i:02}") for i in range(1,11)}
+        cls.sets = {f"set{i:02}":official_files(f"set{i:02}") for i in range(1,21)}
 
     def setUp(self):
         self.event = self.http.post("/api/events", json={"name": "접수 검증 " + uuid4().hex[:12]}).raise_for_status().json()["id"]
@@ -114,7 +114,7 @@ class PostgresIntakeTest(unittest.TestCase):
 
     def test_all_official_originals_round_trip(self):
         files = [entry for group in sorted(self.sets) for entry in self.sets[group]]
-        self.assertEqual((10, 29), (len(self.sets), len(files)))
+        self.assertEqual((20, 58), (len(self.sets), len(files)))
         response = self.send(files)
         self.assertEqual(202, response.status_code, response.text)
         self.assertEqual(response.json()["status_url"], response.headers["location"])
@@ -122,7 +122,7 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual("received", detail["batch"]["status"])
         self.assertIsNone(detail["batch"]["target_team_id"])
         self.assertEqual(sum(len(data) for _, data in files), detail["batch"]["total_bytes"])
-        self.assertEqual(29, len({f["item_id"] for f in detail["files"]}))
+        self.assertEqual(58, len({f["item_id"] for f in detail["files"]}))
         for pos, ((name, data), item) in enumerate(zip(files, detail["files"], strict=True), 1):
             expected = hashlib.sha256(data).hexdigest()
             self.assertEqual((pos, name, len(data), expected), (item["position"], item["name"], item["size"], item["sha256"]))
@@ -265,7 +265,7 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual([(None, winner, 1)], [(c["before_team_id"], c["after_team_id"], c["revision"]) for c in changes])
 
     def test_exclusion_releases_only_selected_teams_and_outside_releases_the_rest(self):
-        a, b = [self.team(self.event, name, "") for name in ("Nextify", "AutoAI")]
+        a, b = [self.team(self.event, name, "") for name in ("가상검토팀01", "가상검토팀02")]
         receipt = self.send(self.sets["set01"]).raise_for_status().headers["location"]
         first, second, pending = [f["item_id"] for f in self.http.get(receipt).json()["files"]]
         self.decide(receipt, first, "assign", 0, team=a).raise_for_status()
@@ -311,7 +311,7 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(2, len(self.review_jobs()))
 
     def test_reassignment_revises_only_the_two_changed_snapshots(self):
-        teams = [self.team(self.event, name, "") for name in ("Nextify", "AutoAI", "3팀")]
+        teams = [self.team(self.event, name, "") for name in ("가상검토팀01", "가상검토팀02", "가상검토팀04")]
         inputs = self.sets["set01"] + self.sets["set02"] + self.sets["set04"]
         receipt = self.send(inputs).raise_for_status().headers["location"]
         files = self.http.get(receipt).raise_for_status().json()["files"]
@@ -352,7 +352,7 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(409, self.confirm(receipt, teams[0], 8).status_code)
 
     def test_concurrent_confirmations_reuse_content_across_receipts_and_count_duplicates(self):
-        team = self.team(self.event, "Nextify", "")
+        team = self.team(self.event, "가상검토팀01", "")
         a, b = self.sets["set01"][:2]
 
         def prepare(files):
@@ -389,7 +389,7 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(3, self.confirm(changed_bytes, team, 2).raise_for_status().json()["version"])
 
     def test_confirm_racing_reassignment_never_exposes_a_mixed_snapshot(self):
-        a, b = [self.team(self.event, name, "") for name in ("Nextify", "AutoAI")]
+        a, b = [self.team(self.event, name, "") for name in ("가상검토팀01", "가상검토팀02")]
         receipt = self.send(self.sets["set01"]).raise_for_status().headers["location"]
         items = [f["item_id"] for f in self.http.get(receipt).json()["files"]]
         for rev, team in enumerate((a, a, b)):

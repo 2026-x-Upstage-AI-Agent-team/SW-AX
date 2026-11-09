@@ -20,7 +20,7 @@ API는 이 PC의 루프백 주소에 바인딩합니다. PostgreSQL은 로컬 �
 
 ### 판정, 메일과 보고서 출력
 
-Studio 실행에는 서버의 환경 변수 또는 프로젝트의 `.env.local`에 `UPSTAGE_API_KEY`, `UPSTAGE_AGENT_ID`, `UPSTAGE_CONFIG_ID`를 설정합니다. 공식 시험에는 설정 버전 23을 사용합니다. `MAIL_MODE=local`은 로컬 수신함을 사용합니다. 실제 발송은 `#/gmail`에서 담당자 계정을 연결하고 검토 화면에서 팀별 수신 주소를 확인해 저장합니다.
+Studio 실행에는 서버의 환경 변수 또는 프로젝트의 `.env.local`에 `UPSTAGE_API_KEY`, `UPSTAGE_AGENT_ID`, `UPSTAGE_CONFIG_ID`를 설정합니다. 이전 10세트의 실행 기록은 설정 버전 23을 사용했습니다. `MAIL_MODE=local`은 로컬 수신함을 사용합니다. 실제 발송은 `#/gmail`에서 담당자 계정을 연결하고 검토 화면에서 팀별 수신 주소를 확인해 저장합니다.
 
 단일 PC에서는 `start-intake.ps1`이 접수 서버, 문서 판독·판정·메일·편철 워커와 PDF 워커를 실행합니다. 00 지급내역서 원본을 팀 자료 폴더에 두거나 `AWARDS_REPORT_TEMPLATE`에 경로를 지정합니다. 처음 실행할 때 한글 경로 확인 모듈을 빌드하고 현재 Windows 사용자에 등록합니다. 이 모듈은 변환 작업별 폴더의 입력 한글 파일과 출력 PDF 경로를 검사합니다.
 
@@ -59,8 +59,9 @@ python -m unittest discover -s tests -p test_intake_postgres.py -v
 | [서비스 구현계획서](docs/IMPLEMENTATION_PLAN.md) | React·Spring Boot 전환 범위, 파일 접수·팀 배정, 오류 복구와 인수 기준 |
 | [Windows 시연판 실행 안내](docs/LOCAL_SERVICE.md) | 팀 작업 폴더에서 현재 시연판을 실행하고 검토·편철 결과를 확인하는 절차 |
 | [Studio 구성 프롬프트](docs/STUDIO_BUILD_PROMPT.txt) | 문서 분류·추출·대조와 결과 출력을 위한 워크플로우 구성안 |
-| [미션 2 유형표](docs/유잇_미션2_유형표.xlsx) | set01~set10의 시험 목적과 기대 결과 |
-| [미션 2 정답 JSON](output/json/유잇_미션2_answer.json) | 팀별 기대 판정과 그 근거 |
+| [최종 데이터셋과 실물 검수 기록](PROJECT_PLAN.md#9-준비된-테스트-자료) | `test case/upstage_data.zip` 안의 20세트와 한글 제출 문서 58개. 업로드할 때는 `test case/upstage_data/setNN/`의 파일을 선택 |
+| [미션 2 유형표 v6](docs/유잇_미션2_유형표.xlsx) | 제공받은 엑셀 원본. 문서 58개 각각의 검사 결과·필수 검출 항목·오탐 금지 기준 |
+| [미션 2 정답 JSON](output/json/유잇_미션2_answer.json) | set01~set20의 기대 판정과 사유. 실행 후 결과와 대조 |
 | [프로젝트 작업 안내](AGENTS.md) | 프로젝트를 이어받을 때 확인할 자료와 작업 기준 |
 
 기획서에서 언급하는 학생 제출 양식과 테스트 입력, API 실행 원문은 팀 작업 폴더에서 관리합니다. 공개 기획서의 가상 계좌번호와 생년월일 예시는 마스킹했습니다.

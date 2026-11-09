@@ -8,6 +8,7 @@ import time
 import unittest
 from email import policy
 from email.parser import BytesParser
+from contextlib import ExitStack
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,6 +20,7 @@ from lxml import etree
 from pypdf import PdfReader
 
 from tests.test_intake_postgres import login
+from tests.official_inputs import fixture_slot, official_files
 from operations.delivery import deliver
 from tests.mail_approval import approve_ready_notices
 from operations.preparation import prepare
@@ -55,9 +57,7 @@ class OperationalAcceptance(unittest.TestCase):
         db.execute("INSERT INTO event_staff(event_id,login) VALUES(%s,%s) ON CONFLICT DO NOTHING",(event,os.environ["INTAKE_TEST_LOGIN_B"]))
         api = httpx.Client(base_url=url+"/api/worker/",headers={"Authorization":"Bearer "+cfg["AWARDS_REVIEW_WORKER_TOKEN"]})
         self.addCleanup(api.close)
-        with ZipFile(ROOT/"test case"/"유잇_미션2_테스트set.zip") as archive:
-            groups = {s:sorted([(Path(n).name,archive.read(n)) for n in archive.namelist()
-                     if Path(n).parent.name==s and Path(n).suffix.lower() in (".hwp",".hwpx")]) for s in ("set01","set02","set04")}
+        groups = {s:official_files(s) for s in ("set01","set02","set04")}
         self.assertEqual([3,3,2],[len(g) for g in groups.values()])
         def upload(files, label):
             before = time.monotonic()
@@ -67,8 +67,7 @@ class OperationalAcceptance(unittest.TestCase):
             print("접수",response.status_code,round(time.monotonic()-before,3),"초",len(files),"개",flush=True)
             return response.json()["batch_id"]
         # Preserve byte content and source order while removing team/set labels from both consent forms.
-        labels = {1:"신청",2:"개인정보",3:"신분증"}
-        mixed = [(s,kind,next(entry for entry in groups[s] if labels[kind] in entry[0]))
+        mixed = [(s,kind,next(entry for entry in groups[s] if fixture_slot(entry[0]) == f"{kind:02}"))
                  for kind in (2,3,1) for s in ("set01","set02")]
         receipt = upload([("동의서.hwp" if kind==2 else f"서류{kind}{Path(n).suffix}",b) for s,kind,(n,b) in mixed],"mixed")
         second = upload(groups["set04"],"set04")
@@ -186,27 +185,30 @@ class OperationalAcceptance(unittest.TestCase):
             self.assertIn(report["state"],("preview","confirmed"),report["error"])
             client.post(f"/api/reports/{rid}/confirm").raise_for_status()
             pdf=client.get(f"/api/reports/{rid}/pdf").raise_for_status().content
-            self.assertEqual(len(PdfReader(BytesIO(pdf)).pages),11)
-        reference = Path(os.getenv("AWARDS_ACCEPTANCE_REFERENCE",ROOT/"output/pdf/유잇_set01-set02_출력검증/시상금_지급내역서.pdf"))
-        self.assertTrue(reference.is_file(),"공식 두 팀의 11쪽 편철 기준 PDF를 지정하세요.")
+            self.assertEqual(len(PdfReader(BytesIO(pdf)).pages),10)
+        reference = os.getenv("AWARDS_ACCEPTANCE_REFERENCE")
         combined_pages = PdfReader(BytesIO(pdf)).pages
-        with pdfium.PdfDocument(pdf) as combined, pdfium.PdfDocument(str(reference)) as golden:
-            self.assertEqual(len(combined),len(golden))
+        with ExitStack() as stack, pdfium.PdfDocument(pdf) as combined:
+            golden = stack.enter_context(pdfium.PdfDocument(reference)) if reference else None
+            if golden is not None:
+                self.assertEqual(len(golden),len(combined))
             page_index = 2
             for s in ("set01","set02"):
                 for kind in ("01","02","03"):
                     file_id=details[s]["result"]["documents"][kind][0]["id"]
                     original=staff.get(f"/api/files/{file_id}/preview").raise_for_status()
-                    for page in PdfReader(BytesIO(original.content)).pages:
-                        attached = combined_pages[page_index]
-                        self.assertEqual((page.mediabox,page.cropbox,page.rotation,page.extract_text(),image_pixels(page)),
-                                         (attached.mediabox,attached.cropbox,attached.rotation,attached.extract_text(),image_pixels(attached)))
-                        canonical=golden[page_index].render(scale=120/72).to_pil()
-                        actual=combined[page_index].render(scale=120/72).to_pil()
-                        self.assertEqual((actual.size,hashlib.sha256(actual.tobytes()).hexdigest()),
-                                         (canonical.size,hashlib.sha256(canonical.tobytes()).hexdigest()),f"편철 기준 {page_index+1}쪽")
-                        page_index+=1
-            self.assertEqual(page_index,11)
+                    with pdfium.PdfDocument(original.content) as source:
+                        for n,page in enumerate(PdfReader(BytesIO(original.content)).pages):
+                            attached = combined_pages[page_index]
+                            self.assertEqual((page.mediabox,page.cropbox,page.rotation,page.extract_text(),image_pixels(page)),
+                                             (attached.mediabox,attached.cropbox,attached.rotation,attached.extract_text(),image_pixels(attached)))
+                            expected_page=source[n] if golden is None else golden[page_index]
+                            canonical=expected_page.render(scale=120/72).to_pil()
+                            actual=combined[page_index].render(scale=120/72).to_pil()
+                            self.assertEqual((actual.size,hashlib.sha256(actual.tobytes()).digest()),
+                                             (canonical.size,hashlib.sha256(canonical.tobytes()).digest()),f"원본 {page_index+1}쪽")
+                            page_index+=1
+            self.assertEqual(page_index,len(combined))
         raw=staff.get(f"/api/reports/{first}/hwpx").raise_for_status().content
         edit=BytesIO()
         with ZipFile(BytesIO(raw)) as src, ZipFile(edit,"w") as dst:
@@ -224,6 +226,6 @@ class OperationalAcceptance(unittest.TestCase):
         staff.post(f"/api/reports/{edited}/confirm").raise_for_status()
         self.assertEqual(edit.getvalue(),staff.get(f"/api/reports/{edited}/hwpx").raise_for_status().content)
         pdf=PdfReader(BytesIO(staff.get(f"/api/reports/{edited}/pdf").raise_for_status().content))
-        self.assertEqual(len(pdf.pages),11)
+        self.assertEqual(len(pdf.pages),10)
         self.assertIn("편집상","".join(pdf.pages[0].extract_text().split()))
-        print("공식 3팀 실제 판정, 팀장 메일 1통, 두 담당자 출력 11쪽과 편집 PDF 확인",flush=True)
+        print("v6 세 팀 실제 판정, 팀장 메일 1통, 두 담당자 출력 10쪽과 편집 PDF 확인",flush=True)

@@ -11,9 +11,10 @@ import httpx
 
 from operations.delivery import deliver
 from tests.mail_approval import approve_ready_notices
+from tests.official_inputs import ARCHIVE, fixture_slot, official_files
 from operations.preparation import prepare
 from operations.store import cached_file, configuration, connect
-from service.db import DATA, ROOT
+from service.db import DATA
 from service.documents import match_file
 from service.studio import parse_result
 from tests.test_intake_postgres import login
@@ -149,17 +150,18 @@ class OfficialCases(unittest.TestCase):
         self.addCleanup(api.close)
         login(staff,os.environ["INTAKE_TEST_LOGIN_A"],os.environ["INTAKE_TEST_PASSWORD_A"])
         event=staff.post("/api/events",json={"name":"공식 오류 사례 검증"}).raise_for_status().json()["id"]
-        with ZipFile(ROOT/"test case"/"유잇_미션2_테스트set.zip") as archive:
+        with ZipFile(ARCHIVE) as archive:
             for case in ("set03","set04","set05","set10"):
                 with self.subTest(case=case):
-                    docs=[(Path(n).name,archive.read(n)) for n in archive.namelist()
-                          if Path(n).parent.name==case and Path(n).suffix.lower() in (".hwp",".hwpx")]
+                    docs=sorted((Path(n).name,archive.read(n)) for n in archive.namelist()
+                                if Path(n).parent.parts==("upstage_data",case) and Path(n).suffix.lower() in (".hwp",".hwpx"))
                     count = 2 if case == "set04" else 3
                     self.assertEqual(len(docs),count)
                     fields={"event":event,"manifest":json.dumps([{"name":n,"size":len(v)} for n,v in docs])}
                     if case == "set04":
-                        # The application inside set04 names its team "3팀".
-                        team = staff.post(f"/api/events/{event}/teams", json={"name":"3팀","rep":""}).raise_for_status().json()["id"]
+                        # Provide the homonymous team explicitly for this assignment regression.
+                        staff.post(f"/api/events/{event}/teams", json={"name":"가상검토팀04","rep":"다른대표"}).raise_for_status()
+                        team = staff.post(f"/api/events/{event}/teams", json={"name":"가상검토팀04","rep":""}).raise_for_status().json()["id"]
                         fields["target"] = team
                     bid=staff.post("/api/intake-batches",data=fields,headers={"Idempotency-Key":str(uuid4())},
                                    files=[("files",(n,v)) for n,v in docs]).raise_for_status().json()["batch_id"]
@@ -182,7 +184,7 @@ class OfficialCases(unittest.TestCase):
                             self.assertFalse(db.execute("SELECT 1 FROM review_job_status WHERE team_id=%s", (team,)).fetchone())
                             self.assertEqual(api.post("review-jobs/claim", json={"event_id":event,"worker_id":"early"}).status_code, 204)
                             self.assertTrue(prepare(db, api))
-                        # set03 and set04 both call themselves '3팀', with different representatives.
+                        # The application name matches both registered teams.
                         ready = staff.get(receipt).raise_for_status().json()
                         self.assertEqual(confirm(ready["revision"]).status_code,409)
                         pending = [f for f in ready["files"] if f["state"]=="unassigned"]
@@ -203,7 +205,7 @@ class OfficialCases(unittest.TestCase):
                     team=next(f["team"] for f in batch["files"] if f["kind"]=="01")
                     for f in batch["files"]:
                         if not f["team"]:
-                            # set10 has two of three signers and 학과/학부 disagree. The operator checks the source.
+                            # set10 has a missing, repeated, and additional name on its consent form.
                             if case=="set10" and f["kind"]=="02":
                                 self.assertIn(team,f["candidates"])
                             else:
@@ -220,8 +222,11 @@ class OfficialCases(unittest.TestCase):
                     names=app["roster"]
                     consent=next((json.loads(f["signals"])["consent"] for f in files if f["kind"]=="02"), [])
                     if case=="set10":
-                        self.assertGreater(len(names),len(consent))
-                        self.assertGreaterEqual(len(consent),2)
+                        roster = Counter(p["name"] for p in names)
+                        consent_roster = Counter(p["name"] for p in consent)
+                        self.assertEqual(sum((roster - consent_roster).values()),1)
+                        self.assertEqual(len(consent_roster.keys() - roster.keys()),1)
+                        self.assertEqual(sum(consent_roster.values())-len(consent_roster),1)
                     structured={"Information Extract - 지급확인서":{"team_name":app["name"],"representative_name":app["rep"],
                                 "representative_department":names[0]["major"],"representative_account":"00100",
                                 "members":[{"name":p["name"],"department":p["major"]} for p in names[1:]]},
@@ -285,9 +290,7 @@ class OfficialCases(unittest.TestCase):
             login(staff,os.environ["INTAKE_TEST_LOGIN_A"],os.environ["INTAKE_TEST_PASSWORD_A"])
             event=staff.post("/api/events",json={"name":"배정 충돌 "+uuid4().hex[:8]}).raise_for_status().json()["id"]
             prior=staff.post(f"/api/events/{event}/teams",json={"name":"Alpha","rep":""}).raise_for_status().json()["id"]
-            with ZipFile(ROOT/"test case"/"유잇_미션2_테스트set.zip") as archive:
-                name=next(n for n in archive.namelist() if Path(n).parent.name=="set01" and Path(n).name.startswith("01"))
-                original=archive.read(name)
+            name,original=next(f for f in official_files("set01") if fixture_slot(f[0])=="01")
             filename="Alpha_신청서"+Path(name).suffix
             receipt=staff.post("/api/intake-batches",headers={"Idempotency-Key":str(uuid4())},
                 data={"event":event,"manifest":json.dumps([{"name":filename,"size":len(original)}])},

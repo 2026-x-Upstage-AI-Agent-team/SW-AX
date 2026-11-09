@@ -7,15 +7,14 @@ from email import policy
 from email.parser import BytesParser
 from unittest.mock import patch
 from io import BytesIO
-from pathlib import Path
 from uuid import uuid4
-from zipfile import ZipFile
 
 import httpx
 from pypdf import PdfWriter
 
 from operations.delivery import deliver
 from tests.mail_approval import approve_ready_notices
+from tests.official_inputs import fixture_slot, official_files
 from operations.store import configuration, connect
 from operations.studio_worker import run_studio
 from operations.worker import serve
@@ -40,9 +39,7 @@ class Recovery(unittest.TestCase):
         login(staff,os.environ["INTAKE_TEST_LOGIN_A"],os.environ["INTAKE_TEST_PASSWORD_A"])
         event = staff.post("/api/events",json={"name":"복구 시험 "+uuid4().hex[:8]}).raise_for_status().json()["id"]
         team = staff.post(f"/api/events/{event}/teams",json={"name":"복구 시험팀","rep":"대표"}).raise_for_status().json()["id"]
-        with ZipFile(ROOT/"test case"/"유잇_미션2_테스트set.zip") as archive:
-            inputs = {Path(n).name[:2]:(Path(n).name,archive.read(n)) for n in archive.namelist()
-                     if Path(n).parent.name=="set01" and Path(n).suffix.lower() in (".hwp",".hwpx")}
+        inputs = {fixture_slot(name):(name,content) for name,content in official_files("set01")}
         pdf = BytesIO()
         doc = PdfWriter()
         doc.add_blank_page(width=595,height=842)
@@ -410,8 +407,7 @@ class Recovery(unittest.TestCase):
         login(staff,os.environ["INTAKE_TEST_LOGIN_A"],os.environ["INTAKE_TEST_PASSWORD_A"])
         event = staff.post("/api/events",json={"name":"지연 시험 "+uuid4().hex[:8]}).raise_for_status().json()["id"]
         team = staff.post(f"/api/events/{event}/teams",json={"name":"지연 검증","rep":""}).raise_for_status().json()["id"]
-        with ZipFile(ROOT/"test case"/"유잇_미션2_테스트set.zip") as archive:
-            files = [(Path(n).name,archive.read(n)) for n in archive.namelist() if Path(n).parent.name=="set01" and Path(n).suffix]
+        files = official_files("set01")
         def request(items):
             return staff.build_request("POST","/api/intake-batches",headers={"Idempotency-Key":str(uuid4())},
                     files=[("files",(n,b)) for n,b in items],

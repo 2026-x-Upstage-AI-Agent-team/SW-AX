@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from service import app as web
 from service import db, documents, studio, worker, workflow
-from tests.official_inputs import official_files
+from tests.official_inputs import fixture_slot, official_files
 
 
 def official(case):
@@ -82,10 +82,10 @@ class LocalServiceTests(unittest.TestCase):
         # Ordinary regression runs replay the set04 reading at this boundary without opening a security dialog.
         if os.environ.get("AWARD_NATIVE_TESTS") != "1":
             def observed(f):
-                application = "신분증" not in f["name"]
+                application = fixture_slot(f["name"]) == "01"
                 roster = [{"name":"김종인","major":""}]
                 return ("01" if application else "03",1,{"body":"","identity":"","mixed":False,"consent":[],"page":1,
-                        "apps":[{"name":"3팀","rep":"김종인","roster":roster}] if application else []})
+                        "apps":[{"name":"가상검토팀04","rep":"김종인","roster":roster}] if application else []})
             def stub_input(files, config, agent):
                 return {"input":[{"role":"user","content":[{"source_hash":f["hash"]} for f in files]}]}
             self.scope.enter_context(patch.object(worker,"read_signals",side_effect=observed))

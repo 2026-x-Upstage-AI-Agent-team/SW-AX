@@ -26,7 +26,7 @@ from operations.studio_worker import run_studio
 from reporting.fill_award_form import HP, text_of
 from reporting.merge_hwpx import compile_sections, save
 from service.db import ROOT
-from tests.official_inputs import official_files
+from tests.official_inputs import fixture_slot, official_files
 from tests.test_intake_postgres import login
 
 
@@ -44,11 +44,11 @@ class ReceiptConflicts(unittest.TestCase):
         login(self.staff, os.environ["INTAKE_TEST_LOGIN_A"], os.environ["INTAKE_TEST_PASSWORD_A"])
         self.event = self.staff.post("/api/events", json={"name":"접수 충돌 검증 " + uuid4().hex[:8]}).raise_for_status().json()["id"]
         self.teams = [self.staff.post(f"/api/events/{self.event}/teams", json={"name":name,"rep":rep}).raise_for_status().json()["id"]
-                      for name, rep in (("Nextify","박찬건"), ("AutoAI","김종훈"))]
+                      for name, rep in (("가상검토팀01","박찬건"), ("가상검토팀02","김종훈"))]
         self.docs = {}
         for index, group in enumerate(("set01", "set02")):
             for name,content in official_files(group):
-                kind = "03" if "신분증" in name else name[:2]
+                kind = fixture_slot(name)
                 self.docs[index,kind] = (name,content)
 
     def upload(self, files, team=None, base=None):
@@ -82,7 +82,7 @@ class ReceiptConflicts(unittest.TestCase):
             a,b = work/"a.hwpx", work/"b.hwpx"
             a.write_bytes(self.docs[0,"03"][1])
             b.write_bytes(self.docs[1,"03"][1])
-            combined = work/"Nextify.hwpx"
+            combined = work/"가상검토팀01.hwpx"
             save(combined, compile_sections(a,[b],work))
             receipt = self.upload([self.docs[0,"01"],self.docs[1,"01"],(combined.name,combined.read_bytes())])
         fid = self.detail(receipt)["files"][2]["item_id"]
@@ -145,7 +145,7 @@ class ReceiptConflicts(unittest.TestCase):
             is_next = request.url.path.endswith("_2")
             values = {"Instruct - 최종판정":{"enum":"성공" if is_next else "재제출요청",
                       "reason":"증빙 확인" if is_next else "01 지급확인서 1쪽 첫째 행에 학번이 없습니다."},
-                      "Information Extract - 지급확인서":{"team_name":"AutoAI" if is_next else "Nextify",
+                      "Information Extract - 지급확인서":{"team_name":"가상검토팀02" if is_next else "가상검토팀01",
                         "representative_name":"김종훈" if is_next else "박찬건"}}
             return httpx.Response(200,json={"id":request.url.path.split("/")[-1],"status":"completed",
                 "output":[{"model":n,"content":[{"text":v}]} for n,v in values.items()]})
@@ -218,13 +218,13 @@ class ReceiptConflicts(unittest.TestCase):
                 draft = next(t for t in self.detail(f"/api/events/{self.event}/draft")["teams"] if t["submission"]==sid)
                 self.assertEqual(draft["missing_payouts"],[label])
                 url = self.report_preview(sid)
-                self.assertEqual(self.detail(url)["missing_payouts"],["AutoAI · "+label])
+                self.assertEqual(self.detail(url)["missing_payouts"],["가상검토팀02 · "+label])
                 self.assertEqual(self.staff.get(url+"/preview").status_code,200)
                 if rev==0:
                     self.browser(INTAKE_TEST_PAYOUT_REPORT=url.rsplit("/",1)[1])
                 blocked = self.staff.post(url+"/confirm")
                 self.assertEqual(blocked.status_code,409)
-                self.assertIn("AutoAI · "+label,blocked.json()["detail"])
+                self.assertIn("가상검토팀02 · "+label,blocked.json()["detail"])
                 self.assertEqual(self.detail(url)["state"],"preview")
                 for ext in ("pdf","hwpx"):
                     self.assertEqual(self.staff.get(url+"/"+ext).status_code,409)
@@ -272,7 +272,7 @@ class ReceiptConflicts(unittest.TestCase):
         self.drain()
         self.assertEqual(self.staff.get(url+"/pdf").raise_for_status().content,pdf)
         # A different receipt can still implicate this team through the ID itself.
-        conflict = self.upload([("Nextify.hwpx",self.docs[1,"03"][1])])
+        conflict = self.upload([("가상검토팀01.hwpx",self.docs[1,"03"][1])])
         self.drain()
         batch = self.detail(conflict)
         suspect, = batch["files"]

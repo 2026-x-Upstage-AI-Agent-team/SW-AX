@@ -81,7 +81,7 @@ if (mailId) {
     await page.getByText('보완본 담당자 확인', { exact: true }).waitFor();
     assert.ok(await page.locator('a[download]').count());
     await page.getByRole('link', { name: '최신 제출본에서 보완 접수' }).click();
-    await page.getByRole('heading', { name: /Nextify 보완본 \(v2/ }).waitFor();
+    await page.getByRole('heading', { name: /가상검토팀01 보완본 \(v2/ }).waitFor();
     assert.ok(page.url().endsWith('base=' + batch.current_submission));
     await page.goBack();
     await page.getByRole('button', { name: '이 접수의 대조 완료' }).click();
@@ -98,7 +98,7 @@ if (mailId) {
     await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), report.event);
     await page.goto('/#/report');
     await page.getByText('확정 전 입력할 항목 · 지급총액', { exact: true }).waitFor();
-    await page.getByText('확정 전 지급 정보를 입력하세요. AutoAI · 지급총액', { exact: true }).waitFor();
+    await page.getByText('확정 전 지급 정보를 입력하세요. 가상검토팀02 · 지급총액', { exact: true }).waitFor();
     assert.ok(await page.getByRole('button', { name: '이 버전으로 확정' }).isDisabled());
     assert.equal(await page.getByRole('link', { name: /PDF 내려받기/ }).count(), 0);
   });

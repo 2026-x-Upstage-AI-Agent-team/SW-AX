@@ -2,7 +2,7 @@
 [CmdletBinding(DefaultParameterSetName = 'Submit')]
 param(
     [Parameter(ParameterSetName = 'Submit')][Parameter(ParameterSetName = 'Check')]
-    [ValidatePattern('^set(0[1-9]|10)$')][string]$CaseId = 'set01',
+    [ValidatePattern('^set(0[1-9]|1[0-9]|20)$')][string]$CaseId = 'set01',
     [Parameter(ParameterSetName = 'Check', Mandatory)][switch]$CheckInput,
     [Parameter(ParameterSetName = 'Submit')][string]$AgentId,
     [Parameter(ParameterSetName = 'Submit')][string]$ConfigId,
@@ -12,7 +12,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$dataset = Join-Path $root 'test case/유잇_미션2_테스트set.zip'
+$dataset = Join-Path $root 'test case/upstage_data.zip'
 
 function Get-Setting([string]$name) {
     $value = [Environment]::GetEnvironmentVariable($name)
@@ -44,10 +44,10 @@ function Read-CaseDocuments {
     $editor = $null
     $work = $null
     try {
-        $prefix = '유잇_미션2_테스트set/' + $CaseId.ToLowerInvariant() + '/'
+        $prefix = 'upstage_data/' + $CaseId.ToLowerInvariant() + '/'
         $entries = @($archive.Entries | Where-Object {
             $_.FullName -ceq ($prefix + $_.Name) -and [IO.Path]::GetExtension($_.Name) -in '.hwp', '.hwpx' -and $_.Name -notmatch '^00(?:\D|$)'
-        })
+        } | Sort-Object Name)
         if (!$entries.Count) { throw "$CaseId 폴더에 한글 제출 파일이 없습니다." }
         if ($CheckInput) {
             foreach ($entry in $entries) {

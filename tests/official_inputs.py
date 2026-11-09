@@ -1,15 +1,25 @@
 from pathlib import Path
 from zipfile import ZipFile
 
+DATASET = Path(__file__).resolve().parents[1] / "test case" / "upstage_data"
+ARCHIVE = DATASET.with_suffix(".zip")
 
-def official_files(case, directory=None):
-    root = directory or Path(__file__).resolve().parents[1] / "test case" / "유잇_미션2_테스트set"
-    archive = root.with_suffix(".zip")
+
+def fixture_slot(name):
+    """Requested fixture slot; set05's C file actually contains a second consent form."""
+    return {"A": "01", "B": "02", "C": "03"}[name.split("_")[1]]
+
+
+def official_files(case, directory=DATASET):
+    if case not in {f"set{i:02}" for i in range(1, 21)}:
+        raise ValueError(f"최종 데이터셋의 세트 ID를 확인하세요: {case}")
+    archive = directory.with_suffix(".zip")
     if archive.is_file():
         with ZipFile(archive) as source:
-            return [(Path(n).name,source.read(n)) for n in source.namelist()
-                    if Path(n).parent.name == case and Path(n).suffix.lower() in (".hwp",".hwpx")]
-    folders = [p for p in root.rglob(case) if p.is_dir()]
-    if len(folders) != 1:
-        raise FileNotFoundError(f"공식 테스트 ZIP 또는 압축을 푼 {case} 폴더를 확인하세요.")
-    return [(p.name,p.read_bytes()) for p in sorted(folders[0].iterdir()) if p.suffix.lower() in (".hwp",".hwpx")]
+            entries = sorted(n for n in source.namelist() if Path(n).parent.parts == (directory.name, case)
+                             and Path(n).suffix.lower() in (".hwp", ".hwpx"))
+            if not entries:
+                raise FileNotFoundError(f"{archive.name}에 {case} 제출 파일이 없습니다.")
+            return [(Path(n).name, source.read(n)) for n in entries]
+    return [(p.name, p.read_bytes()) for p in sorted((directory / case).iterdir())
+            if p.is_file() and p.suffix.lower() in (".hwp", ".hwpx")]
