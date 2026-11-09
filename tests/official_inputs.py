@@ -2,8 +2,8 @@ from pathlib import Path
 from zipfile import ZipFile
 
 
-def official_files(case):
-    root = Path(__file__).resolve().parents[1] / "test case" / "유잇_미션2_테스트set"
+def official_files(case, directory=None):
+    root = directory or Path(__file__).resolve().parents[1] / "test case" / "유잇_미션2_테스트set"
     archive = root.with_suffix(".zip")
     if archive.is_file():
         with ZipFile(archive) as source:
