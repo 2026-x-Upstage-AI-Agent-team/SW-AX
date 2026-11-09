@@ -23,8 +23,9 @@ before(async () => {
       configurePreviewServer(app) {
         app.middlewares.use((req, res, next) => {
           if (receiveUpload && req.method === 'POST' && req.url === '/api/intake-batches') {
-            req.on('end', () => receiveUpload(res));
-            req.resume();
+            const chunks = [];
+            req.on('data', chunk => chunks.push(chunk));
+            req.on('end', () => receiveUpload(res, Buffer.concat(chunks)));
           } else next();
         });
       },
@@ -242,4 +243,37 @@ test('업로드 오류를 파일 선택기에 연결하고 전송이 끝나면 �
     response.end(JSON.stringify({ batch_id: 'batch' }));
   }
   await page.waitForURL('**/#/intake/batches/batch');
+});
+
+test('새 팀 묶음이 기본이며 같은 접수 상세에 임시명과 판독된 팀명을 표시한다', async t => {
+  const page = await newPage(t);
+  let realName = false;
+  await page.route('**/api/intake-batches/numbered', route => route.fulfill({ json: {
+    batch: { batch_id:'numbered', event_id:event.id, target_team_id:'team', status:'received', created_at:'2026-11-09T09:00:00Z', intake_number:1,
+      team_name: realName ? '가상검토팀01' : '접수 1팀', team_rep:'', file_count:1, total_bytes:4 },
+    files:[], teams:[{team:'team',state:'confirmed',version:1,submission_id:'submission',
+      review_job:{review_job_id:'job',state:realName ? 'done' : 'running'}}],
+  } }));
+  await page.goto('/#/intake');
+  assert.equal(await page.getByLabel('접수 출처').inputValue(), 'bundle');
+  await page.locator('input[type=file]').setInputFiles({ name:'증빙.hwp', mimeType:'application/octet-stream', buffer:Buffer.from('test') });
+  const posted = new Promise(resolve => {
+    receiveUpload = (res, bytes) => {
+      receiveUpload = undefined;
+      res.writeHead(202, { 'Content-Type':'application/json' });
+      res.end(JSON.stringify({batch_id:'numbered'}));
+      resolve(bytes.toString());
+    };
+  });
+  t.after(() => { receiveUpload = undefined; });
+  await page.getByRole('button', {name:'원본 접수하기'}).click();
+  const body = await posted;
+  assert.match(body, /name="mode"\r\n\r\nbundle/);
+  assert.doesNotMatch(body, /name="target"/);
+  await page.waitForURL('**/#/intake/batches/numbered');
+  await page.locator('dd').filter({hasText:/^접수 1팀$/}).waitFor();
+  realName = true;
+  await page.getByText('접수 1팀 · 가상검토팀01', {exact:true}).first().waitFor();
+  assert.equal(await page.getByText('접수 1팀 · 가상검토팀01', {exact:true}).count(), 2);
+  assert.equal(new URL(page.url()).hash, '#/intake/batches/numbered');
 });

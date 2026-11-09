@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { FileUp } from 'lucide-react';
 import { ApiError, bytes } from '../../api/client';
+import { isDemoBackend } from '../../api/backend';
 import { teamLabel, uploadBatch, type AwardEvent, type AwardTeam } from '../../api/intake';
 import { docLabels } from '../../api/labels';
 import type { SubmissionDetail } from '../../api/service';
@@ -36,7 +37,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
   const navigate = useNavigate();
   const { refresh } = useEvent();
   const picker = useRef<HTMLInputElement>(null);
-  const [target, setTarget] = useState(base?.team ?? '');
+  const [target, setTarget] = useState(base?.team ?? (isDemoBackend ? '' : 'bundle'));
   const [removed, setRemoved] = useState<string[]>([]);
   const [files, setFiles] = useState<Picked[]>([]);
   const [error, setError] = useState('');
@@ -83,7 +84,8 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
       writePending({ selection, key });
       const form = new FormData();
       form.set('event', event.id);
-      if (target) form.set('target', target);
+      if (target === 'bundle') form.set('mode', 'bundle');
+      else if (target) form.set('target', target);
       if (base) {
         form.set('base', base.id);
         form.set('removed', JSON.stringify(removed));
@@ -137,6 +139,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
               접수 출처
             </label>
             <select id="target" value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 max-w-[370px] rounded-xl border border-line-2 bg-white px-3">
+              {!isDemoBackend && <option value="bundle">새 팀 묶음 접수 · 팀명 입력 없이</option>}
               <option value="">팀 미지정 · 혼합 접수</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -144,7 +147,9 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
                 </option>
               ))}
             </select>
-            <p className="text-sm text-muted">한 팀에서 받은 묶음이면 그 팀을 지정할 수 있습니다.</p>
+            <p className="text-sm text-muted">{target === 'bundle'
+              ? '한 팀에서 받은 서류만 함께 올리세요. 접수 순서대로 팀번호를 부여하고, 판정 후 신청서의 팀명을 표시합니다. 신청서가 없어도 받은 서류로 판정합니다.'
+              : target ? '선택한 기존 팀에 접수합니다.' : '여러 팀의 서류를 함께 받았을 때 사용합니다. 팀을 구분할 근거가 부족하면 담당자가 배정합니다.'}</p>
           </>
         )}
         <input

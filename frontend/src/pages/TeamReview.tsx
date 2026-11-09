@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useAsync, usePolling } from '../api/client';
+import { receiptName } from '../api/intake';
 import { isDemoBackend } from '../api/backend';
 import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
 import { reviewEvidence } from '../api/reviewEvidence';
@@ -113,7 +114,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{s.team_name}</h1>
+        <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{receiptName(s.team_name, s.intake_number)}</h1>
         <span className="text-[13px] text-subtle">
           {s.rep && `대표 ${s.rep} · `}
           <span className="font-semibold tabular-nums">제출 v{s.version}</span> · 원본 {s.count}개

@@ -19,7 +19,7 @@ class IntakeStore {
     record Receipt(UUID batchId, String status, String statusUrl) {}
     record Summary(UUID batchId, UUID eventId, String eventName, UUID targetTeamId, String teamName,
                    String teamRep, OffsetDateTime createdAt, int fileCount, long totalBytes, String status, int revision,
-                   UUID currentSubmission) {}
+                   UUID currentSubmission, Integer intakeNumber) {}
     record Item(UUID itemId, int position, String name, int size, String sha256, UUID team, String state, String reason,
                 List<UUID> excluded, List<UUID> candidates) {
         boolean holds(UUID owner) {
@@ -32,7 +32,7 @@ class IntakeStore {
 
     private static final String SUMMARY = """
             SELECT b.id, b.event_id, e.name AS event_name, b.target_team_id, t.name AS team_name,
-                   t.representative, b.created_at, b.assignment_revision, totals.file_count, totals.total_bytes,
+                   t.representative, t.intake_number, b.created_at, b.assignment_revision, totals.file_count, totals.total_bytes,
                    CASE WHEN p.state IN ('conflict','conflict_reviewed') THEN p.state ELSE 'received' END AS status,
                    c.submission_id AS current_submission
             FROM intake_batch b JOIN award_event e ON e.id = b.event_id
@@ -53,7 +53,7 @@ class IntakeStore {
     }
 
     @Transactional
-    Receipt receive(String login, String key, UUID event, UUID target, IntakeUpload upload, UUID base, List<UUID> replaced) {
+    Receipt receive(String login, String key, UUID event, UUID target, IntakeUpload upload, UUID base, List<UUID> replaced, boolean bundle) {
         catalog.requireEvent(login, event);
         if (db.queryForObject("SELECT EXISTS(SELECT FROM withdrawn_intake_request WHERE event_id=? AND request_key=?)",
                 Boolean.class, event, key)) {
@@ -79,6 +79,15 @@ class IntakeStore {
                        AND NOT EXISTS(SELECT FROM intake_file_state WHERE batch_id=? AND state='unassigned')
                     """, Boolean.class, previous.id(),previous.id(),previous.id(),previous.id());
             return done ? new Receipt(previous.id(),"done",receipt(previous.id()).statusUrl()) : receipt(previous.id());
+        }
+        if (bundle) {
+            int number = db.queryForObject("""
+                    UPDATE award_event SET last_intake_number=last_intake_number+1 WHERE id=? RETURNING last_intake_number
+                    """, Integer.class, event);
+            target = UUID.randomUUID();
+            db.update("INSERT INTO award_team(id,event_id,name,intake_number) VALUES (?,?,?,?)",
+                    target,event,"접수 " + number + "팀",number);
+            db.update("UPDATE intake_batch SET target_team_id=? WHERE id=?",target,id);
         }
         if (base != null) {
             if (target == null || db.queryForList("""
@@ -109,6 +118,15 @@ class IntakeStore {
             } catch (IOException ex) {
                 throw new UncheckedIOException(ex);
             }
+        }
+        if (target != null) {
+            int assigned = db.update("""
+                    INSERT INTO intake_file_assignment(file_id,revision,after_team_id,actor,reason,state)
+                    SELECT f.id,f.position,t.id,?,'담당자가 한 팀의 서류로 묶어 접수했습니다.','assigned'
+                    FROM intake_file f JOIN award_team t ON t.id=? AND t.intake_number IS NOT NULL
+                    WHERE f.batch_id=?
+                    """,login,target,id);
+            if (assigned > 0) db.update("UPDATE intake_batch SET assignment_revision=? WHERE id=?",assigned,id);
         }
         db.update("INSERT INTO intake_preparation(batch_id) VALUES (?)",id);
         return receipt(id);
@@ -152,7 +170,7 @@ class IntakeStore {
                 rs.getString("event_name"), rs.getObject("target_team_id", UUID.class), rs.getString("team_name"),
                 rs.getString("representative"), rs.getObject("created_at", OffsetDateTime.class),
                 rs.getInt("file_count"), rs.getLong("total_bytes"), rs.getString("status"), rs.getInt("assignment_revision"),
-                rs.getObject("current_submission",UUID.class));
+                rs.getObject("current_submission",UUID.class),rs.getObject("intake_number",Integer.class));
     }
 
     private static Receipt receipt(UUID id) {

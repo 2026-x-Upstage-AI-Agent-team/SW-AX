@@ -2,13 +2,14 @@
 import { ApiError, STAFF_HEADER, errorText, postJson } from './client';
 
 export type AwardEvent = { id: string; name: string };
-export type AwardTeam = { id: string; name: string; rep: string };
+export type AwardTeam = { id: string; name: string; rep: string; intake_number?: number | null };
 
 export type BatchSummary = {
   batch_id: string;
   status: string;
   created_at: string;
   team_name: string | null;
+  intake_number?: number | null;
   team_rep: string | null;
   file_count: number;
 };
@@ -34,8 +35,10 @@ export type BatchDetails = {
     status: string;
     current_submission?: string | null;
     event_id: string;
+    target_team_id: string | null;
     created_at: string;
     team_name: string | null;
+    intake_number?: number | null;
     team_rep: string | null;
     total_bytes: number;
   };
@@ -58,7 +61,8 @@ export function receiptName(name: string, number?: number | null) {
   return number && name !== provisional ? `${provisional} · ${name}` : name;
 }
 
-export const teamLabel = (team: { name: string; rep?: string | null }) => team.name + (team.rep ? ' · ' + team.rep : '');
+export const teamLabel = (team: { name: string; rep?: string | null; intake_number?: number | null }) =>
+  receiptName(team.name, team.intake_number) + (team.rep ? ' · ' + team.rep : '');
 
 export const createEvent = (name: string) => postJson<AwardEvent>(paths.events, { name });
 

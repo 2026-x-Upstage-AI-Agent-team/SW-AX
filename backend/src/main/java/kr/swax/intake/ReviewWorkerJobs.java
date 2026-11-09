@@ -104,6 +104,12 @@ class ReviewWorkerJobs {
 
     @Transactional
     void finish(UUID id, UUID token, Result request) {
+        // Confirmation and completion must agree on which version may name this receipt.
+        db.queryForList("""
+                SELECT t.id FROM review_job j JOIN team_submission s ON s.id=j.submission_id
+                JOIN award_team t ON t.id=s.team_id WHERE j.id=? AND j.claim_token=?
+                AND t.intake_number IS NOT NULL FOR NO KEY UPDATE OF t
+                """, UUID.class,id,token);
         Owned claim = owned(id, token);
         String studioId = claim.studioId(request.studioJobId());
         boolean done = "done".equals(request.state());
@@ -120,10 +126,32 @@ class ReviewWorkerJobs {
             throw ApiErrors.error(409, "이미 다른 결과가 등록됐습니다.");
         }
         claim.requireLive();
+        if (done && request.output() != null) applyApplicationName(claim.submission(),request.output());
         db.update("""
                 UPDATE review_job SET work_state = ?, studio_job_id = ?, result = ?::jsonb,
                     finished_at = clock_timestamp(), lease_until = NULL WHERE id = ?
                 """, request.state(), studioId, result, id);
+    }
+
+    private void applyApplicationName(UUID submission, ObjectNode output) {
+        var applications = output.path("documents").path("01");
+        if (!applications.isArray() || applications.size() != 1) return;
+        var name = applicationText(output,"team_name",160);
+        if (name.isEmpty()) return;
+        var rep = applicationText(output,"rep",80);
+        db.update("""
+                UPDATE award_team t SET name=?,representative=coalesce(nullif(?,''),t.representative)
+                FROM team_submission s JOIN team_submission_file sf ON sf.submission_id=s.id
+                WHERE s.id=? AND sf.file_id::text=? AND t.id=s.team_id AND t.intake_number IS NOT NULL
+                """,name,rep,submission,applications.get(0).path("id").asString(""));
+    }
+
+    private static String applicationText(ObjectNode output, String field, int limit) {
+        var value = output.path(field);
+        String text = value.isString() ? value.asString().strip() : "";
+        return text.length() <= limit && text.chars().noneMatch(Character::isISOControl)
+                && !java.util.Set.of("-", "미확인", "미기재", "없음", "확인 불가", "n/a", "null", "unknown")
+                        .contains(text.toLowerCase(java.util.Locale.ROOT)) ? text : "";
     }
 
     private Owned owned(UUID id, UUID token) {

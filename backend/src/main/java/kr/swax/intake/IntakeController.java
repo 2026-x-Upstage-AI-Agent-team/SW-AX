@@ -31,6 +31,7 @@ class IntakeController {
             Principal staff,
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
             @RequestParam UUID event, @RequestParam(required = false) UUID target, @RequestParam String manifest,
+            @RequestParam(defaultValue = "existing") String mode,
             @RequestParam(required = false) UUID base, @RequestParam(defaultValue = "[]") String removed,
             @RequestParam(required = false) List<MultipartFile> files) throws IOException {
         List<UUID> replaced;
@@ -39,8 +40,12 @@ class IntakeController {
         if (replaced.size() > 100 || Set.copyOf(replaced).size() != replaced.size() || (base == null && !replaced.isEmpty())) {
             throw ApiErrors.error(422, "이전 제출본에서 교체할 원본을 한 번씩 지정하세요.");
         }
-        IntakeUpload upload = IntakeUpload.read(event, target, key, manifest, files, mapper, base, replaced);
-        IntakeStore.Receipt receipt = store.receive(staff.getName(), key, event, target, upload, base, replaced);
+        boolean bundle = mode.equals("bundle");
+        if ((!bundle && !mode.equals("existing")) || (bundle && (target != null || base != null))) {
+            throw ApiErrors.error(422, "새 팀 묶음은 팀 지정이나 보완본 접수와 함께 사용할 수 없습니다.");
+        }
+        IntakeUpload upload = IntakeUpload.read(event, target, key, manifest, files, mapper, base, replaced, bundle);
+        IntakeStore.Receipt receipt = store.receive(staff.getName(), key, event, target, upload, base, replaced, bundle);
         return ResponseEntity.status(receipt.status().equals("done") ? 200 : 202).location(URI.create(receipt.statusUrl())).body(receipt);
     }
 

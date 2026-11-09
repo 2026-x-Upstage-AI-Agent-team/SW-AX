@@ -26,6 +26,7 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
         lead={
           baseId
             ? '팀장이 보완해 보낸 서류를 같은 팀의 새 제출 버전으로 접수합니다. 교체할 이전 원본을 고르고 새 파일을 올리면 다시 판정합니다.'
+            : backend === 'intake' ? '한 팀에서 받은 신청서(01), 동의서(02), 대표 증빙(03)을 한 묶음으로 올리세요. 다음 팀 서류는 새로 접수하세요.'
             : '여러 팀의 신청서(01), 동의서(02), 대표 증빙(03)을 한 번에 접수할 수 있습니다.'
         }
       />
@@ -119,7 +120,7 @@ function History({ eventId }: { eventId: string }) {
                     </Link>
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">{formatDate(batch.created_at)}</td>
-                  <td className="whitespace-nowrap px-2 py-3">{batch.team_name ? teamLabel({ name: batch.team_name, rep: batch.team_rep }) : '미지정'}</td>
+                  <td className="whitespace-nowrap px-2 py-3">{batch.team_name ? teamLabel({ name: batch.team_name, rep: batch.team_rep, intake_number: batch.intake_number }) : '미지정'}</td>
                   <td className="whitespace-nowrap px-2 py-3">{batch.file_count}개</td>
                   <td className="whitespace-nowrap px-2 py-3">
                     <StateBadge state={batch.status ?? 'received'} />
@@ -154,6 +155,7 @@ function Detail({ eventId }: { eventId: string }) {
   usePolling(Boolean(detail?.batch.event_id === eventId && !conflicted && !result.error && pending), result.reload, 3000);
   if (result.error || !detail) return <Notice error={result.error} onRetry={result.reload} />;
   const { batch, files } = detail;
+  const targetName = batch.team_name && teamLabel({ name: batch.team_name, rep: batch.team_rep, intake_number: batch.intake_number });
   if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 접수번호가 아닙니다." />;
   return (
     <div className="flex flex-col gap-4">
@@ -169,7 +171,7 @@ function Detail({ eventId }: { eventId: string }) {
           <dt className="text-muted">접수 일시</dt>
           <dd>{formatDate(batch.created_at)}</dd>
           <dt className="text-muted">지정 팀</dt>
-          <dd>{batch.team_name ? teamLabel({ name: batch.team_name, rep: batch.team_rep }) : '미지정 · 혼합 접수'}</dd>
+          <dd>{targetName || '미지정 · 혼합 접수'}</dd>
         </dl>
       </section>
       {batch.status === 'conflict' && <CorrectionNotice id={batch.batch_id} current={batch.current_submission} onSaved={result.reload} />}
@@ -193,7 +195,7 @@ function Detail({ eventId }: { eventId: string }) {
               return (
                 <li key={id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                   <div className="min-w-0">
-                    <p className="break-all font-semibold">{team ? teamLabel(team) : id}</p>
+                    <p className="break-all font-semibold">{id === batch.target_team_id && targetName ? targetName : team ? teamLabel(team) : id}</p>
                     {link?.submission_id ? <Link to={`/teams/${link.submission_id}`} className={buttonStyles.text}>{submission} · 검토 열기</Link>
                       : <p className="mt-1 text-xs text-muted">{submission}</p>}
                   </div>
@@ -236,7 +238,8 @@ function Detail({ eventId }: { eventId: string }) {
           ))}
         </ol>
       </section>
-      <div>
+      <div className="flex flex-wrap gap-3">
+        {batch.intake_number != null && <Link to="/intake" className={buttonStyles.primary}>다음 팀 서류 접수</Link>}
         <Link to="/intake/batches" className={buttonStyles.secondary}>
           접수 목록으로
         </Link>

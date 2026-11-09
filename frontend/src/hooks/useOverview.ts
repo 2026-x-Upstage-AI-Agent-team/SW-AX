@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getSubmission, isLeaderMail, type DashTeam, type MailRow, type SubmissionDetail } from '../api/service';
 import { useEvent } from '../context/EventContext';
+import { receiptName } from '../api/intake';
 import { reviewEvidence } from '../api/reviewEvidence';
 
 export type TeamRow = DashTeam & {
@@ -39,6 +40,7 @@ export function useOverview() {
     const detail = t.current ? details[t.current] : undefined;
     return {
       ...t,
+      name: receiptName(t.name, t.intake_number),
       detail,
       reviewSummary: t.submission?.state === 'done' ? reviewEvidence(detail?.result, t.submission.verdict).summary : undefined,
       leaderMail: dashboard.mail.find((m) => m.submission === t.current && isLeaderMail(m)),

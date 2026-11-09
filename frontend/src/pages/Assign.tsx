@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { isDemoBackend } from '../api/backend';
 import { useAsync } from '../api/client';
-import { paths } from '../api/intake';
+import { paths, receiptName } from '../api/intake';
 import { docLabels, when } from '../api/labels';
 import { assignFile, filePreviewUrl, getBatch, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
 import { Page } from '../components/Layout';
@@ -55,7 +55,10 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
   const picked = items.find((i) => i.file.id === selected);
   const current = selected ? picked : pending[0];
   const pickedId = picked?.file.id ?? null;
-  const teamName = (id?: string | null) => dashboard.teams.find((t) => t.id === id)?.name ?? (id ? '알 수 없는 팀' : '');
+  const teamName = (id?: string | null) => {
+    const team = dashboard.teams.find((t) => t.id === id);
+    return team ? receiptName(team.name, team.intake_number) : id ? '알 수 없는 팀' : '';
+  };
   const preparing = dashboard.batches.some((b) => b.state === 'preparing');
 
   function openFile(id: string) {
@@ -292,7 +295,7 @@ function Detail({ item, teamName, onBack, onSaved }: { item: Item; teamName: (id
                     <option value="">팀 선택</option>
                     {teams.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name}
+                        {teamName(t.id)}
                         {t.rep ? ` · ${t.rep}` : ''}
                         {file.candidates.includes(t.id) ? ' (후보)' : ''}
                       </option>
@@ -313,7 +316,7 @@ function Detail({ item, teamName, onBack, onSaved }: { item: Item; teamName: (id
                           onChange={(e) => setExclude((list) => (e.target.checked ? [...list, t.id] : list.filter((x) => x !== t.id)))}
                           className="size-4 accent-brand"
                         />
-                        {t.name}
+                        {teamName(t.id)}
                       </label>
                     ))}
                   </div>

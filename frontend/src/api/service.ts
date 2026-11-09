@@ -29,6 +29,7 @@ export type SubInfo = {
 export type DashTeam = {
   id: string;
   name: string;
+  intake_number?: number | null;
   rep: string;
   email: string;
   current: string | null;
@@ -114,6 +115,7 @@ export type Fields = { members: Member[]; recipient: Recipient; award_type: stri
 
 export type SubmissionDetail = SubInfo & {
   team_name: string;
+  intake_number?: number | null;
   rep: string;
   email: string;
   last_polled_at?: number | null;

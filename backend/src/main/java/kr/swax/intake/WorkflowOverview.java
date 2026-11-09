@@ -39,10 +39,10 @@ class WorkflowOverview {
         result.put("overview",data.one("SELECT jsonb_build_object('date',event_date,'place',place) FROM award_event WHERE id=?",event));
         result.put("events",data.catalog.events(login));
         result.put("teams",data.list("""
-            SELECT jsonb_build_object('id',t.id,'name',t.name,'rep',t.representative,'email',t.email,
+            SELECT jsonb_build_object('id',t.id,'name',t.name,'intake_number',t.intake_number,'rep',t.representative,'email',t.email,
                 'current',c.submission_id,'held',ops_team_held(t.id),'submission',s.info)
             FROM award_team t LEFT JOIN intake_team_confirmation c ON c.team_id=t.id AND c.state<>'superseded'
-            LEFT JOIN ops_summary s ON s.id=c.submission_id WHERE t.event_id=? ORDER BY t.name,t.representative,t.id
+            LEFT JOIN ops_summary s ON s.id=c.submission_id WHERE t.event_id=? ORDER BY t.intake_number,t.name,t.representative,t.id
             """,event));
         result.put("batches",data.list("""
             SELECT jsonb_build_object('id',b.id,'created',extract(epoch FROM b.created_at),'count',count(*),
@@ -111,7 +111,7 @@ class WorkflowOverview {
     Object submission(Principal staff,@PathVariable UUID id) {
         data.scope(staff.getName(),SUBMISSION,id);
         var node=data.one("""
-            SELECT s.info||jsonb_build_object('team_name',t.name,'rep',t.representative,'email',t.email,'held',ops_team_held(t.id),
+            SELECT s.info||jsonb_build_object('team_name',t.name,'intake_number',t.intake_number,'rep',t.representative,'email',t.email,'held',ops_team_held(t.id),
                 'application_emails',r.emails,'email_needs_confirmation',r.needs_confirmation,
                 'last_polled_at',extract(epoch FROM e.last_polled_at),
                 'polling_delayed',coalesce(e.phase IN ('polling','paused','access') AND coalesce(e.remote_id,s.studio_job_id) IS NOT NULL
