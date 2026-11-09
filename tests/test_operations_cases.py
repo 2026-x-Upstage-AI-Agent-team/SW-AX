@@ -19,6 +19,17 @@ from tests.test_intake_postgres import login
 
 
 class ReviewEvidence(unittest.TestCase):
+    def test_repeated_student_id_preserves_the_agent_verdict_and_reason(self):
+        application = {"representative_name":"대표", "representative_student_id":"1001",
+                       "members":[{"name":"팀원", "student_id":"1001"}]}
+        for verdict, reason in (("성공","증빙 확인 완료"), ("담당자확인","학번 중복 확인 필요")):
+            with self.subTest(verdict=verdict):
+                job = {"output":[{"model":"Information Extract - 지급확인서","content":[{"text":application}]},
+                                 {"model":"Instruct - 최종판정","content":[{"text":{"enum":verdict,"reason":reason}}]}]}
+                result = parse_result(job, [{"id":"form","kind":"01","signals":"{}"}])
+                self.assertEqual((result["verdict"], result["reason"]), (verdict, reason))
+                self.assertEqual([m["student_id"] for m in result["members"]], ["1001","1001"])
+
     def test_only_representative_addresses_from_submitted_applications_are_candidates(self):
         app = {"representative_email":" studio@award.test ","members":[{"name":"팀원","email":"member@award.test"}]}
         job = {"output":[{"model":"Information Extract - 지급확인서","content":[{"text":app}]},
