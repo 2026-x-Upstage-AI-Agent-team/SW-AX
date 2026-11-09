@@ -3,7 +3,7 @@ import re
 import shutil
 import subprocess
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -133,6 +133,13 @@ def match_file(f, sig, teams, target):
         people = sig["consent"]
         names = Counter(p["name"] for p in people)
         counts = Counter(m["name"] for t in teams for m in t["roster"])
+        pair_owners = defaultdict(set)
+        for team in teams:
+            for member in team["roster"]:
+                major = compact(member["major"])
+                if major:
+                    pair_owners[member["name"], major].add(team["id"])
+        authors = [pair_owners[p["name"], compact(p["major"])] for p in people]
         exclusive = set()
         for team in teams:
             roster = team["roster"]
@@ -142,27 +149,34 @@ def match_file(f, sig, teams, target):
                 if any(counts[n] == 1 for n in names.keys() & in_team):
                     exclusive.add(team["id"])
             complete = len(names) >= 2 and names == Counter(m["name"] for m in roster) and all(counts[n] == 1 for n in names)
-            pairs = {(m["name"], compact(m["major"])) for m in roster}
-            partial = len(names) >= 2 and all((m["name"], compact(m["major"])) in pairs for m in people)
-            single = len(people) == 1 and names.keys() <= in_team and team["id"] in named
+            partial = len(names) >= 2 and all(owners == {team["id"]} for owners in authors)
+            single = len(people) == 1 and team["id"] in named and team["id"] in authors[0]
             if complete or partial or single:
                 matched.add(team["id"])
         if len(exclusive) > 1:
             sig["mixed"] = True
             return None, possible, "서로 다른 팀의 고유 작성자가 한 동의서에 있습니다. 팀별 원본으로 나눠 주세요."
+        if not matched and len(names) >= 2 and any(len(owners) > 1 for owners in authors):
+            if target:
+                possible.add(target)
+            return None, possible, "동의서 작성자의 성명·학과가 여러 팀 명단에 겹칩니다. 원접수를 대조하세요."
         reason = f"동의서 {sig['page']}쪽 작성자 {sum(names.values())}명의 성명·명단을 대조했습니다."
     elif f["kind"] == "03":
         # Look before bank evidence so that the account holder alone cannot identify the ID holder.
         id_region = re.split(r"계\s*좌\s*번\s*호|예\s*금\s*주|통\s*장\s*사\s*본", sig["identity"])[0]
         identified = {t["id"] for t in teams if word(id_region, t["rep"])}
         possible |= identified
+        if len({t["rep"] for t in teams if t["id"] in identified}) > 1:
+            if target:
+                possible.add(target)
+            return None, possible, "신분증에서 서로 다른 대표 성명이 확인됩니다. 원접수를 대조하세요."
         matched = identified & named
         reason = "팀명과 신분증의 대표 성명을 대조했습니다."
     possible |= matched
+    if len(matched) == 1 and not (named - matched) and (not target or target in matched):
+        return next(iter(matched)), matched, reason
     if target:
         if (possible - {target}) or (f["kind"] == "01" and not matched):
-            return None, possible | {target}, "지정한 팀과 서류의 소속 근거를 함께 확인하세요."
+            return None, possible | {target}, "지정한 팀을 서류의 소속 근거로 확인할 수 없습니다. 원접수를 대조하세요."
         return target, {target}, "담당자가 원접수에서 제출 팀을 지정했습니다."
-    if len(matched) == 1 and not (named - matched):
-        return next(iter(matched)), matched, reason
     return None, possible or ids, "팀 표기와 명단을 함께 확인하세요." if len(possible) > 1 else "소속 근거가 부족합니다. 원접수와 대조하세요."

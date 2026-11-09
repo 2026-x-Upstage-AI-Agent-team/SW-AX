@@ -47,8 +47,12 @@ def prepare(db, api):
     with db.transaction():
         db.execute("SELECT id FROM intake_batch WHERE id=%s FOR UPDATE", (bid,))
         db.execute("SELECT id FROM award_event WHERE id=%s FOR NO KEY UPDATE", (batch["event_id"],))
-        files = db.execute("""SELECT f.id,f.name,a.kind,a.signals,a.failed FROM intake_file f JOIN original_analysis a ON a.file_id=f.id
-                           WHERE f.batch_id=%s ORDER BY f.position""", (bid,)).fetchall()
+        files = db.execute("""SELECT f.id,f.name,a.kind,a.signals,a.failed,a.candidates,a.reason,
+                d.state,d.after_team_id AS team,d.evidence_reviewed
+            FROM intake_file f JOIN original_analysis a ON a.file_id=f.id
+            LEFT JOIN LATERAL (SELECT state,after_team_id,evidence_reviewed FROM intake_file_assignment
+                WHERE file_id=f.id ORDER BY revision DESC LIMIT 1) d ON true
+            WHERE f.batch_id=%s ORDER BY f.position""", (bid,)).fetchall()
         for file in files:
             sig = file["signals"]
             if sig.get("mixed") or file["failed"]:
@@ -66,28 +70,32 @@ def prepare(db, api):
                     ON CONFLICT(event_id,name,representative) DO UPDATE SET roster=EXCLUDED.roster""",
                            (batch["event_id"],app["name"],app["rep"],Jsonb(app["roster"])))
         teams = db.execute("SELECT id,name,representative AS rep,roster FROM award_team WHERE event_id=%s", (batch["event_id"],)).fetchall()
+        evidence_changed = False
         for file in files:
             signals = file["signals"]
-            if not file["failed"]:
-                chosen, candidates, reason = match_file(file, signals, teams, batch["target_team_id"])
-            if file["failed"] or signals.get("mixed"):
-                old = db.execute("SELECT team_id FROM intake_file_state WHERE id=%s", (file["id"],)).fetchone()
-                if old["team_id"]:
-                    rev = db.execute("UPDATE intake_batch SET assignment_revision=assignment_revision+1 WHERE id=%s RETURNING assignment_revision",
-                                     (bid,)).fetchone()["assignment_revision"]
-                    db.execute("""INSERT INTO intake_file_assignment(file_id,revision,before_team_id,actor,reason,state)
-                        VALUES(%s,%s,%s,'@workflow','혼합 또는 열 수 없는 원본을 분리·교체하세요.','unassigned')""",
-                               (file["id"],rev,old["team_id"]))
-                if file["failed"]:
-                    continue
-            db.execute("UPDATE original_analysis SET candidates=%s,reason=%s,signals=%s WHERE file_id=%s",
-                       (list(candidates),reason,Jsonb(signals),file["id"]))
-            if not chosen or db.execute("SELECT 1 FROM intake_file_assignment WHERE file_id=%s LIMIT 1",(file["id"],)).fetchone():
+            prior = file["team"]
+            if file["failed"]:
+                chosen, reason = None, "열 수 없는 원본을 교체하세요."
+            else:
+                chosen, candidates, reason = match_file(file, signals, teams, prior or batch["target_team_id"])
+                if prior and chosen is None:
+                    candidates.add(prior)
+                if file["state"] in (None,"unassigned") and chosen is None:
+                    evidence_changed |= (set(file["candidates"]) != candidates or file["reason"] != reason)
+                db.execute("UPDATE original_analysis SET candidates=%s,reason=%s,signals=%s WHERE file_id=%s",
+                           (list(candidates),reason,Jsonb(signals),file["id"]))
+            if prior and (file["failed"] or signals.get("mixed") or (not file["evidence_reviewed"] and prior != chosen)):
+                state, after = "unassigned", None
+            elif file["state"] is None and chosen:
+                state, after = ("outside", None) if chosen == "outside" else ("assigned", chosen)
+            else:
                 continue
             rev = db.execute("UPDATE intake_batch SET assignment_revision=assignment_revision+1 WHERE id=%s RETURNING assignment_revision",
                              (bid,)).fetchone()["assignment_revision"]
-            db.execute("""INSERT INTO intake_file_assignment(file_id,revision,after_team_id,actor,reason,state)
-                VALUES(%s,%s,%s,'@workflow',%s,%s)""", (file["id"],rev,None if chosen=="outside" else chosen,reason,
-                                                      "outside" if chosen=="outside" else "assigned"))
+            db.execute("""INSERT INTO intake_file_assignment(file_id,revision,before_team_id,after_team_id,actor,reason,state)
+                VALUES(%s,%s,%s,%s,'@workflow',%s,%s)""", (file["id"],rev,prior,after,reason,state))
+        if evidence_changed:
+            # A decision from a screen opened before these candidates were published needs a fresh revision.
+            db.execute("UPDATE intake_batch SET assignment_revision=assignment_revision+1 WHERE id=%s", (bid,))
         db.execute("UPDATE intake_preparation SET state='ready' WHERE batch_id=%s", (bid,))
     return True

@@ -2,6 +2,7 @@ ALTER TABLE award_event ADD COLUMN IF NOT EXISTS event_date text NOT NULL DEFAUL
     ADD COLUMN IF NOT EXISTS place text NOT NULL DEFAULT '';
 ALTER TABLE award_team ADD COLUMN IF NOT EXISTS roster jsonb NOT NULL DEFAULT '[]',
     ADD COLUMN IF NOT EXISTS email varchar(254) NOT NULL DEFAULT '';
+ALTER TABLE intake_file_assignment ADD COLUMN IF NOT EXISTS evidence_reviewed boolean NOT NULL DEFAULT false;
 ALTER TABLE intake_batch ADD COLUMN IF NOT EXISTS uploaded_by varchar(64) REFERENCES staff_account,
     ADD COLUMN IF NOT EXISTS base_submission uuid REFERENCES team_submission,
     ADD COLUMN IF NOT EXISTS replaced uuid[] NOT NULL DEFAULT '{}';

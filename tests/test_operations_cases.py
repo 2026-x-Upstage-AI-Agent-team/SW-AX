@@ -51,10 +51,25 @@ class AssignmentEvidence(unittest.TestCase):
         self.assertEqual(classify("01","Beta.hwp",apps=[{"name":"Alpha","rep":"가나다"}]),(None,{"a","b"},False))
         self.assertEqual(classify("03","사본.hwpx",identity="가나다"),(None,{"a"},False))
         self.assertEqual(classify("03","Alpha대회.hwpx"),(None,{"a"},False))
+        self.assertEqual(classify("03","Alpha.hwpx",identity="가나다\n라마바"),(None,{"a","b"},False))
         people=[{"name":"가나다","major":"전산"},{"name":"라마바","major":"정보"}]
         self.assertEqual(classify("02","합본.hwp",consent=people),(None,{"a","b"},True))
         teams[1]["name"]="Alpha"
         self.assertEqual(classify("02","Alpha.hwp",consent=[{"name":"한가람","major":"정보"}]),(None,{"a","b"},False))
+
+    def test_each_partial_consent_row_must_identify_one_team(self):
+        one = {"name":"김하나","major":"전산"}
+        shared = {"name":"이두리","major":"수학"}
+        three = {"name":"박세진","major":"국문"}
+        teams = [{"id":"a","name":"Alpha","rep":one["name"],"roster":[one,shared,three]},
+                 {"id":"b","name":"Beta","rep":shared["name"],"roster":[shared]}]
+        sig = dict(body="",consent=[one,shared],page=1)
+        file = {"name":"동의서.hwp","kind":"02"}
+        for target in (None,"a"):
+            self.assertEqual(match_file(file,sig,teams,target)[:2],(None,{"a","b"}))
+        teams[1]["roster"] = [dict(shared,major="물리")]
+        for target in (None,"a"):
+            self.assertEqual(match_file(file,sig,teams,target)[:2],("a",{"a"}))
 
 
 @unittest.skipUnless(os.getenv("AWARDS_OFFLINE_CASES")=="1","Requires an isolated DB, Hancom and the official ZIP.")
@@ -94,8 +109,8 @@ class OfficialCases(unittest.TestCase):
                             staff.put(f"{receipt}/files/{item['item_id']}/assignment", json={
                                 "team": team, "action": "assign", "revision": revision, "reason": "공식 자료 판독 전 수동 배정 시험"
                             }).raise_for_status()
-                        def confirm():
-                            return staff.put(f"{receipt}/teams/{team}/submission", json={"revision": count})
+                        def confirm(revision=count):
+                            return staff.put(f"{receipt}/teams/{team}/submission", json={"revision": revision})
                         for read in range(count + 1):
                             self.assertEqual(db.execute("""SELECT count(*) AS n FROM original_analysis a JOIN intake_file f
                                 ON a.file_id=f.id WHERE f.batch_id=%s AND a.pdf IS NOT NULL""", (bid,)).fetchone()["n"], read)
@@ -106,8 +121,17 @@ class OfficialCases(unittest.TestCase):
                             self.assertFalse(db.execute("SELECT 1 FROM review_job_status WHERE team_id=%s", (team,)).fetchone())
                             self.assertEqual(api.post("review-jobs/claim", json={"event_id":event,"worker_id":"early"}).status_code, 204)
                             self.assertTrue(prepare(db, api))
-                        link = confirm().raise_for_status().json()
-                        self.assertEqual(link, confirm().raise_for_status().json())
+                        # set03 and set04 both call themselves '3팀', with different representatives.
+                        ready = staff.get(receipt).raise_for_status().json()
+                        self.assertEqual(confirm(ready["revision"]).status_code,409)
+                        pending = [f for f in ready["files"] if f["state"]=="unassigned"]
+                        self.assertTrue(any(team in f["candidates"] and len(f["candidates"])>1 for f in pending))
+                        for item in pending:
+                            staff.put(f"{receipt}/files/{item['item_id']}/assignment",json={"team":team,"action":"assign",
+                                "revision":ready["revision"],"reason":"동명 팀의 대표와 원접수 대조"}).raise_for_status()
+                            ready=staff.get(receipt).raise_for_status().json()
+                        link = confirm(ready["revision"]).raise_for_status().json()
+                        self.assertEqual(link, confirm(ready["revision"]).raise_for_status().json())
                         self.assertEqual(db.execute("SELECT count(*) AS n FROM review_job_status WHERE team_id=%s", (team,)).fetchone()["n"], 1)
                     while prepare(db,api):
                         pass
@@ -122,7 +146,7 @@ class OfficialCases(unittest.TestCase):
                             if case=="set10" and f["kind"]=="02":
                                 self.assertIn(team,f["candidates"])
                             else:
-                                self.assertEqual(f["kind"],"03","전체 명단이 맞는 02는 자동 배정합니다.")
+                                self.assertEqual(f["kind"],"03",f"{case} 원본 {f['state']} · {f['reason']}")
                             staff.put(f"/api/intake-batches/{bid}/files/{f['id']}/assignment",
                                       json={"action":"assign","team":team,"revision":detail()["revision"],
                                             "reason":"시험 접수 목록과 대표 원본 대조"}).raise_for_status()
@@ -165,3 +189,39 @@ class OfficialCases(unittest.TestCase):
                     self.assertEqual({m["kind"]:m["state"] for m in notices},{"담당자 알림":"local","보완 요청":"local"})
                     self.assertEqual(len(notices),2)
                     self.assertTrue(all((DATA/"operations/mail"/(str(m["id"])+".eml")).is_file() for m in notices))
+
+    def test_preassigned_application_conflicts_with_its_file_name(self):
+        cfg = configuration()
+        url = os.environ["INTAKE_TEST_URL"]
+        self.assertEqual((httpx.URL(url).host,cfg["MAIL_MODE"]),("127.0.0.1","local"))
+        self.assertEqual(httpx.URL(cfg["AWARDS_DB_URL"].removeprefix("jdbc:")).host,"127.0.0.1")
+        with connect(cfg) as db, httpx.Client(base_url=url,trust_env=False) as staff, httpx.Client(
+                base_url=url+"/api/worker/",headers={"Authorization":"Bearer "+cfg["AWARDS_REVIEW_WORKER_TOKEN"]}) as api:
+            login(staff,os.environ["INTAKE_TEST_LOGIN_A"],os.environ["INTAKE_TEST_PASSWORD_A"])
+            event=staff.post("/api/events",json={"name":"배정 충돌 "+uuid4().hex[:8]}).raise_for_status().json()["id"]
+            prior=staff.post(f"/api/events/{event}/teams",json={"name":"Alpha","rep":""}).raise_for_status().json()["id"]
+            with ZipFile(ROOT/"test case"/"유잇_미션2_테스트set.zip") as archive:
+                name=next(n for n in archive.namelist() if Path(n).parent.name=="set01" and Path(n).name.startswith("01"))
+                original=archive.read(name)
+            filename="Alpha_신청서"+Path(name).suffix
+            receipt=staff.post("/api/intake-batches",headers={"Idempotency-Key":str(uuid4())},
+                data={"event":event,"manifest":json.dumps([{"name":filename,"size":len(original)}])},
+                files=[("files",(filename,original))]).raise_for_status().json()["status_url"]
+            fid=staff.get(receipt).json()["files"][0]["item_id"]
+            assignment=f"{receipt}/files/{fid}/assignment"
+            staff.put(assignment,json={"action":"assign","team":prior,"reason":"판독 전 원접수 기준","revision":0}).raise_for_status()
+            while prepare(db,api):
+                pass
+            batch=staff.get(receipt).raise_for_status().json()
+            item=batch["files"][0]
+            self.assertEqual((item["state"],item["team"],len(item["candidates"])),("unassigned",None,2))
+            other, = set(item["candidates"])-{prior}
+            for team in (prior,other):
+                self.assertEqual(staff.put(f"{receipt}/teams/{team}/submission",json={"revision":batch["revision"]}).status_code,409)
+            self.assertEqual(batch["teams"],[])
+            self.assertEqual(api.post("review-jobs/claim",json={"worker_id":"before-review","event_id":event}).status_code,204)
+            history=staff.get(assignment+"/history").raise_for_status().json()
+            self.assertEqual((history[-1]["before_team_id"],history[-1]["after_team_id"],history[-1]["actor"]),(prior,None,"@workflow"))
+            staff.put(assignment,json={"action":"assign","team":other,"reason":"신청서 원문과 접수 경로 재대조","revision":batch["revision"]}).raise_for_status()
+            job=api.post("review-jobs/claim",json={"worker_id":"after-review","event_id":event}).raise_for_status().json()
+            self.assertEqual((job["team"],job["files"][0]["item_id"]),(other,fid))

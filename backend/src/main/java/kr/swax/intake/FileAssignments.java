@@ -78,9 +78,9 @@ class FileAssignments {
         int next = current.revision() + 1;
         UUID before = previous == null ? null : previous.afterTeamId();
         db.update("""
-                INSERT INTO intake_file_assignment(file_id, revision, before_team_id, after_team_id, actor, reason, state)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, file, next, before, command.team(), login, reason, state);
+                INSERT INTO intake_file_assignment(file_id, revision, before_team_id, after_team_id, actor, reason, state, evidence_reviewed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, EXISTS(SELECT FROM intake_preparation WHERE batch_id=? AND state IN ('ready','prepared')))
+                """, file, next, before, command.team(), login, reason, state,batch);
         db.batchUpdate("INSERT INTO intake_assignment_exclusion(file_id, revision, team_id) VALUES (?, ?, ?)",
                 excluded.stream().map(team -> new Object[] {file, next, team}).toList());
         db.update("UPDATE intake_batch SET assignment_revision = ? WHERE id = ?", next, batch);
