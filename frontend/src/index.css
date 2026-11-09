@@ -220,17 +220,18 @@
   .workspace :is(textarea, select, input:not([type="checkbox"], [type="radio"], [type="file"])) { font-size: max(1rem, 16px); }
 }
 
-@container team-list (max-width: 47rem) {
+@container team-list (max-width: 55rem) {
   .team-table-scroll table, .team-table-scroll tbody { display: block; width: 100%; min-width: 0; }
   .team-table-scroll thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .team-table-scroll tr:has(.team-identity) {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;
-    grid-template-areas: "team verdict" "reason reason" "docs docs" "decision mail";
+    grid-template-areas: "team review" "verdict review" "reason reason" "docs docs" "decision mail";
     gap: .55rem .75rem; padding: 1rem; border-top: 1px solid var(--color-line-soft); border-bottom: 0;
   }
   .team-table-scroll tr:has(.team-identity) td { min-width: 0; max-width: none; padding: 0; }
   .team-identity { grid-area: team; }
-  .team-verdict { grid-area: verdict; justify-self: end; }
+  .team-verdict { grid-area: verdict; }
+  .team-review-action { grid-area: review; justify-self: end; }
   .team-reason { grid-area: reason; }
   .team-reason:empty { display: none; }
   .team-docs { grid-area: docs; }

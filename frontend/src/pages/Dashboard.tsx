@@ -200,7 +200,7 @@ function TeamTable({
         </p>
       ) : (
         <div className="team-table-scroll" role="region" aria-label="팀별 판정 표" tabIndex={0}>
-          <table className="w-full min-w-[49rem] border-collapse text-sm">
+          <table className="w-full min-w-[55rem] border-collapse text-sm">
             <thead>
               <tr className="bg-canvas text-left text-xs text-muted">
                 <th scope="col" className="border-b border-line px-5 py-3.5 font-medium">팀</th>
@@ -209,17 +209,19 @@ function TeamTable({
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">근거</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">담당자 결정</th>
                 <th scope="col" className="border-b border-line px-5 py-3.5 font-medium">팀장 안내</th>
+                <th scope="col" className="border-b border-line px-5 py-3.5 text-right font-medium">검토</th>
               </tr>
             </thead>
             <tbody>
-              {list.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-muted">이 필터에 해당하는 팀이 없습니다.</td></tr>}
+              {list.length === 0 && <tr><td colSpan={7} className="px-5 py-8 text-center text-muted">이 필터에 해당하는 팀이 없습니다.</td></tr>}
               {list.map((r) => {
                 const s = r.submission;
+                const reviewPath = s && `/teams/${s.id}`;
                 return (
                   <tr key={r.id} className="border-b border-line-soft last:border-b-0 hover:bg-[#fafbfb]">
                     <td className="team-identity px-5 py-4 align-top">
-                      {s ? (
-                        <Link to={`/teams/${s.id}`} className="font-bold text-ink hover:text-brand-strong">
+                      {reviewPath ? (
+                        <Link to={reviewPath} className="font-bold text-ink hover:text-brand-strong">
                           {r.name}
                         </Link>
                       ) : (
@@ -251,6 +253,14 @@ function TeamTable({
                       {s?.decision ? <span className={cx('text-xs font-bold', s.decision === '승인' ? 'text-brand-strong' : 'text-alert-strong')}>{s.decision}</span> : <span className="text-xs text-subtle">미기록</span>}
                     </td>
                     <td data-label="팀장 안내" className="team-mail px-5 py-4 align-top">{r.leaderMail ? <StateBadge state={r.leaderMail.state} /> : <span className="text-xs text-subtle">없음</span>}</td>
+                    <td className="team-review-action whitespace-nowrap px-5 py-4 text-right align-top">
+                      {reviewPath ? (
+                        <Link to={reviewPath} className={buttonStyles.outline}
+                          aria-label={`${r.name}${r.rep ? ` (${r.rep})` : ''} 검토 열기`}>
+                          검토 열기 <ArrowRight size={16} aria-hidden="true" />
+                        </Link>
+                      ) : <span className="text-xs text-muted">제출본 없음</span>}
+                    </td>
                   </tr>
                 );
               })}

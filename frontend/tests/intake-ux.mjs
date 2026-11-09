@@ -71,6 +71,44 @@ test('좁은 화면에서 파일을 열고 목록으로 돌아오면 키보드 �
   assert.equal(await page.locator('#detail-h').count(), 0);
 });
 
+test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본 없는 팀에는 링크를 표시하지 않는다', async t => {
+  const page = await newPage(t);
+  const submission = { id: 'submission-v2', version: 2, state: 'done', verdict: '재제출요청', decision: null, count: 1 };
+  const teams = [
+    { id: 'first-team', name: '3팀', rep: '첫 대표', current: submission.id, submission },
+    { id: 'second-team', name: '3팀', rep: '다른 대표', current: null, submission: null, held: true },
+  ];
+  const detail = { ...submission, team: teams[0].id, team_name: teams[0].name, rep: teams[0].rep, current: submission.id,
+    email: '', note: '', result: null, files: [file], history: [], mail: [], audit: [], fields: { members: [], recipient: {} } };
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
+  await page.route('**/api/operations/submissions/' + submission.id, route => route.fulfill({ json: detail }));
+  await page.goto('/#/');
+  const table = page.getByRole('region', { name: '팀별 판정 표' });
+  const row = table.getByRole('row').filter({ hasText: '첫 대표' });
+  const open = row.getByRole('link', { name: '3팀 (첫 대표) 검토 열기', exact: true });
+  const missing = table.getByRole('row').filter({ hasText: '다른 대표' });
+  for (const width of [1440, 320]) {
+    await page.setViewportSize({ width, height: 850 });
+    await open.waitFor();
+    const href = await open.getAttribute('href');
+    assert.equal(href, '#/teams/submission-v2');
+    assert.equal(await row.getByRole('link', { name: '3팀', exact: true }).getAttribute('href'), href);
+    assert.equal(await missing.getByRole('link').count(), 0);
+    assert.equal(await missing.getByRole('cell').last().innerText(), '제출본 없음');
+    const bounds = await table.boundingBox(), link = await open.boundingBox();
+    assert.ok(link.x >= bounds.x && link.x + link.width <= bounds.x + bounds.width + 1);
+    if (width === 1440) { await open.focus(); await open.press('Enter'); }
+    else await open.click();
+    await page.waitForURL('**/#/teams/submission-v2');
+    await page.getByRole('heading', { name: '3팀', exact: true }).waitFor();
+    await page.getByRole('region', { name: '원문 미리보기' }).waitFor();
+    await page.goBack();
+  }
+  await page.getByRole('button', { name: '정리됨 0' }).click();
+  const empty = table.getByRole('cell', { name: '이 필터에 해당하는 팀이 없습니다.' });
+  assert.equal(await empty.getAttribute('colspan'), '7');
+});
+
 test('작업 공간 너비에 맞춰 배정 목록과 원본을 배치하고 확대해도 가로로 넘치지 않는다', async t => {
   const page = await newPage(t);
   await page.goto('/#/assign');
