@@ -6,6 +6,11 @@ type Kind = (typeof kinds)[number];
 
 // Only display labels from the form. Studio's observations can contain the actual account or ID.
 const reportFields: Record<string, [Kind, string]> = {
+  program_name: ['01', '프로그램명'], team_name: ['01', '팀명'], written_date: ['01', '작성일'],
+  representative_birth_date: ['01', '대표 생년월일'], representative_bank_name: ['01', '신청서 은행명'],
+  'members.name': ['01', '팀원 성명'], 'members.student_id': ['01', '팀원 학번'],
+  'members.department': ['01', '팀원 학부·학과'], 'members.school': ['01', '팀원 소속'],
+  'beneficiaries.name': ['02', '동의서 작성자 성명'], 'beneficiaries.signed': ['02', '개인별 동의서 서명'],
   issued_date: ['03', '신분증 발급일'], identity_name: ['03', '신분증 성명'],
   identity_birth_date: ['03', '신분증 생년월일'], identity_type: ['03', '신분증 종류'],
   bank_name: ['03', '통장 은행명'], account_holder: ['03', '통장 예금주'], account_number: ['03', '통장 계좌번호'],
@@ -19,25 +24,42 @@ const reportFields: Record<string, [Kind, string]> = {
 };
 
 function reportedFields(report: StudioResult['staff_report']) {
-  const findings: Array<{ kind: Kind; label: string }> = [];
+  const findings: Array<{ kind: Kind; label: string; field: string; empty: boolean }> = [];
   if (typeof report !== 'string') return findings;
   let field = -1, result = -1, observation = -1;
   for (const line of report.split(/\r?\n/)) {
     if (!line.trimStart().startsWith('|')) { field = -1; continue; }
-    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.replace(/[`*]/g, '').trim());
-    const verdict = cells.findIndex(c => /^(결과|판정)$/.test(c));
+    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.replace(/【[^】]*】|[`*]/g, '').trim());
+    const verdict = cells.findIndex(c => /^(결과|판정|상태)$/.test(c));
     if (verdict >= 0) {
       result = verdict;
       field = cells.findIndex(c => /^(항목|필드|필드명|검사 필드|검사 항목|필수 항목)$/.test(c));
-      observation = cells.findIndex(c => /^(관측 상태|추출값|실제값)$/.test(c));
+      observation = cells.findIndex(c => /^(관측 상태|추출값|실제값|관측값)$/.test(c));
       continue;
     }
     const item = field >= 0 && Object.hasOwn(reportFields, cells[field]) ? reportFields[cells[field]] : undefined;
-    if (!item || !/^(실패|누락|미통과|불일치)$/.test(cells[result])) continue;
-    const empty = /빈\s*(값|문자열)|미기재|^없음|^""/.test(cells[observation] ?? '');
-    findings.push({ kind: item[0], label: item[1] + (empty ? ' 미기재' : ' 확인') });
+    if (!item || !/^(실패|누락|미통과|불일치|확정오류|검사불가|확인필요)$/.test(cells[result])) continue;
+    const empty = /빈\s*(값|문자열)|미기재|실제\s*공란|^공란$|^없음|^""|^null$/i.test(cells[observation] ?? '');
+    findings.push({ kind: item[0], label: item[1] + (empty ? ' 미기재' : ' 확인'), field: item[1], empty });
   }
   return findings;
+}
+
+/** Use the saved Studio reason and report. Editable fields and receipt counts are not evidence here. */
+export function studioExplanation(result: StudioResult) {
+  const reason = result.reason
+    .replace(/【[^】]*】/g, '')
+    .replace(/\bSub-doc\s+(\d+)\b/gi, '추출 문서 $1')
+    .replace(/[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*/g, key => Object.hasOwn(reportFields, key) ? reportFields[key][1] : key)
+    .replace(/\d[\d\s-]*\d/g, value => value.replace(/\D/g, '').length >= 8 ? '[추출 숫자값]' : value)
+    .trim();
+  const fields = [...new Set(reportedFields(result.staff_report).map(item =>
+    docLabels[item.kind] + ' · ' + item.field + (item.empty ? ' — API 추출값 없음' : ' — API 검토에서 확인 필요'),
+  ))];
+  return {
+    reason: reason || (fields.length ? 'Upstage 검토 보고서에 다음 항목의 확인이 필요하다고 기록되어 있습니다.' : '이 제출본의 Upstage 응답에 상세 판정 설명이 없습니다.'),
+    fields,
+  };
 }
 
 const checksByLabel: Record<string, [string, Kind[]]> = {

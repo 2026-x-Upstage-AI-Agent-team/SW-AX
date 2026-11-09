@@ -195,6 +195,10 @@ test('판정 사유는 문제만 요약하고 검토 상세에서 원본 근거�
   await table.getByRole('link', { name: '중복팀 검토 열기', exact: true }).click();
   const checks = page.getByRole('complementary', { name: '검토 체크리스트' });
   await checks.getByText('신분증 발급일 미기재', { exact: true }).waitFor();
+  const explanation = page.getByRole('region', { name: 'Upstage 검토 설명' });
+  await explanation.getByText(/신분증 발급일 누락/).waitFor();
+  assert.match(await explanation.innerText(), /API 추출값 없음/);
+  assert.doesNotMatch(await explanation.innerText(), privateText);
   assert.doesNotMatch(await checks.textContent(), privateText);
   assert.equal(await checks.getByText('대표 서명', { exact: true }).isVisible(), false);
   await checks.getByText('통과한 항목 3개', { exact: true }).click();
@@ -205,6 +209,52 @@ test('판정 사유는 문제만 요약하고 검토 상세에서 원본 근거�
   assert.equal(await payout.getByText('은행·계좌', { exact: true }).isVisible(), false);
   await payout.locator('summary').first().click();
   assert.equal(await payout.getByText('은행·계좌', { exact: true }).isVisible(), true);
+});
+
+test('미리보기 설명은 Upstage 응답만 사용하고 근거 없는 누락을 만들지 않는다', async t => {
+  const page = await newPage(t);
+  const reason = '개인정보동의서가 현재 입력에서 확인되지 않아 동의 표시와 서명을 확인할 수 없습니다.【†1】';
+  const documents = { '01': [{ id: 'original', page: 1 }], '02': [], '03': [], '?': [] };
+  const result = { verdict: '재제출요청', reason, staff_report: '', documents, checks: [], issues: [], members: [], recipient: {},
+    extracted: { 'Information Extract - 지급확인서': [{ representative_student_id: '', representative_signed: false, members: [] }] } };
+  const base = { version: 3, state: 'done', team: 'team', team_name: 'API 근거팀', count: 1, files: [{ ...file, state: 'assigned' }],
+    email: '', note: '', revision: 0, history: [], audit: [], mail: [], fields: { members: [], recipient: { account_number: '' } },
+    verdict: '재제출요청', result };
+  const report = '| 문서·대상자 또는 행 | 항목 | 관측값 | 상태 |\n|---|---|---|---|\n'
+    + '| 신분증 | issued_date | ""【†2】 | 확정오류【†3】 |\n'
+    + '| 신청서 팀원 | members.student_id | 실제공란 | 확정오류 |\n'
+    + '| 신청서 | representative_student_id | "" | 통과 |';
+  const cases = {
+    source: base,
+    report: { ...base, result: { ...result, staff_report: report } },
+    legacy: { ...base, result: { ...result, reason: '', staff_report: '' } },
+    success: { ...base, verdict: '성공', result: { ...result, verdict: '성공' } },
+  };
+  for (const [id, detail] of Object.entries(cases)) {
+    await page.route('**/api/operations/submissions/' + id, route => route.fulfill({ json: { ...detail, id, current: id } }));
+  }
+  const explanation = page.getByRole('region', { name: 'Upstage 검토 설명' });
+  await page.goto('/#/teams/source');
+  await explanation.getByText(reason.replace('【†1】', ''), { exact: true }).waitFor();
+  await explanation.getByText('Upstage 판정 근거 · 제출 v3', { exact: true }).waitFor();
+  assert.doesNotMatch(await explanation.innerText(), /학번|계좌|미기재|API 추출값 없음/);
+  const preview = page.getByRole('region', { name: '원문 미리보기' });
+  assert.equal(await preview.getByRole('region', { name: 'Upstage 검토 설명' }).count(), 1);
+  await page.getByRole('tab', { name: '확정 파일 목록', exact: true }).click();
+  assert.equal(await explanation.count(), 1);
+  await page.goto('/#/teams/report');
+  await explanation.getByText('신분증·통장 사본 · 신분증 발급일 — API 추출값 없음', { exact: true }).waitFor();
+  await explanation.getByText('지급확인서 · 팀원 학번 — API 추출값 없음', { exact: true }).waitFor();
+  assert.equal(await explanation.getByText(/대표 학번/).count(), 0);
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  if (process.env.INTAKE_EXPLANATION_SCREENSHOT) await page.screenshot({ path: process.env.INTAKE_EXPLANATION_SCREENSHOT, fullPage: true });
+  await page.goto('/#/teams/legacy');
+  await explanation.getByText('이 제출본의 Upstage 응답에 상세 판정 설명이 없습니다.', { exact: true }).waitFor();
+  assert.doesNotMatch(await explanation.innerText(), /미제출|미기재|추출값 없음/);
+  await page.goto('/#/teams/success');
+  await page.getByRole('heading', { name: 'API 근거팀', exact: true }).waitFor();
+  assert.equal(await explanation.count(), 0);
 });
 
 test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본 없는 팀에는 링크를 표시하지 않는다', async t => {

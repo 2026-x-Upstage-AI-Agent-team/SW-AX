@@ -4,7 +4,7 @@ import { useAsync, usePolling } from '../api/client';
 import { receiptName } from '../api/intake';
 import { isDemoBackend } from '../api/backend';
 import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
-import { reviewEvidence } from '../api/reviewEvidence';
+import { reviewEvidence, studioExplanation } from '../api/reviewEvidence';
 import {
   getSubmission,
   retrySubmission,
@@ -188,9 +188,11 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                 </span>
                 <Link to={'/files/' + file.id + '/edit?review=' + encodeURIComponent(s.id)} target="_blank" rel="noreferrer" className={buttonStyles.outline}>한글 문서 편집</Link>
               </div>
-              <DocumentPreview key={`${file.id}-${view.evidence ?? 'latest'}`} file={file} page={view.page} original={!!view.evidence} openLink />
+              <DocumentPreview key={`${file.id}-${view.evidence ?? 'latest'}`} file={file} page={view.page} original={!!view.evidence} openLink
+                beforePreview={<StudioExplanation s={s} />} />
             </>) : (
               <section aria-label="확정 파일 목록" className="rounded-xl bg-white p-4">
+                <StudioExplanation s={s} />
                 <h2 className="font-bold">제출 v{s.version} 확정 파일 목록 · {s.files.length}개</h2>
                 <ol className="mt-2 list-decimal space-y-1 pl-6">
                   {s.files.map((f) => (
@@ -230,6 +232,25 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
         <HistoryCard s={s} />
       </div>
     </>
+  );
+}
+
+function StudioExplanation({ s }: { s: SubmissionDetail }) {
+  if (!s.result || !s.verdict || s.verdict === '성공') return null;
+  const explanation = studioExplanation(s.result);
+  return (
+    <section aria-label="Upstage 검토 설명" className="rounded-xl border border-caution-line bg-caution-bg px-4 py-3 text-ink-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-1">
+        <h2 className="text-[15px] font-bold text-ink">확인이 필요한 내용</h2>
+        <span className="text-xs text-muted">Upstage 판정 근거 · 제출 v{s.version}</span>
+      </div>
+      <p className="whitespace-pre-line break-words text-[15px] leading-relaxed">{explanation.reason}</p>
+      {explanation.fields.length > 0 && (
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-relaxed">
+          {explanation.fields.map(field => <li key={field}>{field}</li>)}
+        </ul>
+      )}
+    </section>
   );
 }
 

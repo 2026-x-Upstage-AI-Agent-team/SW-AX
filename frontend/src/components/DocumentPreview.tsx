@@ -7,10 +7,10 @@ import { buttonStyles, PdfFrame } from './ui';
 
 type Props = {
   file: Pick<FileInfo, 'id' | 'name' | 'url'>; page?: number; original?: boolean;
-  height?: number | string; emptyMessage?: string; children?: ReactNode; openLink?: boolean;
+  height?: number | string; emptyMessage?: string; children?: ReactNode; openLink?: boolean; beforePreview?: ReactNode;
 };
 
-export default function DocumentPreview({ file, page, original = false, height, emptyMessage, children, openLink }: Props) {
+export default function DocumentPreview({ file, page, original = false, height, emptyMessage, children, openLink, beforePreview }: Props) {
   const [refresh, setRefresh] = useState(0);
   const [choice, setChoice] = useState<number | 'latest'>(original ? 0 : 'latest');
   const { data, error } = useAsync(() => getEditHistory(file.id), [file.id, refresh]);
@@ -50,6 +50,7 @@ export default function DocumentPreview({ file, page, original = false, height, 
       </div>
       {error && <p className="text-sm text-alert-strong" role="alert">수정본 목록을 확인하지 못했습니다. <button type="button" className="underline" onClick={() => setRefresh(n => n + 1)}>다시 조회</button></p>}
       {version > 0 && <p className="text-sm text-muted">이 수정본을 보완본으로 접수하면 새 제출 버전으로 판정합니다.</p>}
+      {beforePreview}
       <PdfFrame url={url} title={title} height={height} emptyMessage={emptyMessage}>{children}</PdfFrame>
     </div>
   );

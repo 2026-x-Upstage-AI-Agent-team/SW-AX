@@ -47,7 +47,7 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 | 경로 | 화면 | 검토 서비스 API |
 |---|---|---|
 | `/` | 업무 현황 (판정 요약, 확인할 일, 팀별 판정 표) | `GET /api/dashboard`, `GET /api/submissions/{id}` |
-| `/teams/:id` | 팀별 서류 검토 (원본 PDF, 검토 항목, 담당자 결론, 팀장 안내, 명단, 버전 기록) | `GET·PUT /api/submissions/{id}[/review]`, `POST .../retry`, `PUT /api/teams/{id}/email`, `GET /api/files/{id}/preview` |
+| `/teams/:id` | 팀별 서류 검토 (원본 PDF, Upstage 판정·필드 설명, 검토 항목, 담당자 결론, 팀장 안내, 명단, 버전 기록) | `GET·PUT /api/submissions/{id}[/review]`, `POST .../retry`, `PUT /api/teams/{id}/email`, `GET /api/files/{id}/preview` |
 | `/intake` · `/intake?base=:id` | 원본 접수 · 보완본 접수 | `POST /api/intake-batches` (`base`, `removed`) |
 | `/intake/batches[/:id]` | 접수 내역 · 접수 상세 | `GET /api/intake-batches/{id}` |
 | `/assign` | 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
