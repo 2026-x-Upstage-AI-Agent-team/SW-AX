@@ -55,6 +55,8 @@ export const issueLabels: Record<string, string> = {
   signature: '동의·서명',
   affiliation: '소속 표기',
   duplicate: '중복 제출',
+  student_id: '학번 기재란',
+  representative: '대표 성명 대조',
   other: '기타 원본 확인',
 };
 

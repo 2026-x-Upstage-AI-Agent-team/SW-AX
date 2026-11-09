@@ -25,7 +25,7 @@ def configuration():
 
 def cached_file(db, fid):
     row = db.execute("""SELECT f.id,f.batch_id AS batch,f.name,f.sha256,coalesce(a.kind,'?') AS kind,
-        coalesce(a.signals,'{}')::text AS signals FROM intake_file f LEFT JOIN original_analysis a ON a.file_id=f.id
+        coalesce(a.signals,'{}')::text AS signals,coalesce(a.pages,0) AS pages FROM intake_file f LEFT JOIN original_analysis a ON a.file_id=f.id
         WHERE f.id=%s""", (fid,)).fetchone()
     path = DATA / "operations" / "originals" / str(row["batch"]) / (str(fid) + Path(row["name"]).suffix.lower())
     if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != row["sha256"]:

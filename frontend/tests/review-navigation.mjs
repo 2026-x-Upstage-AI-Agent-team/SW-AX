@@ -37,6 +37,9 @@ if (conflictId) {
     await page.goBack();
     await page.getByRole('button', { name: '이 접수의 대조 완료' }).click();
     await page.getByText('보완본 확인 완료', { exact: true }).waitFor();
+    await page.goto('/#/teams/' + process.env.INTAKE_TEST_REASON_SUBMISSION);
+    const row = page.getByRole('listitem').filter({ hasText: '01 지급확인서 1쪽 첫째 행에 학번이 없습니다.' }).first();
+    await row.getByRole('button', { name: '01 지급확인서 · 1쪽 · 1행' }).click();
   });
 } else if (delayedId) {
   test('지연된 판정의 마지막 조회 시각과 총 시도 횟수를 확인하고 처리를 재개한다', async () => {

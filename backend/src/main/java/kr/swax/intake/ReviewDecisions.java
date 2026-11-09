@@ -19,7 +19,7 @@ class ReviewDecisions {
     record Address(String email,UUID submission) {}
     record Recovery(String job,Boolean confirmedAbsent) {}
     private final WorkflowData data;
-    private static final Set<String> ISSUES=Set.of("application","consent","identity","account","signature","affiliation","duplicate","other");
+    private static final Set<String> ISSUES=Set.of("application","consent","identity","account","signature","affiliation","duplicate","student_id","representative","other");
     ReviewDecisions(WorkflowData data) {this.data=data;}
 
     @PutMapping("/api/teams/{id}/email")

@@ -150,7 +150,9 @@ class ReceiptConflicts(unittest.TestCase):
         self.assertEqual({m["kind"] for m in notices},{"보완 요청","담당자 알림"})
         self.assertEqual(len(notices),2)
         self.assertTrue(all(m["state"]=="local" for m in notices))
-        self.browser(INTAKE_TEST_CONFLICT_BATCH=second["batch"]["batch_id"])
+        leader, = [m for m in notices if m["kind"]=="보완 요청"]
+        self.assertIn("[01 1쪽 1행]", self.detail("/api/mail/"+leader["id"])["body"])
+        self.browser(INTAKE_TEST_CONFLICT_BATCH=second["batch"]["batch_id"],INTAKE_TEST_REASON_SUBMISSION=sid)
         for _ in range(2):
             self.staff.put(two+"/conflict-review",json={}).raise_for_status()
         checked = self.detail("/api/operations/batches/"+second["batch"]["batch_id"])

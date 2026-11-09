@@ -10,16 +10,31 @@ from service.db import DATA, smtp_enabled
 from service.mailing import ADMIN_NOTICE, discard_revoked_oauth, mail_settings, smtp_connection
 
 
-def issue_location(issue, documents):
+def issue_location(issue, documents, checks=()):
     kinds = {"application":("01",),"consent":("02",),"identity":("03",),"account":("01","03"),
-             "signature":("01","02"),"affiliation":("01","02")}.get(issue, ())
+             "signature":("01","02"),"affiliation":("01","02"),"student_id":("01",),
+             "representative":("01","03")}.get(issue, ())
     if issue == "duplicate":
         kinds = [kind for kind in ("01","02","03") if len(documents.get(kind,[])) > 1]
     locations = []
+    evidence = [ref for check in checks if check.get("issue")==issue and check.get("passed") is False for ref in check.get("refs",())]
+    by_id = {ref["id"]:kind for kind,refs in documents.items() for ref in refs if ref.get("id")}
+    for ref in evidence:
+        kind = by_id.get(ref.get("id"))
+        page,row = ref.get("page"),ref.get("row")
+        if kind in ("01","02","03") and type(page) is int and 0 < page <= 999:
+            location = f"{kind} {page}쪽"
+            if type(row) is int and 0 < row <= 999:
+                location += f" {row}행"
+            if location not in locations:
+                locations.append(location)
+    has_locations = bool(locations)
     for kind in kinds:
         if kind not in documents:
             continue
         refs = documents[kind]
+        if has_locations and refs:
+            continue
         pages = sorted({ref["page"] for ref in refs if type(ref.get("page")) is int and ref["page"] > 0})
         if not refs:
             locations.append(f"접수 목록 {kind} 미제출")
@@ -42,11 +57,17 @@ def message_for(m, cfg):
     else:
         lines = [f"{name} 팀장님, 제출 {m['version']}차 서류의 검토 결과입니다.", ""]
         if m["kind"] == "보완 요청":
-            issues = m["issues"] if m["decision"] == "보완 필요" else (m["output"] or {}).get("issues", [])
+            output = m["output"] or {}
+            issues = m["issues"] if m["decision"] == "보완 필요" else output.get("issues", [])
             for key in dict.fromkeys(issues or ["other"]):
                 if key in studio.ISSUES:
-                    location = issue_location(key,(m["output"] or {}).get("documents",{}))
-                    lines.append((f"[{location}] " if location else "")+studio.ISSUES[key])
+                    checks = output.get("checks",[])
+                    location = issue_location(key,output.get("documents",{}),checks)
+                    fields = dict.fromkeys(studio.FIELD_LABELS[field] for check in checks
+                                           if check.get("issue")==key and check.get("passed") is False
+                                           for field in check.get("fields",()) if field in studio.FIELD_LABELS)
+                    hint = " · ".join(filter(None,(location,", ".join(fields))))
+                    lines.append((f"[{hint}] " if hint else "")+studio.ISSUES[key])
             lines.append("보완한 서류는 기존 제출 경로로 담당자에게 보내 주세요.")
         else:
             lines.append("제출한 서류의 검토를 완료했습니다.")

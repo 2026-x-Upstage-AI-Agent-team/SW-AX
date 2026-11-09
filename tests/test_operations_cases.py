@@ -9,7 +9,7 @@ from zipfile import ZipFile
 
 import httpx
 
-from operations.delivery import deliver
+from operations.delivery import deliver, message_for
 from operations.preparation import prepare
 from operations.store import cached_file, configuration, connect
 from service.db import DATA, ROOT
@@ -19,6 +19,32 @@ from tests.test_intake_postgres import login
 
 
 class ReviewEvidence(unittest.TestCase):
+    def test_agent_evidence_in_checks_and_safe_leader_mail(self):
+        validate = "01 대표 성명과 03 신분증 성명이 일치하는가"
+        reason = "01 지급확인서 2쪽 첫째 행에 학번이 없습니다. 원문 참조 123456-1234567."
+        job = {"output":[{"model":"Validate - 증빙검증","content":[{"additional_values":{"checks":[{"name":validate,"passed":False}]}}]},
+                         {"model":"Instruct - 최종판정","content":[{"text":{"enum":"재제출요청","reason":reason}}]}]}
+        files = [{"id":"doc"+k,"kind":k,"signals":"{}","pages":2} for k in ("01","02","03")]
+        result = parse_result(job,files)
+        self.assertEqual(result["reason"],reason)
+        checks = {c["label"]:c for c in result["checks"]}
+        self.assertEqual(checks[validate]["refs"],[{"id":"doc01","page":1},{"id":"doc03","page":1}])
+        self.assertEqual(checks[reason.split(". ")[0]+"."]["refs"],[{"id":"doc01","page":2,"row":1}])
+        mail = {"id":"test","name":"Alpha","kind":"보완 요청","address":"leader@award.test",
+                "version":1,"output":result,"decision":None}
+        body = message_for(mail,{}).get_content()
+        self.assertIn("[01 2쪽 1행] 지급확인서의 해당 학번",body)
+        self.assertIn("[01 1쪽, 03 1쪽] 지급확인서의 대표 성명",body)
+        self.assertNotIn("123456",body)
+        mail.update(decision="보완 필요",issues=["representative"])
+        self.assertNotIn("학번",message_for(mail,{}).get_content())
+
+        final = {"enum":"재제출요청","reason":"01 학번은 누락 없이 기재됐습니다. 03 신분증이 없습니다."}
+        result = parse_result({"output":[{"model":"Instruct - 최종판정","content":[{"text":final}]}]}, files[:2])
+        self.assertEqual(result["verdict"],"재제출요청")
+        self.assertNotIn("student_id",result["issues"])
+        self.assertIn("identity",result["issues"])
+
     def test_repeated_student_id_preserves_the_agent_verdict_and_reason(self):
         application = {"representative_name":"대표", "representative_student_id":"1001",
                        "members":[{"name":"팀원", "student_id":"1001"}]}
@@ -56,6 +82,25 @@ class ReviewEvidence(unittest.TestCase):
         result = parse_result({"output":[{"model":name,"content":[{"text":value}]} for name,value in values.items()]}, files)
         row = next(c for c in result["checks"] if c["label"] == "김한별 · 동의 표시 또는 서명 확인")
         self.assertEqual(row["refs"], [{"id":"a","page":2,"row":2},{"id":"b","page":3,"row":1}])
+
+    def test_validate_uses_its_extract_nodes_and_only_names_the_field_in_mail(self):
+        def operand(node,field,value):
+            return {"nodeType":"extract","nodeName":node,"field":field,"value":value}
+        phone = operand("지급확인서","representative_phone","010-private")
+        consent = operand("개인정보동의","project_name","private program")
+        checks = [{"name":"전화 길이","passed":False,"conditions":{"kind":"condition","left":phone}},
+                  {"name":"코드 대조","passed":True,"conditions":{"conditions":[{"left":phone,"right":consent}]}}]
+        job = {"output":[{"model":"Validate - 증빙검증","content":[{"additional_values":{"checks":checks}}]},
+                         {"model":"Instruct - 최종판정","content":[{"text":{"enum":"재제출요청","reason":"전화 길이를 확인하세요."}}]}]}
+        files = [{"id":k,"kind":k,"signals":"{}"} for k in ("01","02","03")]
+        result = parse_result(job,files)
+        grouped = {c["label"]:c for c in result["checks"]}
+        self.assertEqual(grouped["전화 길이"]["refs"],[{"id":"01","page":1}])
+        self.assertEqual(grouped["코드 대조"]["refs"],[{"id":"01","page":1},{"id":"02","page":1}])
+        mail = {"id":"test","name":"Alpha","kind":"보완 요청","address":"team@award.test","version":1,"output":result,"decision":None}
+        body = message_for(mail,{}).get_content()
+        self.assertIn("[01 1쪽 · 대표 전화번호]",body)
+        self.assertNotIn("private",body)
 
 
 class AssignmentEvidence(unittest.TestCase):

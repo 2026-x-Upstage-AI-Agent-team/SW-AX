@@ -18,7 +18,84 @@ ISSUES = {"application": "팀의 지급확인서를 확인해 제출해 주세�
           "signature": "신청서와 동의서의 동의 표시와 서명을 확인해 주세요.",
           "affiliation": "신청서와 동의서의 소속 표기를 확인해 주세요.",
           "duplicate": "같은 종류로 중복 제출된 서류를 확인해 주세요.",
+          "student_id": "지급확인서의 해당 학번 기재란을 확인해 주세요.",
+          "representative": "지급확인서의 대표 성명과 신분증의 성명을 대조해 주세요.",
           "other": "제출한 증빙의 기재 내용과 판독 상태를 담당자와 확인해 주세요."}
+
+DOCUMENT_TERMS = re.compile(r"(?<![-A-Za-z0-9])(?P<code>0[123])(?![-A-Za-z0-9])|"
+                            r"(?P<app>지급\s*확인서|신청서)|(?P<consent>개인정보\s*동의|동의서)|"
+                            r"(?P<identity>신분증|통장)")
+EXTRACT_DOCUMENTS = {"지급확인서":"01","개인정보동의":"02","신분증정보":"03"}
+FIELD_LABELS = {"representative_name":"대표 성명","representative_student_id":"대표 학번",
+                "representative_phone":"대표 전화번호","representative_email":"대표 이메일",
+                "representative_signed":"대표 서명","applicant_signed":"신청인 서명","project_name":"과제명",
+                "representative_account":"대표 계좌 기재란","account_number":"통장 계좌 기재란","written_date":"작성일"}
+
+
+def validation_sources(condition):
+    if isinstance(condition,list):
+        for child in condition:
+            yield from validation_sources(child)
+    elif isinstance(condition,dict):
+        kind = EXTRACT_DOCUMENTS.get(str(condition.get("nodeName","")).removeprefix("Information Extract - "))
+        if kind and condition.get("nodeType") == "extract":
+            field = condition.get("field")
+            yield kind, field if isinstance(field,str) else ""
+        for key in ("left","right","conditions","children"):
+            if key in condition:
+                yield from validation_sources(condition[key])
+
+
+def agent_evidence(text, docs, page_counts, sources=()):
+    """Resolve explicit document and position references in one Studio statement."""
+    sections = []
+    for match in DOCUMENT_TERMS.finditer(text):
+        kind = match["code"] or {"app":"01","consent":"02","identity":"03"}[match.lastgroup]
+        if not sections or sections[-1][0] != kind:
+            sections.append((kind,match.start()))
+    if sources:
+        kinds = list(dict.fromkeys(kind for kind,_ in sources))
+        sections = [(kind,start) for kind,start in sections if kind in kinds]
+        referenced = {kind for kind,_ in sections}
+        sections.extend((kind,len(text) if referenced else 0) for kind in kinds if kind not in referenced)
+    if "학번" in text:
+        issue = "student_id"
+    elif "계좌" in text or "예금주" in text:
+        issue = "account"
+    elif "성명" in text and "대표" in text and "신분증" in text:
+        issue = "representative"
+    elif "서명" in text or "동의 표시" in text:
+        issue = "signature"
+    elif "동의서" in text or "작성자" in text:
+        issue = "consent"
+    elif len(sections) == 1:
+        issue = {"01":"application","02":"consent","03":"identity"}[sections[0][0]]
+    else:
+        issue = "other"
+    implicit = not sections
+    if not sections:
+        defaults = {"student_id":("01",),"account":("01","03"),"signature":("01","02"),"consent":("02",)}
+        sections = [(kind,0) for kind in defaults.get(issue,())]
+    refs = []
+    for i,(kind,start) in enumerate(sections):
+        part = "" if implicit and len(sections)>1 else text[start:sections[i+1][1] if i+1 < len(sections) else None]
+        pages = set(re.findall(r"(?<!\d)([1-9]\d{0,2})\s*(?:쪽|페이지)",part))
+        rows = set(re.findall(r"(?<!\d)([1-9]\d{0,2})\s*행",part))
+        for ordinal,number in (("첫",1),("둘",2),("셋",3),("넷",4)):
+            if re.search(ordinal+r"\s*(?:째|번째)?\s*행",part):
+                rows.add(str(number))
+        for ref in docs[kind]:
+            located = dict(ref)
+            if len(docs[kind]) == 1:
+                page = int(next(iter(pages))) if len(pages)==1 else ref["page"]
+                limit = page_counts.get(ref["id"])
+                if (not limit or page <= limit) and len(pages) <= 1:
+                    located["page"] = page
+                    if len(rows)==1:
+                        located["row"] = int(next(iter(rows)))
+            if located not in refs:
+                refs.append(located)
+    return issue, refs
 
 
 def client(cfg):
@@ -85,12 +162,15 @@ def parse_result(job, files):
             for start, end in av.get("page_ranges", []):
                 id_pages.update(range(start, end + 1))
     docs = {k: [] for k in ("01", "02", "03", "?")}
+    page_counts = {}
     emails = set()
     member_locations = {"01": {}, "02": {}}
     for f in files:
         k = classes.get(f["id"], f["kind"])
         signals = json.loads(f["signals"])
         ref = {"id": f["id"], "page": signals.get("page", 1)}
+        if "pages" in f.keys():
+            page_counts[f["id"]] = f["pages"]
         docs[k if k in docs else "?"].append(ref)
         if k == "01":
             for form in signals.get("apps", []):
@@ -154,17 +234,34 @@ def parse_result(job, files):
                 if member["major"] != b.get("department"):
                     checks.append({"label":name+" · 소속 표기 대조","passed":False,"refs":located})
                 if any(b.get(k) is not True for k in ("collection_consent","identifier_consent","third_party_consent","signed")):
-                    checks.append({"label":name+" · 동의 표시 또는 서명 확인","passed":False,"refs":located})
+                    checks.append({"label":name+" · 동의 표시 또는 서명 확인","passed":False,"refs":located,"issue":"signature"})
                     if "signature" not in issues:
                         issues.append("signature")
     if app and identity:
         account = lambda value: re.sub(r"[^0-9]", "", str(value or ""))
         left, right = account(app.get("representative_account")), account(identity.get("account_number"))
         check("대표 계좌·예금주 일치", bool(left and left == right and app.get("representative_name") == identity.get("account_holder")), ["01","03"], "account")
+    def agent_check(label, passed, sources=()):
+        issue, refs = agent_evidence(label, docs, page_counts, sources)
+        entry = {"label":label, "passed":passed, "refs":refs}
+        if passed is False:
+            entry["issue"] = issue
+            entry["fields"] = list(dict.fromkeys(field for _,field in sources if field in FIELD_LABELS))
+        checks.append(entry)
+        if passed is False and issue not in issues:
+            issues.append(issue)
+
     for c in unpack(first("Validate - 증빙검증").get("additional_values", {})).get("checks", []):
-        label = str(c.get("name", "검사"))
-        k = "03" if "통장" in label else "02" if "과제" in label else "01"
-        check(label, c.get("passed"), [k], "signature" if "서명" in label else "other")
+        agent_check(str(c.get("name", "검사")), c.get("passed"), list(validation_sources(c.get("conditions"))))
+    if final["enum"] != "성공":
+        for statement in re.split(r"(?<!\d[.])(?<=[.!?])\s+|[\r\n]+",final["reason"].strip()):
+            if statement.strip():
+                # A reason can also describe a field that passed. Only explicit problems become student notices.
+                problem = re.sub(r"(?:이상|문제|누락|오류|불일치|중복)[이가은는]?\s*없[가-힣]*", "", statement)
+                failed = final["enum"]=="재제출요청" and re.search(
+                    r"누락|미제출|미기재|미작성|미서명|불일치|중복|없[습음어다]|빠[졌진져]|비어|다릅|다르|상이|되지 않",
+                    problem)
+                agent_check(statement.strip(), False if failed else None)
     return {"verdict": final["enum"], "reason": final["reason"], "program": app.get("program_name") or "",
             "representative_emails": sorted(emails - {""}),
             "team_name": app.get("team_name") or "", "rep": app.get("representative_name") or "",
