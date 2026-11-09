@@ -72,6 +72,73 @@ test('좁은 화면에서 파일을 열고 목록으로 돌아오면 키보드 �
   assert.equal(await page.locator('#detail-h').count(), 0);
 });
 
+test('판독 대기 원본은 확인할 파일에 있고 배정되면 처리된 목록으로 이동한다', async t => {
+  const page = await newPage(t);
+  await page.clock.install();
+  const states = ['waiting', 'read', 'unassigned', 'error', 'assigned', 'outside'];
+  const files = states.map(state => ({ ...file, id: state, name: state + '.hwpx', state }));
+  const preparing = { ...batch, state: 'preparing', count: files.length, pending: 4, files };
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, batches: [preparing] } }));
+  await page.route('**' + batchPath, route => route.fulfill({ json: preparing }));
+  await page.goto('/#/assign');
+  const queue = page.getByRole('region', { name: /^확인할 파일/ });
+  await queue.getByRole('heading', { name: '확인할 파일 4', exact: true }).waitFor();
+  const lists = queue.getByRole('list');
+  const rowIds = list => list.getByRole('button').evaluateAll(buttons => buttons.map(button => button.id));
+  assert.deepEqual(await rowIds(lists.first()), states.slice(0, 4).map(state => 'assignment-file-' + state));
+  assert.ok(await page.getByRole('radio', { name: '팀에 배정' }).isDisabled());
+  await queue.getByRole('button', { name: '배정·처리된 파일 2 보기' }).click();
+  assert.deepEqual(await rowIds(lists.nth(1)), ['assignment-file-assigned', 'assignment-file-outside']);
+  files[0].state = 'assigned';
+  preparing.pending--;
+  await page.clock.fastForward(3001);
+  await queue.getByRole('heading', { name: '확인할 파일 3', exact: true }).waitFor();
+  await queue.getByRole('button', { name: '배정·처리된 파일 3 접기' }).waitFor();
+  assert.deepEqual(await rowIds(lists.first()), states.slice(1, 4).map(state => 'assignment-file-' + state));
+  assert.deepEqual(await rowIds(lists.nth(1)), ['assignment-file-waiting', 'assignment-file-assigned', 'assignment-file-outside']);
+});
+
+test('팀별 판정 필터는 대기·조치 필요·성공을 구분하고 새 판정이 도착하면 개수를 갱신한다', async t => {
+  const page = await newPage(t, 375);
+  await page.clock.install();
+  function row(id, state, verdict = null, decision = null, held = false) {
+    return { id, name: id, current: state ? id : null, held, submission: state ? { id, state, verdict, decision, version: 1, created: 1 } : null };
+  }
+  const teams = [
+    row('접수팀', 'queued'), row('재판정팀', 'running', '성공'), row('요청팀', 'creating'), row('검토팀', 'polling'),
+    row('확인팀', 'done', '담당자확인', '승인'), row('재제출팀', 'done', '재제출요청'), row('오류팀', 'failed'),
+    row('배정확인팀', 'queued', null, null, true), row('미제출팀', null),
+    row('승인전팀', 'done', '성공'), row('승인팀', 'done', '성공', '승인'),
+  ];
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
+  await page.route('**/api/operations/submissions/*', route => route.fulfill({ json: { id: route.request().url().split('/').pop(), history: [] } }));
+  await page.goto('/#/');
+  const filters = page.getByRole('group', { name: '판정 필터' });
+  const table = page.getByRole('region', { name: '팀별 판정 표' });
+  const names = () => table.locator('tbody .team-identity').evaluateAll(cells => cells.map(cell => cell.firstElementChild.textContent));
+  async function select(label) {
+    const button = filters.getByRole('button', { name: label, exact: true });
+    await button.click();
+    assert.equal(await button.getAttribute('aria-pressed'), 'true');
+  }
+  await select('전체 11');
+  assert.equal((await names()).length, 11);
+  await select('처리 대기 4');
+  assert.deepEqual(await names(), ['접수팀', '재판정팀', '요청팀', '검토팀']);
+  await select('조치 필요 5');
+  assert.deepEqual(await names(), ['확인팀', '재제출팀', '오류팀', '배정확인팀', '미제출팀']);
+  await select('정리됨 2');
+  assert.deepEqual(await names(), ['승인전팀', '승인팀']);
+  teams[0] = row('접수팀', 'done', '성공');
+  await page.clock.fastForward(3001);
+  await filters.getByRole('button', { name: '정리됨 3', pressed: true }).waitFor();
+  assert.deepEqual(await names(), ['접수팀', '승인전팀', '승인팀']);
+  await select('처리 대기 3');
+  assert.deepEqual(await names(), ['재판정팀', '요청팀', '검토팀']);
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+});
+
 test('판정 사유는 문제만 요약하고 검토 상세에서 원본 근거로 이동한다', async t => {
   const page = await newPage(t);
   const ref = id => ({ id, page: 1 });

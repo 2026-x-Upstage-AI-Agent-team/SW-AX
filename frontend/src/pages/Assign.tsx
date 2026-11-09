@@ -5,15 +5,13 @@ import { isDemoBackend } from '../api/backend';
 import { useAsync } from '../api/client';
 import { paths, receiptName } from '../api/intake';
 import { docLabels, when } from '../api/labels';
-import { assignFile, filePreviewUrl, getBatch, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
+import { assignFile, filePreviewUrl, getBatch, isFileProcessed, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
 import { Page } from '../components/Layout';
 import { Feedback, Notice, PageHeader, PdfFrame, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
 type Item = { batch: BatchDetail; file: FileInfo };
 type Action = 'assign' | 'outside' | 'hold';
-
-const needs = (f: FileInfo) => f.state === 'unassigned' || f.state === 'error';
 
 export default function Assign() {
   const { dashboard, dashboardError, events, eventsError, refresh } = useEvent();
@@ -50,8 +48,8 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
   }, [dashboard.batches]);
 
   const items: Item[] = (batches ?? []).flatMap((batch) => batch.files.map((file) => ({ batch, file })));
-  const pending = items.filter((i) => needs(i.file));
-  const others = items.filter((i) => !needs(i.file));
+  const pending = items.filter(({ file }) => !isFileProcessed(file));
+  const processed = items.filter(({ file }) => isFileProcessed(file));
   const picked = items.find((i) => i.file.id === selected);
   const current = selected ? picked : pending[0];
   const pickedId = picked?.file.id ?? null;
@@ -68,7 +66,7 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
   }
 
   function backToQueue() {
-    if (picked && !needs(picked.file)) setShowDone(true);
+    if (picked && isFileProcessed(picked.file)) setShowDone(true);
     if (location.state?.fromQueue) navigate(-1);
     else {
       const next = new URLSearchParams(query);
@@ -101,7 +99,7 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
         <Stat label="최근 접수 파일" value={items.length} />
         <Stat label="접수 묶음" value={dashboard.batches.length} />
       </dl>
-      {preparing && <p className="text-sm text-muted">파일 판독 중인 접수가 있어 자동으로 새로고침합니다.</p>}
+      {preparing && <p className="text-sm text-muted">판독 결과가 도착하면 파일 목록을 자동으로 갱신합니다.</p>}
       <Feedback message={notice} />
       {selected && !picked && <Feedback error="선택한 파일이 현재 대회의 최근 접수 목록에 없습니다. 목록에서 파일을 다시 선택하세요." />}
 
@@ -124,14 +122,14 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
                 <FileRow key={i.file.id} item={i} active={current?.file.id === i.file.id} onClick={() => openFile(i.file.id)} teamName={teamName} />
               ))}
             </ul>
-            {others.length > 0 && (
+            {processed.length > 0 && (
               <>
                 <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone} className="w-full border-t border-line px-[22px] py-3 text-left text-sm font-bold text-ink-2">
-                  배정·처리된 파일 {others.length} {showDone ? '접기' : '보기'}
+                  배정·처리된 파일 {processed.length} {showDone ? '접기' : '보기'}
                 </button>
                 {showDone && (
                   <ul>
-                    {others.map((i) => (
+                    {processed.map((i) => (
                       <FileRow key={i.file.id} item={i} active={current?.file.id === i.file.id} onClick={() => openFile(i.file.id)} teamName={teamName} />
                     ))}
                   </ul>
@@ -164,7 +162,7 @@ function FileRow({ item, active, onClick, teamName }: { item: Item; active: bool
           <StateBadge state={f.state} />
           {f.kind !== '?' && <span>{docLabels[f.kind] ?? f.kind}</span>}
           {f.team && <span>· {teamName(f.team)}</span>}
-          {needs(f) && f.candidates.length > 0 && <span>· 후보 {f.candidates.map(teamName).join(', ')}</span>}
+          {!isFileProcessed(f) && f.candidates.length > 0 && <span>· 후보 {f.candidates.map(teamName).join(', ')}</span>}
         </span>
       </button>
     </li>

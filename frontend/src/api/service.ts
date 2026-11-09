@@ -82,6 +82,8 @@ export type FileInfo = {
   url: string;
 };
 
+export const isFileProcessed = (file: FileInfo) => file.state === 'assigned' || file.state === 'outside';
+
 export type Ref = { id: string; page: number; row?: number };
 export type Check = { label: string; passed: boolean | null; refs: Ref[]; issue?: string; fields?: string[] };
 

@@ -104,7 +104,7 @@ def dashboard(event: str = "wave"):
             t["held"] = held(db,t["id"])
             t["submission"] = sub_info(require(db,"submissions",t["current"])) if t["current"] else None
         batches = rows(db,"""SELECT b.id,b.state,b.created,count(f.id) AS count,
-             sum(CASE WHEN f.state IN ('unassigned','error') THEN 1 ELSE 0 END) AS pending
+             sum(CASE WHEN f.state NOT IN ('assigned','outside') THEN 1 ELSE 0 END) AS pending
              FROM batches b JOIN files f ON f.batch=b.id WHERE b.event=? GROUP BY b.id ORDER BY b.rowid DESC""",event)
         reports = rows(db,"SELECT id,version,state,error,created FROM reports WHERE event=? ORDER BY version DESC",event)
         mails = rows(db,"""SELECT m.id,m.submission,m.kind,m.state,m.sent_to,m.created,m.sent_at,s.version,t.name FROM mail m JOIN submissions s ON m.submission=s.id

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { ArrowRight, Check, ChevronDown, CircleAlert, FileUp } from 'lucide-react';
 import { busyStates, recoverableStates, stateLabel } from '../api/labels';
@@ -8,7 +8,8 @@ import { DocChips, Notice, PageHeader, StateBadge, VerdictBadge, buttonStyles, c
 import { useEvent } from '../context/EventContext';
 import { useOverview, type TeamRow } from '../hooks/useOverview';
 
-type Filter = 'all' | 'action' | 'ok';
+type VerdictGroup = 'pending' | 'action' | 'ok';
+type Filter = 'all' | VerdictGroup;
 
 const verdicts: Array<{ key: Verdict; label: string; color: string }> = [
   { key: '성공', label: '성공', color: 'var(--chart-success)' },
@@ -18,27 +19,18 @@ const verdicts: Array<{ key: Verdict; label: string; color: string }> = [
 
 type Alert = { key: string; text: string; sub: string; to: string; action: string };
 
-/** 담당자가 지금 손대야 하는 일 */
-function needsAction(r: TeamRow) {
-  const s = r.submission;
-  if (r.held || !s || r.leaderMail?.state === 'recipient_check') return true;
-  if (r.detail?.history.some((h) => h.state === 'access')) return true;
-  if (recoverableStates.has(s.state) || s.state === 'ownership') return true;
-  if (s.verdict === '성공') return s.decision !== '승인';
-  return s.verdict !== null;
+function verdictGroup({ held, submission }: TeamRow): VerdictGroup {
+  if (held || !submission) return 'action';
+  if (busyStates.has(submission.state)) return 'pending';
+  return submission.state === 'done' && submission.verdict === '성공' ? 'ok' : 'action';
 }
 
 export default function Dashboard() {
   const { events } = useEvent();
   const { dashboard, rows, error, refresh } = useOverview();
-  const [filter, setFilter] = useState<Filter>('all');
   const list = rows ?? [];
   const processing = list.filter((r) => r.submission && busyStates.has(r.submission.state)).length;
   const queued = list.flatMap((r) => r.submission?.state === 'queued' ? [r.submission.received ?? r.submission.created] : []);
-  const visible = useMemo(
-    () => list.filter((r) => (filter === 'all' ? true : filter === 'ok' ? !needsAction(r) : needsAction(r))),
-    [list, filter],
-  );
 
   const alerts: Alert[] = [];
   for (const b of dashboard?.batches ?? []) {
@@ -62,6 +54,8 @@ export default function Dashboard() {
       alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내가 보류 중입니다. 신청서와 원접수의 주소를 대조해 주세요.', to: `/teams/${s.id}`, action: '주소 확인' });
     else if (s.verdict === '재제출요청' && !r.email)
       alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 이메일이 없습니다.`, sub: '보완 요청 메일이 수신자 확인을 기다립니다.', to: `/teams/${s.id}`, action: '이메일 입력' });
+    else if (verdictGroup(r) === 'ok' && !s.decision)
+      alerts.push({ key: r.id + 'approval', text: `${r.name} · 담당자 승인 대기`, sub: '성공 판정의 원본과 근거를 검토하고 담당자 결정을 기록하세요.', to: `/teams/${s.id}`, action: '판정 검토' });
   }
 
   return (
@@ -77,7 +71,7 @@ export default function Dashboard() {
             <VerdictSummary rows={list} />
             <ActionQueue alerts={alerts} />
           </div>
-          <TeamTable list={visible} total={list.length} counts={{ action: list.filter(needsAction).length, ok: list.filter((r) => !needsAction(r)).length }} filter={filter} setFilter={setFilter} />
+          <TeamTable rows={list} />
           <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-subtle">
               <span>Studio {dashboard.connected ? `연결됨 · 설정 ${dashboard.config}` : '연결 대기'}</span>
               {dashboard.gmail_account ? (
@@ -149,23 +143,16 @@ function ActionQueue({ alerts }: { alerts: Alert[] }) {
   );
 }
 
-function TeamTable({
-  list,
-  total,
-  counts,
-  filter,
-  setFilter,
-}: {
-  list: TeamRow[];
-  total: number;
-  counts: { action: number; ok: number };
-  filter: Filter;
-  setFilter: (f: Filter) => void;
-}) {
+function TeamTable({ rows }: { rows: TeamRow[] }) {
+  const [filter, setFilter] = useState<Filter>('all');
+  const groups: Record<Filter, TeamRow[]> = { all: rows, pending: [], action: [], ok: [] };
+  for (const row of rows) groups[verdictGroup(row)].push(row);
+  const list = groups[filter];
   const filters: Array<[Filter, string]> = [
-    ['all', `전체 ${total}`],
-    ['action', `조치 필요 ${counts.action}`],
-    ['ok', `정리됨 ${counts.ok}`],
+    ['all', `전체 ${rows.length}`],
+    ['pending', `처리 대기 ${groups.pending.length}`],
+    ['action', `조치 필요 ${groups.action.length}`],
+    ['ok', `정리됨 ${groups.ok.length}`],
   ];
   return (
     <section aria-labelledby="teams-h" className="surface team-panel">
@@ -190,7 +177,7 @@ function TeamTable({
         </div>
       </div>
 
-      {total === 0 ? (
+      {rows.length === 0 ? (
         <p className="px-6 py-10 text-center text-sm text-muted">
           아직 접수된 팀이 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">

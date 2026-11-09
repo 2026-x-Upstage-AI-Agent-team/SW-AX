@@ -4,7 +4,7 @@ import { backend } from '../../api/backend';
 import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
 import { docLabels, when } from '../../api/labels';
-import { filePreviewUrl, getBatch, getSubmission, reviewBatchConflict } from '../../api/service';
+import { filePreviewUrl, getBatch, getSubmission, isFileProcessed, reviewBatchConflict } from '../../api/service';
 import { Page } from '../../components/Layout';
 import DeleteIntake from '../../components/DeleteIntake';
 import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx } from '../../components/ui';
@@ -333,7 +333,7 @@ function ServiceDetail() {
   if (!result.data) return <Notice error={result.error} onRetry={result.reload} />;
   const b = result.data;
   const teamName = (tid?: string | null) => dashboard?.teams.find((t) => t.id === tid)?.name ?? '';
-  const pending = b.files.filter((f) => f.state === 'unassigned' || f.state === 'error').length;
+  const pending = b.files.filter((f) => !isFileProcessed(f)).length;
   return (
     <div className="flex flex-col gap-4">
       <section className={card}>

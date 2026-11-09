@@ -93,6 +93,7 @@ class LocalServiceTests(unittest.TestCase):
         batch=self.upload(items,"set04-offline").json()["batch_id"]
         url="/api/intake-batches/"+batch
         for _ in range(len(items)+1):
+            self.assertEqual(len(items), self.client.get("/api/dashboard").json()["batches"][0]["pending"])
             with db.database() as con:
                 b=workflow.require(con,"batches",batch)
             worker.prepare(b)
@@ -104,6 +105,7 @@ class LocalServiceTests(unittest.TestCase):
                 cmd={"action":"assign","team":team["id"],"revision":self.client.get(url).json()["revision"],"reason":"공식 set04 원접수 대조"}
                 self.assertEqual(200,self.client.put(url+"/files/"+f["id"]+"/assignment",json=cmd).status_code)
                 self.assertEqual(200,self.client.put(url+"/files/"+f["id"]+"/assignment",json=cmd).status_code)
+        self.assertEqual(0, self.client.get("/api/dashboard").json()["batches"][0]["pending"])
         sid,= [t["submission_id"] for t in self.client.get(url).json()["teams"]]
         calls=[]
         def remote(req):
