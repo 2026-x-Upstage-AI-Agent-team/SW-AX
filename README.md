@@ -24,6 +24,8 @@ Studio 실행에는 서버의 환경 변수 또는 프로젝트의 `.env.local`�
 
 단일 PC에서는 `start-intake.ps1`이 접수 서버, 문서 판독·판정·메일·편철 워커와 PDF 워커를 실행합니다. 00 지급내역서 원본을 팀 자료 폴더에 두거나 `AWARDS_REPORT_TEMPLATE`에 경로를 지정합니다. 처음 실행할 때 한글 경로 확인 모듈을 빌드하고 현재 Windows 사용자에 등록합니다. 이 모듈은 변환 작업별 폴더의 입력 한글 파일과 출력 PDF 경로를 검사합니다.
 
+워커가 꺼지면 담당자 화면의 왼쪽 사이드바에서 **실행하기**를 누릅니다. 서버는 필요한 프로그램을 시작한 뒤 실제 연결을 확인합니다. JAR를 별도로 배포할 때는 `AWARDS_WORKER_DIR`에 해당 서버 버전의 `operations` 폴더가 있는 프로젝트 루트를 지정합니다. 기본 실행 파일은 그 안의 `.venv/Scripts/pythonw.exe`이며, 별도 가상환경은 `AWARDS_WORKER_PYTHON`으로 지정할 수 있습니다. 전용 PC에서 PDF를 출력할 때는 JAR 환경에 `AWARDS_REMOTE_PRINTER=true`를 지정합니다. `start-intake.ps1 -RemotePrinter`는 이 값을 자동으로 설정합니다.
+
 출력 PC를 따로 두려면 서버는 `./start-intake.ps1 -RemotePrinter`로 실행합니다. 전용 Windows PC에 한글, 같은 코드와 가상환경을 준비하고 `./start-output-printer.ps1 -Prepare`에서 서버의 HTTPS 주소와 출력 전용 토큰을 입력합니다. 서버 토큰은 환경 변수 `AWARDS_OUTPUT_WORKER_TOKEN` 또는 첫 실행 때 생성한 `var/output-worker.key`에 있습니다. `./start-output-printer.ps1`이 작업을 받습니다. 전용 계정으로 부팅 시 시작하도록 등록하는 명령은 `./start-output-printer.ps1 -InstallAtStartup`입니다. 출력 PC의 토큰은 그 Windows 계정으로 암호화합니다. 원격 접속에는 Spring Boot 앞에 HTTPS 리버스 프록시를 두거나 서버에 HTTPS를 설정하고, 출력 PC가 신뢰하는 인증서를 사용합니다. 원본의 검토용 PDF를 만드는 처리 호스트에도 한글이 필요합니다. [운영판 API와 인수 시험](docs/IMPLEMENTATION_PLAN.md)
 
 ### 담당자 계정과 대회 권한

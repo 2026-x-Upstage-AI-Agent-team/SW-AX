@@ -11,7 +11,9 @@ const file = { id: 'original', name, kind: '01', state: 'unassigned', candidates
 const batch = { id: 'batch', state: 'review', created: 1, revision: 4, pending: 1, files: [file] };
 const dashboard = { event: event.id, events: [event], teams: [team], batches: [batch], mail: [], reports: [] };
 const batchPath = '/api/operations/batches/batch';
-const responses = { '/api/events': [event], '/api/events/test/teams': [team], '/api/dashboard': dashboard, [batchPath]: batch };
+const statusPath = '/api/operations/worker-status';
+const status = { state: 'running', online: ['prepare', 'studio', 'mail', 'report', 'printer'], checked_at: '2026-11-09T10:00:00Z', printer_last_seen: '2026-11-09T10:00:00Z' };
+const responses = { '/api/events': [event], '/api/events/test/teams': [team], '/api/dashboard': dashboard, [batchPath]: batch, [statusPath]: status };
 let browser, server, baseURL, receiveUpload;
 
 before(async () => {
@@ -236,6 +238,71 @@ test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본
   await page.getByRole('button', { name: '정리됨 0' }).click();
   const empty = table.getByRole('cell', { name: '이 필터에 해당하는 팀이 없습니다.' });
   assert.equal(await empty.getAttribute('colspan'), '7');
+});
+
+test('사이드바 실행 버튼은 한 번만 요청하고 모바일 메뉴와 같은 실행 상태를 표시한다', async t => {
+  const page = await newPage(t);
+  await page.clock.install();
+  let result = { state: 'stopped' };
+  let reads = 0, starts = 0, finish;
+  await page.route('**' + statusPath, route => {
+    reads++;
+    return result ? route.fulfill({ json: result }) : route.fulfill({ status: 503, json: {} });
+  });
+  await page.route('**/api/operations/worker-start', async route => {
+    assert.equal(route.request().method(), 'POST');
+    starts++;
+    await new Promise(resolve => { finish = resolve; });
+    result = { state: 'running' };
+    return route.fulfill({ json: result });
+  });
+  await page.goto('/#/assign');
+  const rail = page.getByRole('complementary', { name: '작업 공간' });
+  const state = rail.getByRole('status');
+  await state.filter({ hasText: '워커 실행 필요' }).waitFor();
+  assert.equal(reads, 1);
+  assert.equal(await page.getByRole('main').locator('.rail-worker, .worker-status').count(), 0);
+  const sent = page.waitForRequest('**/api/operations/worker-start');
+  await rail.getByRole('button', { name: '실행하기' }).click();
+  await sent;
+  await state.filter({ hasText: '워커 시작 중…' }).waitFor();
+  assert.equal(await rail.getByRole('button', { name: '실행하기' }).count(), 0);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByRole('button', { name: '메뉴 열기' }).click();
+  const menu = page.getByRole('dialog', { name: '작업 메뉴' });
+  await menu.getByRole('status').filter({ hasText: '시작 중' }).waitFor();
+  finish();
+  await menu.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
+  assert.equal(starts, 1);
+  await menu.getByRole('link', { name: '이메일 발송' }).click();
+  await page.getByRole('button', { name: '메뉴 열기' }).click();
+  await menu.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
+  result = null;
+  await page.clock.fastForward(15001);
+  await menu.getByRole('status').filter({ hasText: '확인 불가' }).waitFor();
+  assert.equal(await menu.getByRole('button', { name: '실행하기' }).count(), 0);
+  result = { state: 'stopped' };
+  await menu.getByRole('button', { name: '다시 확인' }).click();
+  await menu.getByRole('button', { name: '실행하기' }).waitFor();
+});
+
+test('워커 실행 실패 원인을 표시하고 같은 화면에서 다시 시도할 수 있다', async t => {
+  const page = await newPage(t);
+  let result = { state: 'stopped' };
+  await page.route('**' + statusPath, route => route.fulfill({ json: result }));
+  await page.route('**/api/operations/worker-start', route => {
+    result = { state: 'running' };
+    return route.fulfill({ json: result });
+  });
+  await page.route('**/api/operations/worker-start', route => route.fulfill({ status: 503, json: { detail: '워커 설치 경로를 확인하세요.' } }), { times: 1 });
+  await page.goto('/#/');
+  const rail = page.getByRole('complementary', { name: '작업 공간' });
+  const start = rail.getByRole('button', { name: '실행하기' });
+  await start.click();
+  await rail.getByRole('alert').filter({ hasText: '워커 설치 경로를 확인하세요.' }).waitFor();
+  await start.click();
+  await rail.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
+  assert.equal(await rail.getByRole('alert').count(), 0);
 });
 
 test('작업 공간 너비에 맞춰 배정 목록과 원본을 배치하고 확대해도 가로로 넘치지 않는다', async t => {

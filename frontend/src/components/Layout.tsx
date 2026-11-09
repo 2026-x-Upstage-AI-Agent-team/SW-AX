@@ -4,6 +4,7 @@ import { AtSign, CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDash
 import { backend } from '../api/backend';
 import { useEvent } from '../context/EventContext';
 import { cx } from './ui';
+import WorkerStatus, { useWorkerControl } from './WorkerStatus';
 
 const menu = [
   { to: '/', label: '업무 현황', Icon: LayoutDashboard },
@@ -23,7 +24,7 @@ function Brand({ subtitle = '시상금 서류 검토실', onNavigate }: { subtit
   );
 }
 
-function WorkspaceNav({ onNavigate }: { onNavigate?: () => void }) {
+function WorkspaceNav({ worker, onNavigate }: { worker: ReturnType<typeof useWorkerControl>; onNavigate?: () => void }) {
   const { events, eventsError, event, selectEvent } = useEvent();
   const { pathname } = useLocation();
   return (
@@ -48,6 +49,7 @@ function WorkspaceNav({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </nav>
       <div className="sidebar-foot">
+        <WorkerStatus control={worker} />
         <NavLink to="/manage" onClick={onNavigate} className={({ isActive }) => cx('nav-item', isActive && 'is-current')}>
           <Settings2 size={19} aria-hidden="true" />대회·팀 관리
         </NavLink>
@@ -58,6 +60,7 @@ function WorkspaceNav({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export default function Layout() {
+  const worker = useWorkerControl();
   const menuDialog = useRef<HTMLDialogElement>(null);
   const { event } = useEvent();
   const { pathname } = useLocation();
@@ -85,7 +88,7 @@ export default function Layout() {
       }}>본문으로 바로가기</a>
       <aside className="workspace-rail" aria-label="작업 공간">
         <Brand />
-        <WorkspaceNav />
+        <WorkspaceNav worker={worker} />
       </aside>
       <header className="mobile-bar">
         <Brand subtitle={event?.name} />
@@ -103,7 +106,7 @@ export default function Layout() {
               <PanelLeftClose size={20} aria-hidden="true" />
             </button>
           </div>
-          <WorkspaceNav onNavigate={close} />
+          <WorkspaceNav worker={worker} onNavigate={close} />
         </div>
       </dialog>
       <div className="workspace-body"><Outlet /></div>

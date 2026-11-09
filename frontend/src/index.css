@@ -83,6 +83,13 @@
   .nav-item svg { flex: none; stroke-width: 1.75; }
   .nav-item.is-current { background: #d9e9de; color: var(--color-brand-deep); font-weight: 700; }
   .sidebar-foot { margin-top: auto; border-top: 1px solid var(--color-line-2); padding-top: .7rem; }
+  .rail-worker { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem .45rem; min-height: 2.75rem; padding: .2rem .65rem; color: var(--color-ink-2); }
+  .rail-worker-state { display: inline-flex; align-items: center; gap: .5rem; font-size: .85rem; font-weight: 650; }
+  .rail-worker-state i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--color-muted); }
+  .rail-worker[data-state="running"] i { background: var(--color-brand-strong); }
+  .rail-worker[data-state="stopped"] i, .rail-worker[data-state="starting"] i { background: var(--color-caution); }
+  .rail-worker button { min-height: 2.75rem; padding: .25rem .45rem; color: var(--color-brand-strong); font-size: .85rem; font-weight: 700; text-decoration: underline; text-underline-offset: .2em; }
+  .rail-worker p { flex-basis: 100%; color: var(--color-alert-strong); font-size: .8rem; }
   .service-mode { margin: .85rem .8rem .25rem; color: var(--color-subtle); font-size: .73rem; }
   .mobile-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: .45rem 1rem; padding-top: max(.45rem, env(safe-area-inset-top)); background: #f4f6f4f5; box-shadow: 0 1px 0 #1b392419; }
   .icon-button { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border-radius: .7rem; color: var(--color-ink-2); }

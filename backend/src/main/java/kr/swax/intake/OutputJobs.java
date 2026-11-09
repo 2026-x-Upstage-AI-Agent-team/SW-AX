@@ -40,6 +40,7 @@ class OutputJobs {
             FROM available a WHERE r.id=a.id RETURNING r.id,version,print_token,encode(sha256(hwpx),'hex'),print_until
             """, (rs,n) -> new Claim(rs.getObject(1,UUID.class),rs.getInt(2),rs.getObject(3,UUID.class),
                     rs.getString(4),rs.getObject(5,OffsetDateTime.class)),printer.workerId().strip(),lease);
+        recordPrinterContact();
         return rows.stream().findFirst().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
@@ -57,6 +58,15 @@ class OutputJobs {
                 UPDATE award_report SET print_until=clock_timestamp()+?*interval '1 second'
                 WHERE id=? AND print_token=? AND state='printing' AND print_until>now()
                 """,lease,id,token)!=1) throw lost();
+        recordPrinterContact();
+    }
+
+    private void recordPrinterContact() {
+        db.update("""
+            INSERT INTO workflow_health AS h(role,configured) VALUES ('printer',true)
+            ON CONFLICT(role) DO UPDATE SET updated_at=excluded.updated_at
+            WHERE h.updated_at < excluded.updated_at-interval '10 seconds'
+            """);
     }
 
     @PutMapping(value="/{id}/pdf",consumes="application/pdf")

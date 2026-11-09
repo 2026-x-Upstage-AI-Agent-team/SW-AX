@@ -18,6 +18,8 @@ function Set-WorkerKey([string]$Name, [string]$File) {
 Push-Location -LiteralPath $PSScriptRoot
 try {
     if (-not $env:AWARD_DATA_DIR) { $env:AWARD_DATA_DIR = Join-Path $PSScriptRoot 'var' }
+    $env:AWARDS_WORKER_DIR = $PSScriptRoot
+    $env:AWARDS_REMOTE_PRINTER = $RemotePrinter.IsPresent.ToString()
     if (-not $env:AWARDS_DB_PASSWORD) {
         $dataDir = New-Item -ItemType Directory -Path $env:AWARD_DATA_DIR -Force
         $keyFile = Join-Path $dataDir.FullName 'intake-postgres.key'

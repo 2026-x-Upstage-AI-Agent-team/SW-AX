@@ -7,6 +7,10 @@ React 19 · Vite · TypeScript · Tailwind CSS v4 · React Router.
 
 팀 배정은 작업 공간이 넓으면 목록과 원본을 나란히 보여준다. 좁은 화면에서는 파일을 열어 검토하고 ‘파일 목록으로’ 또는 브라우저 뒤로가기로 선택한 행에 돌아온다. 조회 실패는 같은 화면에서 다시 시도하고, 배정 입력 오류와 업로드 파일 오류는 해당 입력란에서 확인한다. [적용한 UI UX Pro Max 지침](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/4f2dbb67e64969a9a30ab00742f2d55d66ddec2b/.claude/skills/ui-ux-pro-max/references/quick-reference.md)
 
+## 워커 상태와 문서 미리보기
+
+왼쪽 사이드바 하단에서 **워커 실행 필요 → 실행하기**를 누른다. 휴대폰에서는 작업 메뉴를 열면 같은 버튼이 보인다. 시작 요청은 로그인한 담당자가 보낼 수 있다. 서버가 업무 워커의 PostgreSQL 연결과 같은 PC에 둔 PDF 워커의 응답을 확인하면 **워커 실행 중**으로 바뀐다. 상태는 15초마다 갱신되고, 조회에 실패하면 **다시 확인**할 수 있다. 전용 출력 PC를 분리한 구성에서는 사이드바가 업무 서버의 워커를 제어하고 전용 PC는 예약 작업으로 PDF 워커를 실행한다.
+
 ## 실행
 
 ```powershell
