@@ -24,10 +24,11 @@ const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
 const delayedId = process.env.INTAKE_TEST_DELAYED_SUBMISSION;
 if (delayedId) {
-  test('지연된 판정의 마지막 조회 시각을 확인하고 처리를 재개한다', async () => {
+  test('지연된 판정의 마지막 조회 시각과 총 시도 횟수를 확인하고 처리를 재개한다', async () => {
     const detail = await (await request.get('/api/operations/submissions/' + delayedId)).json();
     assert.equal(detail.job, 'job_found');
     assert.equal(detail.state, 'paused');
+    assert.equal(detail.attempts, 4);
     assert.equal(detail.polling_delayed, true);
     assert.ok(detail.last_polled_at);
     await page.goto('/#/teams/' + delayedId);
@@ -39,13 +40,21 @@ if (delayedId) {
       dateStyle: 'medium', timeStyle: 'medium',
     }), expected);
     assert.equal(await time.textContent(), localTime);
+    const total = page.getByText('총 4회 시도 (최초 1회, 재시도 3회)', { exact: true });
+    const history = page.getByRole('listitem');
+    const limit = history.filter({ hasText: '4번째 시도' }).filter({ hasText: 'HTTP 429' });
+    await total.waitFor();
+    await history.filter({ hasText: '2번째 시도' }).filter({ hasText: 'HTTP 503' }).waitFor();
+    await limit.waitFor();
     const [resumed] = await Promise.all([
       page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/submissions/' + delayedId + '/retry')),
       page.getByRole('button', { name: '처리 재개' }).click(),
     ]);
     assert.equal(resumed.status(), 200);
+    await total.waitFor({ state: 'hidden' });
     await page.getByText('처리 지연', { exact: true }).waitFor();
     assert.equal(await time.getAttribute('datetime'), expected);
+    await limit.waitFor();
   });
 } else if (recipientId) {
   test('신청서와 다른 등록 주소를 현재 제출본에서 확인한다', async () => {

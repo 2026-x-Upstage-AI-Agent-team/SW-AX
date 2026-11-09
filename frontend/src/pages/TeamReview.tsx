@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useAsync, usePolling } from '../api/client';
+import { isDemoBackend } from '../api/backend';
 import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
 import {
   filePreviewUrl,
@@ -282,6 +283,9 @@ function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
         <p className="text-sm tabular-nums">마지막 조회 시각 · {lastPoll
           ? <time dateTime={lastPoll.toISOString()}>{lastPoll.toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'medium' })}</time>
           : '기록 없음'}</p>
+      )}
+      {!isDemoBackend && s.state === 'paused' && s.attempts > 0 && (
+        <p className="text-sm tabular-nums">총 {s.attempts}회 시도 (최초 1회, 재시도 {s.attempts - 1}회)</p>
       )}
       {s.state === 'ownership' && (
         <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>
@@ -610,7 +614,8 @@ function HistoryCard({ s }: { s: SubmissionDetail }) {
             <li key={i}>
               {when(a.ts)} · {a.action}
               {a.http_status && !a.action.includes(`HTTP ${a.http_status}`) && ` · HTTP ${a.http_status}`}
-              {a.error_code && ` · ${a.error_code}`} · {a.actor}
+              {a.error_code && ` · ${a.error_code}`}
+              {a.attempts != null && a.attempts > 0 && ` · ${a.attempts}번째 시도`} · {a.actor}
             </li>
           ))}
         </ul>

@@ -144,6 +144,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual(execution()["phase"],"paused")
         detail = submission_status()
         self.assertTrue(detail["polling_delayed"])
+        self.assertEqual(detail["attempts"],4)
         retries = [row for row in reversed(detail["audit"]) if row["attempts"]]
         self.assertEqual([(r["http_status"], r["error_code"], r["attempts"]) for r in retries],
                          [(429, "RATE_LIMITED", 1), (503, "SERVICE_UNAVAILABLE", 2),
@@ -156,8 +157,10 @@ class Recovery(unittest.TestCase):
         else:
             retry().raise_for_status()
         resumed=submission_status()
+        self.assertEqual(resumed["attempts"],0)
         self.assertTrue(resumed["polling_delayed"])
         self.assertEqual(resumed["last_polled_at"],last_poll)
+        self.assertTrue(any(row["attempts"]==4 and row["http_status"]==429 for row in resumed["audit"]))
         mode="denied"
         tick()
         self.assertEqual(execution()["phase"],"access")
