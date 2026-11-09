@@ -7,22 +7,20 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
-from zipfile import ZipFile
 
 import httpx
 from fastapi.testclient import TestClient
 
 from service import app as web
 from service import db, documents, studio, worker, workflow
+from tests.official_inputs import official_files
 
 
 def official(case):
-    source = db.ROOT / "test case" / "유잇_미션2_테스트set.zip"
-    if not source.is_file():
-        raise unittest.SkipTest("공식 미션2 ZIP을 test case 폴더에 준비하세요.")
-    with ZipFile(source) as archive:
-        return [(Path(m.filename).name,archive.read(m)) for m in archive.infolist()
-                if not m.is_dir() and Path(m.filename).parent.name == case]
+    try:
+        return official_files(case)
+    except FileNotFoundError as exc:
+        raise unittest.SkipTest(str(exc)) from exc
 
 
 class LocalServiceTests(unittest.TestCase):

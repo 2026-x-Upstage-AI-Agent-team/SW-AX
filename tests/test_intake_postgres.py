@@ -6,16 +6,14 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
 from threading import Barrier
 from urllib.parse import urlparse
 from uuid import uuid4
-from zipfile import ZipFile
 
 import httpx
+from tests.official_inputs import official_files
 
 
-ROOT = Path(__file__).resolve().parents[1]
 URL = os.getenv("INTAKE_TEST_URL")
 WORKER = "/api/worker/review-jobs"
 requires_worker = unittest.skipUnless(os.getenv("AWARDS_REVIEW_WORKER_TOKEN"), "Set the test server's worker token.")
@@ -56,12 +54,7 @@ class PostgresIntakeTest(unittest.TestCase):
         cls.addClassCleanup(cls.peer.close)
         for client, suffix in ((cls.http, "A"), (cls.peer, "B")):
             login(client, os.environ["INTAKE_TEST_LOGIN_" + suffix], os.environ["INTAKE_TEST_PASSWORD_" + suffix])
-        cls.sets = {}
-        with ZipFile(ROOT / "test case" / "유잇_미션2_테스트set.zip") as archive:
-            for member in archive.namelist():
-                path = Path(member)
-                if path.suffix.lower() in {".hwp", ".hwpx"}:
-                    cls.sets.setdefault(path.parent.name, []).append((path.name, archive.read(member)))
+        cls.sets = {f"set{i:02}":official_files(f"set{i:02}") for i in range(1,11)}
 
     def setUp(self):
         self.event = self.http.post("/api/events", json={"name": "접수 검증 " + uuid4().hex[:12]}).raise_for_status().json()["id"]

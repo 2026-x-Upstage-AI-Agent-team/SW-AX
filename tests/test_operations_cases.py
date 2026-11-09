@@ -71,7 +71,11 @@ class AssignmentEvidence(unittest.TestCase):
         self.assertEqual(classify("01","Beta.hwp",apps=[{"name":"Alpha","rep":"가나다"}]),(None,{"a","b"},False))
         self.assertEqual(classify("03","사본.hwpx",identity="가나다"),(None,{"a"},False))
         self.assertEqual(classify("03","Alpha대회.hwpx"),(None,{"a"},False))
-        self.assertEqual(classify("03","Alpha.hwpx",identity="가나다\n라마바"),(None,{"a","b"},False))
+        self.assertEqual(classify("03","Alpha.hwpx",identity="가나다\n라마바"),(None,{"a","b"},True))
+        for boundary in ("\n신분증 사본 ", "\f", "\n운전면허증 "):
+            text = "신분증 가나다 통장 사본 예금주 가나다" + boundary + "라마바 통장 사본"
+            self.assertEqual(classify("03","Alpha.hwpx",identity=text),(None,{"a","b"},True))
+        self.assertEqual(classify("03","Alpha.hwpx",identity="가나다\f통장 사본 예금주 라마바"),("a",{"a"},False))
         people=[{"name":"가나다","major":"전산"},{"name":"라마바","major":"정보"}]
         self.assertEqual(classify("02","합본.hwp",consent=people),(None,{"a","b"},True))
         teams[1]["name"]="Alpha"

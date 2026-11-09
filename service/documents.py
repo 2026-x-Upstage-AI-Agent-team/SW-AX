@@ -76,10 +76,13 @@ def read_signals(f, renderer=None):
     identity = []
     for i, page in enumerate(pages):
         condensed = compact(page)
-        if len(condensed) < 30 or ("신분증사본" in condensed and "통장사본" in condensed):
+        id_heading = any(heading in condensed for heading in ("신분증", "주민등록증", "운전면허증"))
+        bank_heading = any(heading in condensed for heading in ("통장사본", "계좌번호", "예금주"))
+        if len(condensed) < 30 or id_heading or "통장사본" in condensed:
             observed = ocr_page(pdf, i)
             pages[i] += "\n" + observed
-            identity.append(observed)
+            if id_heading or not bank_heading or any(s in compact(observed) for s in ("신분증","주민등록증","운전면허증")):
+                identity.extend((page, observed))
     applications, consent, kinds = [], [], set()
     consent_page = 1
     for p, page in enumerate(pages, 1):
@@ -118,14 +121,14 @@ def read_signals(f, renderer=None):
     kind = next(iter(kinds)) if len(kinds) == 1 else "?"
     # Keep only the text needed for matching during assignment. Never search for account or identity numbers.
     body = re.sub(r"\d{3,}([- .]?\d+)*", " ", "\n".join(pages))
-    id_text = re.sub(r"\d+[-\d]*", " ", "\n".join(identity))
+    id_text = re.sub(r"\d+[-\d]*", " ", "\f".join(identity))
     return kind, len(pages), {"apps": applications, "consent": consent, "mixed": len(kinds) > 1 or len(applications) > 1,
                               "body": body, "identity": id_text, "page": consent_page if kind == "02" else 1}
 
 
 def match_file(f, sig, teams, target):
     ids = {t["id"] for t in teams}
-    if sig.get("mixed"):
+    if sig.get("mixed") and not sig.get("mixed_id_holders"):
         return None, ids, "서로 다른 양식 또는 신청서가 한 파일에 있습니다. 팀별 원본을 대조하세요."
     if f["kind"] == "00":
         return "outside", set(), "00 지급내역서는 출력 양식입니다."
@@ -170,14 +173,16 @@ def match_file(f, sig, teams, target):
             return None, possible, "동의서 작성자의 성명·학과가 여러 팀 명단에 겹칩니다. 원접수를 대조하세요."
         reason = f"동의서 {sig['page']}쪽 작성자 {sum(names.values())}명의 성명·명단을 대조했습니다."
     elif f["kind"] == "03":
-        # Look before bank evidence so that the account holder alone cannot identify the ID holder.
-        id_region = re.split(r"계\s*좌\s*번\s*호|예\s*금\s*주|통\s*장\s*사\s*본", sig["identity"])[0]
-        identified = {t["id"] for t in teams if word(id_region, t["rep"])}
+        # Each page or new ID heading can start another person's evidence after a bank copy.
+        sections = re.split(r"\f|신\s*분\s*증\s*(?:사\s*본)?|주민\s*등록증|운전\s*면허증", sig["identity"])
+        id_text = "\n".join(re.split(r"계\s*좌\s*번\s*호|예\s*금\s*주|통\s*장\s*사\s*본", part, 1)[0] for part in sections)
+        identified = {t["id"] for t in teams if word(id_text, t["rep"])}
         possible |= identified
-        if len({t["rep"] for t in teams if t["id"] in identified}) > 1:
+        if sig.get("mixed_id_holders") or len({t["rep"] for t in teams if t["id"] in identified}) > 1:
+            sig["mixed"] = sig["mixed_id_holders"] = True
             if target:
                 possible.add(target)
-            return None, possible, "신분증에서 서로 다른 대표 성명이 확인됩니다. 원접수를 대조하세요."
+            return None, possible, "신분증에서 서로 다른 팀의 대표 성명이 확인됩니다. 팀별 원본으로 나눠 주세요."
         matched = identified & named
         reason = "팀명과 신분증의 대표 성명을 대조했습니다."
     possible |= matched
