@@ -30,6 +30,20 @@ def login(client, username, password):
     client.headers["X-CSRF-TOKEN"] = session["csrf_token"]
 
 
+def mark_batch_read(receipt):
+    """Stand in for the preparation worker in HTTP tests that control the assignments themselves."""
+    from operations.store import configuration, connect
+
+    url = os.environ["AWARDS_DB_URL"].removeprefix("jdbc:")
+    if urlparse(url).hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("Use the same local test database as the test API.")
+    with connect(configuration()) as db:
+        updated = db.execute("UPDATE intake_preparation SET state='ready' WHERE batch_id=%s AND state='pending'",
+                             (receipt.rsplit("/", 1)[-1],))
+        if updated.rowcount != 1:
+            raise AssertionError("Expected a newly uploaded receipt in the test database")
+
+
 @unittest.skipUnless(URL, "Set INTAKE_TEST_URL to the local test instance.")
 class PostgresIntakeTest(unittest.TestCase):
     @classmethod
@@ -91,6 +105,7 @@ class PostgresIntakeTest(unittest.TestCase):
         items = self.http.get(receipt).raise_for_status().json()["files"]
         for rev, ((team, _), item) in enumerate(zip(files, items, strict=True)):
             self.decide(receipt, item["item_id"], "assign", rev, team=team).raise_for_status()
+        mark_batch_read(receipt)
         for team in teams:
             self.confirm(receipt, team, len(items)).raise_for_status()
         return receipt, teams
@@ -262,6 +277,7 @@ class PostgresIntakeTest(unittest.TestCase):
         first, second, pending = [f["item_id"] for f in self.http.get(receipt).json()["files"]]
         self.decide(receipt, first, "assign", 0, team=a).raise_for_status()
         self.decide(receipt, second, "assign", 1, team=b).raise_for_status()
+        mark_batch_read(receipt)
         for team in (a, b):
             self.assertEqual(409, self.confirm(receipt, team, 2).status_code)
         self.assertEqual([], self.http.get(receipt).json()["teams"])
@@ -309,6 +325,7 @@ class PostgresIntakeTest(unittest.TestCase):
         owners = [teams[0]] * 3 + [teams[1]] * 3 + [teams[2]] * 2
         for revision, (item, team) in enumerate(zip(files, owners, strict=True)):
             self.decide(receipt, item["item_id"], "assign", revision, team=team).raise_for_status()
+        mark_batch_read(receipt)
         before = [self.confirm(receipt, team, 8).raise_for_status().json() for team in teams]
         self.assertEqual([1, 1, 1], [link["version"] for link in before])
         initial_jobs = {job["team"]: job for job in self.review_jobs("queued")}
@@ -350,6 +367,7 @@ class PostgresIntakeTest(unittest.TestCase):
             items = self.http.get(receipt).raise_for_status().json()["files"]
             for revision, item in enumerate(items):
                 self.decide(receipt, item["item_id"], "assign", revision, team=team).raise_for_status()
+            mark_batch_read(receipt)
             return receipt
 
         receipts = [prepare([a, b, b]), prepare([("표시명변경.hwp", b[1]), b, a])]
@@ -383,6 +401,7 @@ class PostgresIntakeTest(unittest.TestCase):
         items = [f["item_id"] for f in self.http.get(receipt).json()["files"]]
         for rev, team in enumerate((a, a, b)):
             self.decide(receipt, items[rev], "assign", rev, team=team).raise_for_status()
+        mark_batch_read(receipt)
         with ThreadPoolExecutor(max_workers=2) as pool:
             confirming = pool.submit(self.confirm, receipt, a, 3)
             moving = pool.submit(self.decide, receipt, items[1], "assign", 3, team=b)
@@ -397,7 +416,10 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(2 if first.status_code == 200 else 1, current["version"])
         latest = self.http.get(current["status_url"]).raise_for_status().json()
         self.assertEqual([items[0]], [f["item_id"] for f in latest["files"]])
-        self.assertEqual([current["submission_id"]], [job["submission_id"] for job in self.review_jobs("queued")])
+        other = self.confirm(receipt, b, 4).raise_for_status().json()
+        self.assertEqual(items[1:], [f["item_id"] for f in self.http.get(other["status_url"]).json()["files"]])
+        self.assertCountEqual([current["submission_id"], other["submission_id"]],
+                              [job["submission_id"] for job in self.review_jobs("queued")])
 
     def test_review_job_registration_handoff_and_event_permissions(self):
         team = self.team(self.event, "3팀", "")
@@ -406,6 +428,7 @@ class PostgresIntakeTest(unittest.TestCase):
         items = self.http.get(receipt).raise_for_status().json()["files"]
         for rev, item in enumerate(items):
             self.decide(receipt, item["item_id"], "assign", rev, team=team).raise_for_status()
+        mark_batch_read(receipt)
         link = self.confirm(receipt, team, len(items)).raise_for_status().json()
         job, = self.review_jobs("queued")
         self.assertEqual((self.event, team, link["submission_id"], 1),
@@ -526,8 +549,7 @@ class PostgresIntakeTest(unittest.TestCase):
         other = self.team(self.event, "재배정 팀", "")
         self.decide(receipt, file, "assign", 4, team=other).raise_for_status()
         self.assertEqual(409, worker.put(url + "/result", json=failed, headers={"X-Claim-Token": again["claim_token"]}).status_code)
-        current, = self.review_jobs("queued")
-        self.assertEqual((2, team), (current["version"], current["team"]))
+        self.assertCountEqual([(2, team), (1, other)], [(j["version"], j["team"]) for j in self.review_jobs("queued")])
         self.assertEqual([first["review_job_id"]], [j["review_job_id"] for j in self.review_jobs("superseded")])
 
     @requires_worker
@@ -540,6 +562,7 @@ class PostgresIntakeTest(unittest.TestCase):
         current = self.send(files).raise_for_status().headers["location"]
         for rev, item in enumerate(self.http.get(current).json()["files"]):
             self.decide(current, item["item_id"], "assign", rev, team=team).raise_for_status()
+        mark_batch_read(current)
         link = self.confirm(current, team, len(files)).raise_for_status().json()
         self.assertEqual((held["submission_id"], "running"), (link["submission_id"], link["review_job"]["state"]))
         self.assertEqual(204, worker.post(WORKER + "/claim", json=payload).status_code)
@@ -590,6 +613,7 @@ class PostgresIntakeTest(unittest.TestCase):
         self.assertEqual(422, self.confirm(receipt, foreign, 2).status_code)
         self.assertEqual(404, self.confirm(receipt, team, 2, self.peer).status_code)
         self.assertEqual(422, self.confirm(receipt, team, None).status_code)
+        mark_batch_read(receipt)
         link = self.confirm(receipt, team, 2).raise_for_status().json()
         self.assertEqual(404, self.peer.get(link["status_url"]).status_code)
         with httpx.Client(base_url=URL, trust_env=False) as anonymous:

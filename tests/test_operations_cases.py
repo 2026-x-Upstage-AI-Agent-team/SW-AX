@@ -54,20 +54,47 @@ class OfficialCases(unittest.TestCase):
         login(staff,os.environ["INTAKE_TEST_LOGIN_A"],os.environ["INTAKE_TEST_PASSWORD_A"])
         event=staff.post("/api/events",json={"name":"공식 오류 사례 검증"}).raise_for_status().json()["id"]
         with ZipFile(ROOT/"test case"/"유잇_미션2_테스트set.zip") as archive:
-            for case in ("set03","set05","set10"):
+            for case in ("set03","set04","set05","set10"):
                 with self.subTest(case=case):
                     docs=[(Path(n).name,archive.read(n)) for n in archive.namelist()
                           if Path(n).parent.name==case and Path(n).suffix.lower() in (".hwp",".hwpx")]
-                    self.assertEqual(len(docs),3)
+                    count = 2 if case == "set04" else 3
+                    self.assertEqual(len(docs),count)
                     fields={"event":event,"manifest":json.dumps([{"name":n,"size":len(v)} for n,v in docs])}
+                    if case == "set04":
+                        # The application inside set04 names its team "3팀".
+                        team = staff.post(f"/api/events/{event}/teams", json={"name":"3팀","rep":""}).raise_for_status().json()["id"]
+                        fields["target"] = team
                     bid=staff.post("/api/intake-batches",data=fields,headers={"Idempotency-Key":str(uuid4())},
                                    files=[("files",(n,v)) for n,v in docs]).raise_for_status().json()["batch_id"]
+                    if case == "set04":
+                        receipt = f"/api/intake-batches/{bid}"
+                        items = staff.get(receipt).raise_for_status().json()["files"]
+                        for revision, item in enumerate(items):
+                            staff.put(f"{receipt}/files/{item['item_id']}/assignment", json={
+                                "team": team, "action": "assign", "revision": revision, "reason": "공식 자료 판독 전 수동 배정 시험"
+                            }).raise_for_status()
+                        def confirm():
+                            return staff.put(f"{receipt}/teams/{team}/submission", json={"revision": count})
+                        for read in range(count + 1):
+                            self.assertEqual(db.execute("""SELECT count(*) AS n FROM original_analysis a JOIN intake_file f
+                                ON a.file_id=f.id WHERE f.batch_id=%s AND a.pdf IS NOT NULL""", (bid,)).fetchone()["n"], read)
+                            denied = confirm()
+                            self.assertEqual(denied.status_code, 409)
+                            self.assertIn("판독", denied.json()["detail"])
+                            self.assertEqual(staff.get(receipt).json()["teams"], [])
+                            self.assertFalse(db.execute("SELECT 1 FROM review_job_status WHERE team_id=%s", (team,)).fetchone())
+                            self.assertEqual(api.post("review-jobs/claim", json={"event_id":event,"worker_id":"early"}).status_code, 204)
+                            self.assertTrue(prepare(db, api))
+                        link = confirm().raise_for_status().json()
+                        self.assertEqual(link, confirm().raise_for_status().json())
+                        self.assertEqual(db.execute("SELECT count(*) AS n FROM review_job_status WHERE team_id=%s", (team,)).fetchone()["n"], 1)
                     while prepare(db,api):
                         pass
                     def detail():
                         return staff.get("/api/operations/batches/"+bid).raise_for_status().json()
                     batch=detail()
-                    self.assertEqual(len(batch["files"]),3)
+                    self.assertEqual(len(batch["files"]),count)
                     team=next(f["team"] for f in batch["files"] if f["kind"]=="01")
                     for f in batch["files"]:
                         if not f["team"]:
@@ -82,10 +109,11 @@ class OfficialCases(unittest.TestCase):
                     files=[cached_file(db,f["id"]) for f in batch["files"]]
                     kinds=Counter(f["kind"] for f in files)
                     print(case,"원본 판독",dict(kinds),flush=True)
-                    self.assertEqual(kinds,Counter({"01":1,"02":2}) if case=="set05" else Counter({"01":1,"02":1,"03":1}))
+                    expected_kinds = {"set04":{"01":1,"03":1},"set05":{"01":1,"02":2}}
+                    self.assertEqual(kinds,Counter(expected_kinds.get(case, {"01":1,"02":1,"03":1})))
                     app=next(json.loads(f["signals"])["apps"][0] for f in files if f["kind"]=="01")
                     names=app["roster"]
-                    consent=next(json.loads(f["signals"])["consent"] for f in files if f["kind"]=="02")
+                    consent=next((json.loads(f["signals"])["consent"] for f in files if f["kind"]=="02"), [])
                     if case=="set10":
                         self.assertGreater(len(names),len(consent))
                         self.assertGreaterEqual(len(consent),2)
@@ -98,7 +126,7 @@ class OfficialCases(unittest.TestCase):
                     if case!="set05":
                         structured["Information Extract - 신분증정보"]={"account_holder":app["rep"],"account_number":"00999" if case=="set03" else "00100"}
                     result=parse_result({"output":[{"model":k,"content":[{"text":v}]} for k,v in structured.items()]},files)
-                    expected={"set03":{"account"},"set05":{"duplicate","identity"},"set10":{"consent"}}[case]
+                    expected={"set03":{"account"},"set04":{"consent"},"set05":{"duplicate","identity"},"set10":{"consent"}}[case]
                     self.assertTrue(expected<=set(result["issues"]))
                     if case=="set03":
                         refs=next(c["refs"] for c in result["checks"] if "예금주" in c["label"])

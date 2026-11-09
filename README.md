@@ -41,6 +41,8 @@ $eventId = Read-Host '배정할 대회 UUID'
 
 접수 API 회귀 시험은 공식 ZIP과 `httpx`를 사용합니다. 별도 테스트 DB에 두 계정을 만든 뒤 로컬 API 주소를 `INTAKE_TEST_URL`에, 계정과 비밀번호를 `INTAKE_TEST_LOGIN_A`, `INTAKE_TEST_PASSWORD_A`, `INTAKE_TEST_LOGIN_B`, `INTAKE_TEST_PASSWORD_B`에 설정합니다. 시험은 그 DB에 대회와 테스트 접수를 생성합니다.
 
+수동 배정·확정 API 회귀 시험은 판독 완료 상태를 준비하기 위해 같은 로컬 시험 DB의 `AWARDS_DB_URL`, `AWARDS_DB_USER`, `AWARDS_DB_PASSWORD`를 사용합니다. 실제 한글 원본의 판독 전후는 `tests.test_operations_cases`에서 검증합니다.
+
 판정 워커를 연결하려면 Spring Boot와 워커에 같은 `AWARDS_REVIEW_WORKER_TOKEN`을 설정합니다. 워커는 확정 원본을 배정받고 결과를 제출하며, 담당자는 접수 상세에서 팀별 진행 상태와 최종판정을 확인합니다. 회귀 시험 환경에도 같은 토큰을 설정하면 동시 배정 시험을 실행합니다. 만료 후 인계까지 검증할 때는 **시험 서버**에 `AWARDS_REVIEW_LEASE_SECONDS=15`, 시험 클라이언트에 `INTAKE_TEST_SHORT_LEASE=1`을 설정합니다. [워커 API 명세](docs/IMPLEMENTATION_PLAN.md#워커-판정-작업-배정과-결과-등록)
 
 ```powershell

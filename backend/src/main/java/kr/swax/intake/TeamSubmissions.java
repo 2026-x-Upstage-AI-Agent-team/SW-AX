@@ -81,7 +81,14 @@ class TeamSubmissions {
 
     private Link reconcile(String login, UUID batch, UUID team, Link previous, List<IntakeStore.Item> files,
                            boolean explicit) {
-        boolean blocked = files.stream().anyMatch(f -> f.holds(team));
+        // All callers hold the batch lock, also used when preparation finishes or a file is retried.
+        boolean read = db.queryForObject("""
+                SELECT EXISTS(SELECT FROM intake_preparation WHERE batch_id=? AND state IN ('ready','prepared'))
+                """, Boolean.class, batch);
+        if (!read && explicit) {
+            throw ApiErrors.error(409, "접수 원본의 판독이 끝난 뒤 팀 제출본을 확정해 주세요.");
+        }
+        boolean blocked = !read || files.stream().anyMatch(f -> f.holds(team));
         List<IntakeStore.Item> selected = new ArrayList<>(db.query("""
                 SELECT f.id,f.name,f.size_bytes,f.sha256,sf.position FROM intake_batch b
                 JOIN team_submission_file sf ON sf.submission_id=b.base_submission JOIN intake_file f ON f.id=sf.file_id

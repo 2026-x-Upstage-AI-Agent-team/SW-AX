@@ -31,6 +31,8 @@ def choose(db):
         FROM review_job j JOIN review_job_status r ON r.review_job_id=j.id
         JOIN team_submission s ON s.id=j.submission_id LEFT JOIN studio_execution e ON e.job_id=j.id
         WHERE e.occupies_slot OR (r.state IN ('queued','running') AND NOT ops_team_held(s.team_id)
+            AND EXISTS(SELECT FROM intake_team_confirmation c JOIN intake_preparation p ON p.batch_id=c.batch_id
+                WHERE c.submission_id=s.id AND c.state='confirmed' AND p.state IN ('ready','prepared'))
             AND (e.phase IS NULL OR e.phase IN ('queued','polling')) AND (e.due IS NULL OR e.due<=now())
             AND (j.work_state='queued' OR j.lease_until<=now() OR j.worker_id='studio-dispatch')
             AND NOT EXISTS(SELECT FROM studio_execution WHERE phase='access'))

@@ -13,7 +13,7 @@ from pypdf import PdfWriter
 from operations.delivery import deliver
 from operations.store import configuration, connect
 from operations.studio_worker import run_studio
-from tests.test_intake_postgres import login
+from tests.test_intake_postgres import login, mark_batch_read
 from service.db import ROOT
 
 
@@ -228,6 +228,7 @@ class Recovery(unittest.TestCase):
                     files=[("files",(n,b)) for n,b in items],
                     data={"event":event,"manifest":json.dumps([{"name":n,"size":len(b)} for n,b in items])})
         seed=staff.send(request(files[:1])).raise_for_status().json()["status_url"]
+        mark_batch_read(seed)
         file=staff.get(seed).raise_for_status().json()["files"][0]["item_id"]
         staff.put(f"{seed}/files/{file}/assignment",json={"action":"assign","team":team,"revision":0,"reason":"지연 검증"}).raise_for_status()
         staff.put(f"{seed}/teams/{team}/submission",json={"revision":1}).raise_for_status()

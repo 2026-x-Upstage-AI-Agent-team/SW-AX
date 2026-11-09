@@ -59,6 +59,7 @@ class ReviewWorkerJobs {
                     FROM review_job j JOIN team_submission s ON s.id = j.submission_id
                     JOIN award_team t ON t.id = s.team_id
                     JOIN intake_team_confirmation c ON c.submission_id = s.id AND c.state = 'confirmed'
+                     JOIN intake_preparation p ON p.batch_id = c.batch_id AND p.state IN ('ready','prepared')
                     WHERE (j.work_state = 'queued' OR (j.work_state = 'running' AND j.lease_until <= statement_timestamp()))
                       AND (?::uuid IS NULL OR t.event_id = ?)
                       AND (?::uuid IS NULL OR j.id = ?)

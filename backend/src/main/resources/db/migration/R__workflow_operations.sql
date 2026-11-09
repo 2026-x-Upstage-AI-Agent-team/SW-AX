@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS intake_preparation (
     batch_id uuid PRIMARY KEY REFERENCES intake_batch, state text NOT NULL DEFAULT 'pending'
         CHECK (state IN ('pending','ready','prepared')), created_at timestamptz NOT NULL DEFAULT now()
 );
+-- Receipts uploaded before preparation was introduced also need a path to manual confirmation.
+INSERT INTO intake_preparation(batch_id) SELECT id FROM intake_batch ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS original_analysis (
     file_id uuid PRIMARY KEY REFERENCES intake_file, kind text NOT NULL DEFAULT '?',
     pages integer NOT NULL DEFAULT 0, signals jsonb NOT NULL DEFAULT '{}', candidates uuid[] NOT NULL DEFAULT '{}',
