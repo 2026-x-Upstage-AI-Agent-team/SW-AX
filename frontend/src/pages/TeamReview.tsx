@@ -589,10 +589,12 @@ function HistoryCard({ s }: { s: SubmissionDetail }) {
         ))}
       </ol>
       {s.audit.length > 0 && (
-        <ul className="mt-4 flex flex-col gap-1 border-t border-line-soft pt-3 text-xs text-muted">
-          {s.audit.slice(0, 8).map((a, i) => (
+        <ul className="mt-4 flex max-h-72 flex-col gap-1 overflow-y-auto border-t border-line-soft pt-3 text-xs text-muted">
+          {s.audit.map((a, i) => (
             <li key={i}>
-              {when(a.ts)} · {a.action} · {a.actor}
+              {when(a.ts)} · {a.action}
+              {a.http_status && !a.action.includes(`HTTP ${a.http_status}`) && ` · HTTP ${a.http_status}`}
+              {a.error_code && ` · ${a.error_code}`} · {a.actor}
             </li>
           ))}
         </ul>

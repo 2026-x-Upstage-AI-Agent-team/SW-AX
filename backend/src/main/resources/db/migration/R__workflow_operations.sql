@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS workflow_audit (
     at timestamptz NOT NULL DEFAULT clock_timestamp(), actor text NOT NULL, action text NOT NULL,
     remote_id text, stage text, attempts integer, due timestamptz
 );
+ALTER TABLE workflow_audit ADD COLUMN IF NOT EXISTS http_status smallint,
+    ADD COLUMN IF NOT EXISTS error_code text;
 CREATE INDEX IF NOT EXISTS workflow_audit_submission ON workflow_audit (submission_id,id);
 CREATE TABLE IF NOT EXISTS review_resolution (
     submission_id uuid PRIMARY KEY REFERENCES team_submission, revision integer NOT NULL DEFAULT 0,

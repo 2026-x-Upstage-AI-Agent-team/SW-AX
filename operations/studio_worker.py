@@ -11,15 +11,15 @@ from service.documents import preview
 from .store import cached_file
 
 
-def status(db, task, phase, error="", *, delay=0, failures=0, slot=False, remote=None):
+def status(db, task, phase, error="", *, delay=0, failures=0, slot=False, remote=None, http_status=None, error_code=None):
     with db.transaction():
         db.execute("""UPDATE studio_execution SET phase=%s,error=%s,failures=%s,occupies_slot=%s,
             remote_id=coalesce(%s,remote_id),updated_at=now(),due=now()+%s*interval '1 second' WHERE job_id=%s""",
                    (phase, error, failures, slot, remote, delay, task["id"]))
-        if task["phase"] != phase or error != task["error"] or failures:
-            db.execute("""INSERT INTO workflow_audit(submission_id,actor,action,stage,remote_id,attempts,due)
-                SELECT %s,'@workflow',%s,phase,remote_id,failures,due FROM studio_execution WHERE job_id=%s""",
-                       (task["submission_id"], "Studio " + phase + (" · " + error if error else ""), task["id"]))
+        if task["phase"] != phase or error != task["error"] or failures or error_code:
+            db.execute("""INSERT INTO workflow_audit(submission_id,actor,action,stage,remote_id,attempts,due,http_status,error_code)
+                SELECT %s,'@workflow',%s,phase,remote_id,failures,due,%s,%s FROM studio_execution WHERE job_id=%s""",
+                       (task["submission_id"], "Studio " + phase + (" · " + error if error else ""), http_status, error_code, task["id"]))
 
 
 def choose(db):
@@ -42,15 +42,20 @@ def choose(db):
 def backoff(db, task, exc, creating):
     response = exc.response if isinstance(exc, httpx.HTTPStatusError) else None
     code = response.status_code if response is not None else 0
+    if response is not None:
+        error_code = {429: "RATE_LIMITED", 503: "SERVICE_UNAVAILABLE"}.get(code, "HTTP_ERROR")
+    else:
+        error_code = "TIMEOUT" if isinstance(exc, httpx.TimeoutException) else "NETWORK_ERROR"
+    audit = {"http_status": code or None, "error_code": error_code}
     remote = bool(task["remote_id"] or task["studio_job_id"])
     if code in (401, 402, 403):
-        status(db, task, "access", f"Upstage 조직 키·사용량을 확인하고 재개하세요. HTTP {code}", slot=remote)
+        status(db, task, "access", f"Upstage 조직 키·사용량을 확인하고 재개하세요. HTTP {code}", slot=remote, **audit)
     elif creating and (not code or code == 408 or code >= 500):
-        status(db, task, "uncertain", "생성 응답이 불명확합니다. Studio에서 기존 실행을 확인하세요.", slot=True)
+        status(db, task, "uncertain", "생성 응답이 불명확합니다. Studio에서 기존 실행을 확인하세요.", slot=True, **audit)
     elif not code or code in (408, 429) or code >= 500:
         count = task["failures"] + 1
         if count > 3:
-            status(db, task, "paused", "통신 재시도 한도에 도달했습니다. 실행 이력을 확인하세요.", failures=count, slot=remote)
+            status(db, task, "paused", "통신 재시도 한도에 도달했습니다. 실행 이력을 확인하세요.", failures=count, slot=remote, **audit)
             return
         delay = 2 ** count + random.random()
         after = response.headers.get("Retry-After", "") if response is not None else ""
@@ -60,9 +65,9 @@ def backoff(db, task, exc, creating):
         except (ValueError, TypeError, OverflowError):
             pass
         status(db, task, "polling" if remote else "queued", "통신 오류로 재시도를 기다립니다.",
-               failures=count, delay=delay, slot=remote)
+               failures=count, delay=delay, slot=remote, **audit)
     else:
-        status(db, task, "paused", f"Studio 설정·입력을 확인하세요. HTTP {code}", slot=remote)
+        status(db, task, "paused", f"Studio 설정·입력을 확인하세요. HTTP {code}", slot=remote, **audit)
 
 
 def run_studio(db, api, external, cfg):

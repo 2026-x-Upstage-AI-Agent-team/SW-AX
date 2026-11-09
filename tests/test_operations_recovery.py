@@ -72,11 +72,11 @@ class Recovery(unittest.TestCase):
                     raise httpx.ReadTimeout("test",request=request)
                 return httpx.Response(200,json={"id":"job_"+str(len(creates))})
             if mode=="throttle":
-                return httpx.Response(429,headers={"Retry-After":"20"})
+                return httpx.Response(429,headers={"Retry-After":"20"},text="private upstream detail")
             if mode=="denied":
                 return httpx.Response(403)
             if mode=="unavailable":
-                return httpx.Response(503)
+                return httpx.Response(503,text="private upstream detail")
             if mode=="read-timeout":
                 raise httpx.ReadTimeout("test",request=request)
             remote=request.url.path.split("/")[-1]
@@ -102,10 +102,17 @@ class Recovery(unittest.TestCase):
         tick()
         self.assertGreaterEqual(execution()["delay"],20)
         self.assertTrue(execution()["occupies_slot"])
-        for _ in range(3):
+        for mode in ("unavailable", "read-timeout", "throttle"):
             due()
             tick()
         self.assertEqual(execution()["phase"],"paused")
+        detail = staff.get(f"/api/operations/submissions/{sid}").raise_for_status().json()
+        retries = [row for row in reversed(detail["audit"]) if row["attempts"]]
+        self.assertEqual([(r["http_status"], r["error_code"], r["attempts"]) for r in retries],
+                         [(429, "RATE_LIMITED", 1), (503, "SERVICE_UNAVAILABLE", 2),
+                          (None, "TIMEOUT", 3), (429, "RATE_LIMITED", 4)])
+        self.assertTrue(all(r["job"] == "job_found" and r["due"] >= r["ts"] - 1 for r in retries))
+        self.assertNotIn("private upstream detail", json.dumps(retries))
         retry().raise_for_status()
         mode="denied"
         tick()

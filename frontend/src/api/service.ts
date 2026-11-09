@@ -122,7 +122,7 @@ export type SubmissionDetail = SubInfo & {
   files: FileInfo[];
   history: Array<{ id: string; version: number; state: string; job: string | null; decision: Decision | null }>;
   mail: MailRow[];
-  audit: Array<{ ts: number; action: string; actor: string }>;
+  audit: Array<{ ts: number; action: string; actor: string; http_status?: number | null; error_code?: string | null }>;
 };
 
 export type BatchDetail = {

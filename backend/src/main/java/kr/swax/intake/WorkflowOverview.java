@@ -115,7 +115,8 @@ class WorkflowOverview {
         node.set("mail",data.json.valueToTree(data.list("SELECT info FROM ops_mail WHERE submission_id=? ORDER BY created_at DESC",id)));
         node.set("audit",data.json.valueToTree(data.list("""
             SELECT jsonb_build_object('ts',extract(epoch FROM at),'action',action,'actor',actor,'stage',stage,'job',remote_id,
-                'attempts',attempts,'due',extract(epoch FROM due)) FROM workflow_audit WHERE submission_id=? ORDER BY id DESC
+                'attempts',attempts,'due',extract(epoch FROM due),'http_status',http_status,'error_code',error_code)
+            FROM workflow_audit WHERE submission_id=? ORDER BY id DESC
             """,id)));
         return node;
     }
