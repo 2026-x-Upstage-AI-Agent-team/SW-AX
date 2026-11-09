@@ -133,9 +133,9 @@ class OperationalAcceptance(unittest.TestCase):
         self.assertEqual(len({s["job"] for s in details.values()}),3)
         for s in ("set01","set02"):
             if not details[s]["decision"]:
-                self.assertFalse([m for m in details[s]["mail"] if m["kind"]!="담당자 알림"])
-            self.assertEqual(sum(m["kind"]=="담당자 알림" for m in details[s]["mail"]),int(details[s]["verdict"]=="담당자확인"))
-        self.assertEqual(len(details["set04"]["mail"]),2)
+                self.assertEqual(details[s]["mail"],[])
+            self.assertFalse(any(m["kind"]=="담당자 알림" for m in details[s]["mail"]))
+        self.assertEqual(len(details["set04"]["mail"]),1)
         leader, = [m for m in details["set04"]["mail"] if m["kind"]=="보완 요청"]
         message = BytesParser(policy=policy.default).parsebytes((DATA/"operations/mail"/(leader["id"]+".eml")).read_bytes())
         self.assertIn("동의서",message.get_body().get_content())

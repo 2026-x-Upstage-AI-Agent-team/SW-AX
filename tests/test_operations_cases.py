@@ -260,7 +260,7 @@ class OfficialCases(unittest.TestCase):
                         self.assertIn(case+"@award.test",review["application_emails"])
                     self.assertTrue(review["email_needs_confirmation"])
                     self.assertEqual({m["kind"]:m["state"] for m in review["mail"]},
-                                     {"담당자 알림":"local","보완 요청":"recipient_check"})
+                                     {"보완 요청":"recipient_check"})
                     leader, = [m for m in review["mail"] if m["kind"]=="보완 요청"]
                     self.assertFalse((DATA/"operations/mail"/(leader["id"]+".eml")).exists())
                     confirm_address = {"email":case+"@award.test","submission":sid}
@@ -271,7 +271,7 @@ class OfficialCases(unittest.TestCase):
                             pass
                     self.assertEqual(staff.get("/api/mail/"+leader["id"]).json()["sent_to"],case+"@award.test")
                     notices=db.execute("SELECT id,kind,state FROM review_mail WHERE submission_id=%s",(job["submission_id"],)).fetchall()
-                    self.assertEqual({m["kind"]:m["state"] for m in notices},{"담당자 알림":"local","보완 요청":"local"})
+                    self.assertEqual({m["kind"]:m["state"] for m in notices},{"보완 요청":"local"})
                     self.assertEqual(len(notices),2)
                     self.assertTrue(all((DATA/"operations/mail"/(str(m["id"])+".eml")).is_file() for m in notices))
 

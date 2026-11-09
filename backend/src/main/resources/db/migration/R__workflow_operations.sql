@@ -75,6 +75,8 @@ ALTER TABLE review_mail ADD COLUMN IF NOT EXISTS revision integer NOT NULL DEFAU
     ALTER COLUMN state SET DEFAULT 'draft';
 ALTER TABLE review_mail DROP CONSTRAINT IF EXISTS review_mail_state_check;
 UPDATE review_mail SET state='draft',sent_to=NULL WHERE state='waiting';
+UPDATE review_mail SET state='obsolete',sent_to=NULL,approved_by=NULL,approved_at=NULL
+    WHERE kind='담당자 알림' AND state IN ('draft','approved','failed','uncertain');
 ALTER TABLE review_mail ADD CONSTRAINT review_mail_state_check CHECK (
     state IN ('draft','approved','sending','local','sent','uncertain','failed','obsolete')
     AND (state<>'approved' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL
@@ -153,11 +155,11 @@ CROSS JOIN LATERAL (SELECT ARRAY(
 CREATE OR REPLACE VIEW ops_mail AS
 SELECT m.id,m.submission_id,s.event_id,m.created_at,jsonb_build_object('id',m.id,'submission',m.submission_id,'kind',m.kind,
     'state',CASE WHEN s.job_state='superseded' AND m.state IN ('draft','approved','failed','uncertain') THEN 'obsolete'
-                 WHEN m.state='draft' AND m.kind<>'담당자 알림' AND r.needs_confirmation THEN 'recipient_check' ELSE m.state END,
+                 WHEN m.state='draft' AND r.needs_confirmation THEN 'recipient_check' ELSE m.state END,
     'sent_to',m.sent_to,'created',extract(epoch FROM m.created_at),'sent_at',extract(epoch FROM m.sent_at),
     'name',t.name,'version',s.version) AS info
 FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
-JOIN ops_leader_recipient r ON r.submission_id=s.id;
+JOIN ops_leader_recipient r ON r.submission_id=s.id WHERE m.kind IN ('보완 요청','검토 완료');
 
 CREATE OR REPLACE FUNCTION ops_team_held(team uuid) RETURNS boolean LANGUAGE sql STABLE AS $$
     SELECT EXISTS(SELECT FROM intake_team_confirmation WHERE team_id=team AND state IN ('blocked','empty'))
@@ -184,9 +186,6 @@ DECLARE current_review ops_submission%ROWTYPE;
 BEGIN
     SELECT * INTO current_review FROM ops_submission WHERE id=NEW.submission_id;
     IF current_review.state <> 'done' THEN RETURN NULL; END IF;
-    IF current_review.verdict IN ('재제출요청','담당자확인') THEN
-        INSERT INTO review_mail(submission_id,kind) VALUES (NEW.submission_id,'담당자 알림') ON CONFLICT DO NOTHING;
-    END IF;
     IF current_review.verdict='재제출요청' OR (current_review.verdict='성공' AND EXISTS(
         SELECT FROM intake_team_confirmation c JOIN intake_batch b ON b.id=c.batch_id
         WHERE c.submission_id=NEW.submission_id AND (b.base_submission<>NEW.submission_id OR b.inherited_files IS NOT NULL))) THEN

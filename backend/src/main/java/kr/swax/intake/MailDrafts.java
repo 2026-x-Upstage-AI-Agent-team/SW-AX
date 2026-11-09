@@ -2,7 +2,6 @@ package kr.swax.intake;
 
 import java.security.Principal;
 import java.util.*;
-import org.springframework.core.env.Environment;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.node.ObjectNode;
@@ -14,10 +13,8 @@ import static kr.swax.intake.WorkflowData.Resource.MAIL;
 class MailDrafts {
     record Edit(Integer revision, String subject, String body, String recipient) {}
     private final WorkflowData data;
-    private final GmailProfile gmail;
-    private final Environment env;
-    MailDrafts(WorkflowData data, GmailProfile gmail, Environment env) {
-        this.data=data; this.gmail=gmail; this.env=env;
+    MailDrafts(WorkflowData data) {
+        this.data=data;
     }
 
     @GetMapping
@@ -32,11 +29,11 @@ class MailDrafts {
                     'approved_by',m.approved_by,'approved_at',extract(epoch FROM m.approved_at)),
                 'source',jsonb_build_object('name',t.name,'kind',m.kind,'version',s.version,'verdict',s.verdict,
                     'decision',s.decision,'issues',s.issues,'output',s.output),
-                'recipient',CASE WHEN m.kind='담당자 알림' THEN (SELECT mail_recipient FROM workflow_health WHERE role='mail') ELSE t.email END,
+                'recipient',t.email,
                 'eligible',s.state='done' AND NOT ops_team_held(t.id) AND EXISTS(SELECT FROM intake_team_confirmation c
-                    WHERE c.submission_id=s.id AND c.state='confirmed') AND (m.kind='담당자 알림' OR (NOT r.needs_confirmation AND
+                    WHERE c.submission_id=s.id AND c.state='confirmed') AND NOT r.needs_confirmation AND
                     ((m.kind='보완 요청' AND (s.verdict='재제출요청' OR s.decision='보완 필요')) OR
-                     (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))))))
+                     (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))))
             FROM review_mail m JOIN ops_mail o ON o.id=m.id JOIN ops_submission s ON s.id=m.submission_id
             JOIN award_team t ON t.id=s.team_id JOIN ops_leader_recipient r ON r.submission_id=s.id WHERE m.id=?
             """,id);
@@ -50,17 +47,6 @@ class MailDrafts {
                 if (info.path("body").isNull()) info.put("body",template.body());
             }
             recipient=row.path("recipient").asString("");
-            if (row.path("recipient").isNull() && info.path("kind").asString().equals("담당자 알림")) {
-                String mode=env.getProperty("MAIL_MODE","");
-                recipient=switch(mode.toLowerCase(Locale.ROOT)) {
-                    case "smtp" -> env.getProperty("ADMIN_EMAIL","");
-                    case "local" -> env.getProperty("ADMIN_EMAIL","admin@award.test");
-                    default -> {
-                        String address=gmail.current().address();
-                        yield address.isBlank() && !mode.equalsIgnoreCase("gmail") ? env.getProperty("ADMIN_EMAIL","admin@award.test") : address;
-                    }
-                };
-            }
         }
         info.put("recipient",recipient);
         info.put("can_approve",draft && !recipient.isBlank() && row.path("eligible").asBoolean(false));

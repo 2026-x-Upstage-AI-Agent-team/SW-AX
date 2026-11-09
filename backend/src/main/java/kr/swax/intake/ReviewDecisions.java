@@ -51,7 +51,7 @@ class ReviewDecisions {
         }
         if (!address.equals(previous)) data.db.update("""
             UPDATE review_mail m SET state='draft',sent_to=NULL,approved_by=NULL,approved_at=NULL,revision=m.revision+1
-            FROM team_submission s WHERE s.id=m.submission_id AND s.team_id=? AND m.kind<>'담당자 알림' AND m.state='approved'
+            FROM team_submission s WHERE s.id=m.submission_id AND s.team_id=? AND m.kind IN ('보완 요청','검토 완료') AND m.state='approved'
             """,id);
         return Map.of("saved",true);
     }

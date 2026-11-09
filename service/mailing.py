@@ -18,7 +18,6 @@ from . import db
 from .db import smtp_enabled
 
 GMAIL_HOST = "smtp.gmail.com"
-ADMIN_NOTICE = "담당자 알림"
 _credential_lock = threading.RLock()
 
 
@@ -103,8 +102,8 @@ def mail_settings(settings):
 
 
 def mail_recipient(kind, cfg, team_email, team_id):
-    if kind == ADMIN_NOTICE:
-        return cfg.get("ADMIN_EMAIL")
+    if kind not in ("보완 요청","검토 완료"):
+        return None
     return team_email if smtp_enabled(cfg) else team_id + "@award.test"
 
 

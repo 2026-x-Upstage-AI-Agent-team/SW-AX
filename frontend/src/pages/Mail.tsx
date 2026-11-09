@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { ADMIN_NOTICE } from '../api/labels';
-import { isMailDraft, setTeamEmail, type Dashboard } from '../api/service';
+import { isLeaderMail, isMailDraft, setTeamEmail, type Dashboard } from '../api/service';
 import { Page } from '../components/Layout';
 import MailItem from '../components/MailItem';
 import { Feedback, Notice, PageHeader, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
-type Tab = 'drafts' | 'leader' | 'admin';
+type Tab = 'drafts' | 'leader';
 
 export default function Mail() {
   const { dashboard, dashboardError, refresh } = useEvent();
   const [tab, setTab] = useState<Tab>('drafts');
   const [message, setMessage] = useState('');
-  const list = dashboard?.mail.filter((m) => tab === 'drafts' ? isMailDraft(m) : (tab === 'admin') === (m.kind === ADMIN_NOTICE)) ?? [];
+  const mail = dashboard?.mail.filter(isLeaderMail) ?? [];
+  const list = tab === 'drafts' ? mail.filter(isMailDraft) : mail;
   const noEmail = dashboard?.teams.filter((t) => !t.email && t.submission) ?? [];
 
   return (
@@ -38,9 +38,8 @@ export default function Mail() {
           <div role="group" aria-label="메일 목록" className="segments flex-wrap self-start">
             {(
               [
-                ['drafts', `승인 대기 ${dashboard.mail.filter(isMailDraft).length}`],
-                ['leader', `팀장 안내 ${dashboard.mail.filter((m) => m.kind !== ADMIN_NOTICE).length}`],
-                ['admin', `담당자 알림 ${dashboard.mail.filter((m) => m.kind === ADMIN_NOTICE).length}`],
+                ['drafts', `승인 대기 ${mail.filter(isMailDraft).length}`],
+                ['leader', `팀장 안내 ${mail.length}`],
               ] as Array<[Tab, string]>
             ).map(([key, label]) => (
               <button

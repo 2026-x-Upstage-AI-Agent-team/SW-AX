@@ -23,7 +23,7 @@ from reporting.verify_evidence import verify
 from . import gmail_oauth, studio
 from .db import DATA, ROOT, database, dump, now, row, rows, settings, smtp_enabled
 from .documents import convert, powershell, preview, read_signals, source
-from .mailing import ADMIN_NOTICE, discard_revoked_oauth, mail_recipient, mail_settings, smtp_connection
+from .mailing import discard_revoked_oauth, mail_recipient, mail_settings, smtp_connection
 from .workflow import audit, enqueue_mail, files_for, held, identify_batch, require
 
 REPORT_NAME = "시상금_지급내역서"
@@ -115,8 +115,6 @@ def run_studio(s):
                            (state,dump(result),"추출된 팀·대표가 배정과 다릅니다. 원접수를 대조해 배정을 정정하세요." if conflict else "",now(),s["id"]))
                 audit(db,s["id"],"Studio 판정",{"verdict":result["verdict"],"job":s["job"]},"서비스")
                 if not conflict and t["current"] == s["id"]:
-                    if result["verdict"] in ("재제출요청", "담당자확인") and mail_settings(cfg).get("ADMIN_EMAIL"):
-                        enqueue_mail(db, s["id"], ADMIN_NOTICE)
                     if result["verdict"] == "재제출요청":
                         enqueue_mail(db,s["id"],"보완 요청")
                     elif result["verdict"] == "성공" and s["version"] > 1:
@@ -151,7 +149,7 @@ def deliver(mail, cfg):
     sid = mail["submission"]
     with database(True) as db:
         mail = require(db,"mail",mail["id"])
-        if mail["state"] != "approved" or mail["approved_at"] is None or not mail["subject"] or not mail["body"]:
+        if mail["kind"] not in ("보완 요청","검토 완료") or mail["state"] != "approved" or mail["approved_at"] is None or not mail["subject"] or not mail["body"]:
             return
         s = require(db, "submissions", sid)
         t = require(db, "teams", s["team"])
@@ -308,7 +306,8 @@ class Worker:
             batch = row(db,"SELECT * FROM batches WHERE state='preparing' ORDER BY rowid LIMIT 1")
             report = row(db,"SELECT * FROM reports WHERE state='queued' ORDER BY rowid LIMIT 1")
             mails = rows(db,"""SELECT m.*,t.id AS tid,t.email FROM mail m JOIN submissions s ON m.submission=s.id
-                       JOIN teams t ON t.current=s.id WHERE m.state='approved' AND m.approved_at IS NOT NULL AND s.state='done' ORDER BY m.rowid""")
+                       JOIN teams t ON t.current=s.id WHERE m.state='approved' AND m.kind IN ('보완 요청','검토 완료')
+                       AND m.approved_at IS NOT NULL AND s.state='done' ORDER BY m.rowid""")
             mail = next((m for m in mails if not held(db, m["tid"])), None) if cfg["MAIL_READY"] else None
         if active or new:
             run_studio(active or new)

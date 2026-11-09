@@ -33,12 +33,14 @@ if (mailId) {
     const event = process.env.INTAKE_TEST_MAIL_EVENT;
     const dashboard = await (await request.get('/api/dashboard?event=' + event)).json();
     assert.equal(dashboard.smtp, false);
+    assert.ok(dashboard.mail.every(m => m.kind !== '담당자 알림'));
     const path = '/api/mail/' + mailId;
     const draft = await (await request.get(path)).json();
     assert.equal(draft.state, 'draft');
     assert.match(draft.recipient, /@award\.test$/);
     await page.addInitScript(id => localStorage.setItem('swax.event.intake', id), event);
     await page.goto('/#/mail');
+    assert.equal(await page.getByRole('button', { name: /담당자 알림/ }).count(), 0);
     const row = page.getByRole('listitem').filter({ hasText: draft.name }).filter({ hasText: draft.kind });
     await row.getByRole('button', { name: '초안 검토' }).click();
     assert.equal(await row.getByLabel('제목', { exact: true }).inputValue(), draft.subject);

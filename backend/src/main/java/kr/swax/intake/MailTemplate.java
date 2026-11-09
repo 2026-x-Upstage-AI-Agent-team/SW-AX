@@ -21,22 +21,17 @@ record MailTemplate(String subject, String body) {
         String kind = mail.path("kind").asString();
         int version = mail.path("version").asInt();
         var lines = new ArrayList<String>();
-        if (kind.equals("담당자 알림")) {
-            lines.add(name + " 팀의 " + version + "차 판정은 " + mail.path("verdict").asString() + "입니다.");
-            lines.add("팀별 서류 검토에서 원본과 확인 항목을 열어 주세요.");
-        } else {
-            lines.add(name + " 팀장님, 제출 " + version + "차 서류의 검토 결과입니다.");
-            lines.add("");
-            if (kind.equals("보완 요청")) {
-                JsonNode output = mail.path("output");
-                JsonNode selected = "보완 필요".equals(mail.path("decision").asString("")) ? mail.path("issues") : output.path("issues");
-                var issues = new LinkedHashSet<String>();
-                selected.forEach(item -> issues.add(item.asString("")));
-                if (issues.isEmpty()) issues.add("other");
-                for (String issue : issues) if (INSTRUCTIONS.containsKey(issue)) lines.add(instruction(issue,output));
-                lines.add("보완한 서류는 기존 제출 경로로 담당자에게 보내 주세요.");
-            } else lines.add("제출한 서류의 검토를 완료했습니다.");
-        }
+        lines.add(name + " 팀장님, 제출 " + version + "차 서류의 검토 결과입니다.");
+        lines.add("");
+        if (kind.equals("보완 요청")) {
+            JsonNode output = mail.path("output");
+            JsonNode selected = "보완 필요".equals(mail.path("decision").asString("")) ? mail.path("issues") : output.path("issues");
+            var issues = new LinkedHashSet<String>();
+            selected.forEach(item -> issues.add(item.asString("")));
+            if (issues.isEmpty()) issues.add("other");
+            for (String issue : issues) if (INSTRUCTIONS.containsKey(issue)) lines.add(instruction(issue,output));
+            lines.add("보완한 서류는 기존 제출 경로로 담당자에게 보내 주세요.");
+        } else lines.add("제출한 서류의 검토를 완료했습니다.");
         return new MailTemplate("[시상금 서류 " + kind + "] " + name, String.join("\n",lines));
     }
 

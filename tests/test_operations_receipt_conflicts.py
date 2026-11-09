@@ -167,8 +167,8 @@ class ReceiptConflicts(unittest.TestCase):
         while deliver(self.db,self.cfg):
             pass
         notices = self.detail("/api/operations/submissions/"+sid)["mail"]
-        self.assertEqual({m["kind"] for m in notices},{"보완 요청","담당자 알림"})
-        self.assertEqual(len(notices),2)
+        self.assertEqual({m["kind"] for m in notices},{"보완 요청"})
+        self.assertEqual(len(notices),1)
         self.assertTrue(all(m["state"]=="local" and m["sent_at"]-m["created"]>3500 for m in notices))
         leader, = [m for m in notices if m["kind"]=="보완 요청"]
         self.assertIn("[01 1쪽 1행]", self.detail("/api/mail/"+leader["id"])["body"])

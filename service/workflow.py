@@ -132,6 +132,8 @@ def synchronize(db, batch):
 
 
 def enqueue_mail(db, sub, kind):
+    if kind not in ("보완 요청","검토 완료"):
+        raise ValueError("팀장 안내만 메일로 보낼 수 있습니다.")
     db.execute("INSERT OR IGNORE INTO mail(id,submission,kind,created,state) VALUES(?,?,?,?,'draft')", (uid(), sub, kind, now()))
 
 

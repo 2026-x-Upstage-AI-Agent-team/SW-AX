@@ -78,7 +78,7 @@ export default function Gmail() {
   }
   return (
     <Page tone="gray" width="normal">
-      <PageHeader title="Gmail 연결" lead="팀장 안내와 담당자 알림을 보낼 Gmail 계정을 연결합니다." />
+      <PageHeader title="Gmail 연결" lead="팀장 안내를 보낼 Gmail 계정을 연결합니다." />
       {Object.hasOwn(results, result) && <Feedback {...(['connected', 'cancelled', 'disconnected'].includes(result) ? { message: results[result] } : { error: results[result] })} />}
       {content}
     </Page>

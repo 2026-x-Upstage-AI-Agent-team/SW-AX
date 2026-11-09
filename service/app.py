@@ -108,7 +108,7 @@ def dashboard(event: str = "wave"):
              FROM batches b JOIN files f ON f.batch=b.id WHERE b.event=? GROUP BY b.id ORDER BY b.rowid DESC""",event)
         reports = rows(db,"SELECT id,version,state,error,created FROM reports WHERE event=? ORDER BY version DESC",event)
         mails = rows(db,"""SELECT m.id,m.submission,m.kind,m.state,m.sent_to,m.created,m.sent_at,s.version,t.name FROM mail m JOIN submissions s ON m.submission=s.id
-                     JOIN teams t ON t.id=s.team WHERE t.event=? ORDER BY m.rowid DESC""",event)
+                     JOIN teams t ON t.id=s.team WHERE t.event=? AND m.kind IN ('보완 요청','검토 완료') ORDER BY m.rowid DESC""",event)
         cfg = mail_settings(settings())
         return {"events":rows(db,"SELECT * FROM events ORDER BY rowid"),"teams":teams,"batches":batches,"reports":reports,
                 "mail":mails,"smtp":smtp_enabled(cfg), "gmail_account":cfg.get("SMTP_USER") if "GMAIL_CREDENTIAL" in cfg else None,
@@ -379,7 +379,7 @@ def submission(sid: str):
             "current":t["current"],"note":s["note"],"fields":effective_fields(s),"result":json.loads(s["result"] or "null"),
             "files":[file_info(f) for f in files_for(db,json.loads(s["files"]))],
             "history":rows(db,"SELECT id,version,state,job,decision FROM submissions WHERE team=? ORDER BY version DESC",t["id"]),
-            "mail":rows(db,"SELECT id,submission,kind,state,sent_to,created,sent_at FROM mail WHERE submission=? ORDER BY rowid",sid),
+            "mail":rows(db,"SELECT id,submission,kind,state,sent_to,created,sent_at FROM mail WHERE submission=? AND kind IN ('보완 요청','검토 완료') ORDER BY rowid",sid),
             "audit":rows(db,"SELECT ts,action,actor FROM audit WHERE subject=? ORDER BY id DESC LIMIT 30",sid)}
 
 
@@ -486,14 +486,15 @@ def set_email(tid: str, body: Address):
         db.execute("UPDATE teams SET email=? WHERE id=?",(address,tid))
         if address != team["email"]:
             db.execute("""UPDATE mail SET state='draft',sent_to=NULL,approved_at=NULL,revision=revision+1
-                WHERE state='approved' AND kind<>'담당자 알림' AND submission IN (SELECT id FROM submissions WHERE team=?)""",(tid,))
+                WHERE state='approved' AND kind IN ('보완 요청','검토 완료')
+                AND submission IN (SELECT id FROM submissions WHERE team=?)""",(tid,))
     return {"saved":True}
 
 
 @app.get("/api/mail/{mid}")
 def show_mail(mid: str):
     with database() as db:
-        m = mail_detail(db,require(db,"mail",mid),mail_settings(settings()))
+        m = mail_detail(db,leader_mail(db,mid),mail_settings(settings()))
     if m["body"] is not None:
         return m
     path = DATA / "mail" / (mid+".eml")
@@ -510,11 +511,18 @@ class MailEdit(BaseModel):
     recipient: str = ""
 
 
+def leader_mail(db, mid):
+    mail = require(db,"mail",mid)
+    if mail["kind"] not in ("보완 요청","검토 완료"):
+        raise HTTPException(404,"메일을 찾을 수 없습니다.")
+    return mail
+
+
 def edit_mail(mid, form, approve):
     if not form.subject.strip() or any(ord(c)<32 or 127<=ord(c)<=159 for c in form.subject) or not form.body.strip() or "\0" in form.body:
         raise HTTPException(422,"한 줄 제목과 본문을 입력하세요.")
     with database(True) as db:
-        m = require(db,"mail",mid)
+        m = leader_mail(db,mid)
         active(db,m["submission"])
         if m["state"]!="draft" or form.revision!=m["revision"]:
             raise HTTPException(409,"초안이 변경되었습니다. 다시 열어 확인하세요.")
@@ -527,7 +535,7 @@ def edit_mail(mid, form, approve):
                     now() if approve else None,form.recipient if approve else None,mid))
         if approve:
             audit(db,m["submission"],m["kind"]+" 메일 발송 승인",{"mail":mid})
-        return mail_detail(db,require(db,"mail",mid),cfg)
+        return mail_detail(db,leader_mail(db,mid),cfg)
 
 
 @app.put("/api/mail/{mid}/draft")
@@ -543,7 +551,7 @@ def approve_mail(mid: str, body: MailEdit):
 @app.post("/api/mail/{mid}/retry")
 def retry_mail(mid: str, body: Recovery):
     with database(True) as db:
-        m = require(db,"mail",mid)
+        m = leader_mail(db,mid)
         active(db,m["submission"])
         if m["state"] == "uncertain" and not body.confirmed_absent:
             raise HTTPException(409,"미발송을 확인한 뒤 다시 시도하세요.")

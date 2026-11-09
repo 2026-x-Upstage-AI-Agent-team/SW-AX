@@ -42,10 +42,6 @@ def send(msg, cfg, path):
     return "sent"
 
 
-def admin_address(cfg):
-    return cfg.get("ADMIN_EMAIL") or ("" if smtp_enabled(cfg) else "admin@award.test")
-
-
 def deliver(db, raw_cfg):
     cfg = mail_settings(raw_cfg)
     mailbox = DATA / "operations" / "mail"
@@ -60,27 +56,27 @@ def deliver(db, raw_cfg):
                    ("local" if filed_at is not None else "uncertain",filed_at,item["id"]))
     db.execute("""UPDATE review_mail m SET state='obsolete' FROM review_job_status j
         WHERE m.submission_id=j.submission_id AND j.state='superseded' AND m.state IN ('draft','approved','failed')""")
+    db.execute("""UPDATE review_mail SET state='obsolete',sent_to=NULL,approved_by=NULL,approved_at=NULL
+        WHERE kind='담당자 알림' AND state IN ('draft','approved','failed','uncertain')""")
     if not cfg.get("MAIL_READY"):
         return False
-    admin = admin_address(cfg)
     reopen = "state='draft',sent_to=NULL,approved_by=NULL,approved_at=NULL,revision=m.revision+1"
     db.execute(f"""UPDATE review_mail m SET {reopen} FROM ops_submission s JOIN award_team t ON t.id=s.team_id
         JOIN ops_leader_recipient r ON r.submission_id=s.id WHERE m.submission_id=s.id AND m.state='approved'
-        AND (m.sent_to IS DISTINCT FROM CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END
-            OR (m.kind<>'담당자 알림' AND r.needs_confirmation))""",(admin,))
+        AND (m.sent_to IS DISTINCT FROM t.email OR r.needs_confirmation)""")
     query = """SELECT m.id,m.submission_id,m.subject,m.body,t.id AS team,
-        CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END AS address
+        t.email AS address
         FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
         JOIN intake_team_confirmation c ON c.submission_id=s.id AND c.state='confirmed'
         JOIN ops_leader_recipient r ON r.submission_id=s.id
         WHERE s.state='done' AND NOT ops_team_held(t.id)
         AND m.approved_by IS NOT NULL AND m.approved_at IS NOT NULL AND m.subject IS NOT NULL AND m.body IS NOT NULL
-        AND (m.kind='담당자 알림' OR NOT r.needs_confirmation)
-        AND m.sent_to<>'' AND m.sent_to=(CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END)
-        AND (m.kind='담당자 알림' OR (m.kind='보완 요청' AND (s.verdict='재제출요청' OR s.decision='보완 필요'))
+        AND NOT r.needs_confirmation
+        AND m.sent_to<>'' AND m.sent_to=t.email
+        AND ((m.kind='보완 요청' AND (s.verdict='재제출요청' OR s.decision='보완 필요'))
           OR (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))) """
     with db.transaction():
-        m = db.execute(query + "AND m.state='approved' ORDER BY m.created_at,m.id LIMIT 1 FOR UPDATE OF t,c,m", (admin,admin)).fetchone()
+        m = db.execute(query + "AND m.state='approved' ORDER BY m.created_at,m.id LIMIT 1 FOR UPDATE OF t,c,m").fetchone()
         if not m:
             return False
         msg = EmailMessage(policy=SMTP)
@@ -93,7 +89,7 @@ def deliver(db, raw_cfg):
     with db.transaction():
         # Read the address and its version confirmation in a fresh snapshot after taking the team lock.
         db.execute("SELECT id FROM award_team WHERE id=%s FOR NO KEY UPDATE", (m["team"],))
-        valid = db.execute(query + "AND m.id=%s AND m.state='sending' FOR UPDATE OF t,c,m", (admin,admin,m["id"])).fetchone()
+        valid = db.execute(query + "AND m.id=%s AND m.state='sending' FOR UPDATE OF t,c,m", (m["id"],)).fetchone()
         if valid and valid["address"] == m["address"]:
             final = send(msg,cfg,mailbox / (str(m["id"])+".eml"))
             if final == "waiting":  # Gmail will resume this approved envelope after reconnection.

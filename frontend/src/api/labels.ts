@@ -68,8 +68,6 @@ export const busyStates = new Set(['queued', 'running', 'printing', 'verifying',
 /** 담당자가 재개를 눌러야 하는 제출본 상태 */
 export const recoverableStates = new Set(['failed', 'uncertain', 'invalid', 'paused', 'access']);
 
-export const ADMIN_NOTICE = '담당자 알림';
-
 export const when = (ts?: number | null) =>
   ts
     ? new Date(ts * 1000).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })

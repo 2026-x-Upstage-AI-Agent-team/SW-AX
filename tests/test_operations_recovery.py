@@ -184,7 +184,18 @@ class Recovery(unittest.TestCase):
         while deliver(db,cfg):
             pass
         notices = db.execute("SELECT kind,state FROM review_mail WHERE submission_id=%s",(sid,)).fetchall()
-        self.assertEqual({x["kind"]:x["state"] for x in notices},{"담당자 알림":"local","보완 요청":"draft"})
+        self.assertEqual({x["kind"]:x["state"] for x in notices},{"보완 요청":"draft"})
+        legacy = db.execute("""INSERT INTO review_mail(submission_id,kind,state,sent_to,subject,body,approved_by,approved_at)
+            VALUES(%s,'담당자 알림','approved','staff@award.test','이전 알림','이전 본문',%s,now()) RETURNING id""",
+            (sid,os.environ["INTAKE_TEST_LOGIN_A"])).fetchone()["id"]
+        legacy_url = "/api/mail/"+str(legacy)
+        self.assertEqual(staff.get(legacy_url).status_code,404)
+        self.assertEqual(staff.post(legacy_url+"/approve",json={"revision":0,"subject":"이전 알림","body":"이전 본문",
+                         "recipient":"staff@award.test"}).status_code,404)
+        self.assertEqual(staff.post(legacy_url+"/retry",json={}).status_code,404)
+        self.assertFalse(deliver(db,cfg))
+        self.assertEqual(db.execute("SELECT state FROM review_mail WHERE id=%s",(legacy,)).fetchone()["state"],"obsolete")
+        db.execute("DELETE FROM review_mail WHERE id=%s",(legacy,))
         staff.put("/api/teams/"+team+"/email",json={"email":"leader@award.test"}).raise_for_status()
         self.assertFalse(deliver(db,cfg))
         leader, = [m for m in submission_status()["mail"] if m["kind"]=="보완 요청"]
@@ -245,7 +256,7 @@ class Recovery(unittest.TestCase):
         tick()
         self.assertEqual(creates,[2,3,4])
         detail=staff.get("/api/operations/submissions/"+third).raise_for_status().json()
-        self.assertEqual([m["kind"] for m in detail["mail"]],["담당자 알림"])
+        self.assertEqual(detail["mail"],[])
         body=dict(detail["fields"],revision=detail["revision"],decision="보완 필요",note="중복된 동의서 확인",issues=["duplicate"])
         staff.put("/api/submissions/"+third+"/review",json=body).raise_for_status()
         self.assertEqual(staff.put("/api/submissions/"+third+"/review",json=body).status_code,409)
@@ -342,7 +353,7 @@ class Recovery(unittest.TestCase):
         recipient_url=f"/api/teams/{team}/email"
         def recipients():
             return {m["kind"]:m["state"] for m in staff.get("/api/operations/submissions/"+replacement).json()["mail"]}
-        self.assertEqual(recipients(),{"보완 요청":"recipient_check","담당자 알림":"local"})
+        self.assertEqual(recipients(),{"보완 요청":"recipient_check"})
         for stale in (retired,next_sid):
             self.assertEqual(staff.put(recipient_url,json={"email":"leader@award.test","submission":stale}).status_code,409)
         for _ in range(2):
@@ -350,7 +361,7 @@ class Recovery(unittest.TestCase):
             approve_ready_notices(staff,replacement)
             while deliver(db,cfg):
                 pass
-        self.assertEqual(recipients(),{"보완 요청":"local","담당자 알림":"local"})
+        self.assertEqual(recipients(),{"보완 요청":"local"})
         sid,_ = submit(("02",),replacement)
         tick()
         due()
@@ -360,7 +371,7 @@ class Recovery(unittest.TestCase):
             pass
         detail=staff.get("/api/operations/submissions/"+sid).raise_for_status().json()
         self.assertTrue(detail["email_needs_confirmation"])
-        self.assertEqual({m["kind"]:m["state"] for m in detail["mail"]},{"보완 요청":"recipient_check","담당자 알림":"local"})
+        self.assertEqual({m["kind"]:m["state"] for m in detail["mail"]},{"보완 요청":"recipient_check"})
 
         # Config lookup can succeed even while Job creation is forbidden.
         mode="create-denied"

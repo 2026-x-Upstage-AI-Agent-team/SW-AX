@@ -71,6 +71,8 @@ def initialize():
             if name not in mail_columns:
                 db.execute(f"ALTER TABLE mail ADD COLUMN {name} {definition}")
         db.execute("UPDATE mail SET state='draft',sent_to=NULL WHERE state='waiting'")
+        db.execute("""UPDATE mail SET state='obsolete',sent_to=NULL,approved_at=NULL
+            WHERE kind='담당자 알림' AND state IN ('draft','approved','failed','uncertain')""")
         db.execute("INSERT OR IGNORE INTO events(id,name) VALUES('wave',?)", (WAVE,))
 
 
