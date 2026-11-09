@@ -211,6 +211,8 @@ Job 생성 직전에 ‘생성 요청 중’을 DB에 기록하고 이때부터 
 4. [운영판 Gmail 연결](http://127.0.0.1:18765/#/gmail)에서 **Google로 연결**을 누르고 담당자 계정의 **이메일 보내기**를 승인한다. 승인하거나 취소하면 같은 탭의 Gmail 연결 화면으로 돌아온다. Spring Boot는 담당자 로그인 세션, 일회용 요청 값과 PKCE를 확인하고, 발송 권한과 인증된 이메일 주소가 일치한 경우에만 갱신 토큰을 교체한다. 앱 비밀번호 방식도 같은 화면에서 설정할 수 있다. [Google 웹 서버 인증](https://developers.google.com/identity/protocols/oauth2/web-server) · [Google 앱 비밀번호 안내](https://support.google.com/accounts/answer/185833?hl=ko)
 5. **팀별 서류 검토 → 팀장 수신 주소 확인**에서 원접수 주소 한 개를 저장한다. 학교·네이버·다음·Gmail 등 도메인과 관계없이 사용할 수 있다. 연결 전에는 대기하고, 연결 후에는 해당 팀의 현재 버전만 처리한다. `발송 접수`는 메일 서버가 메시지를 받아들인 상태다. 도착은 수신함에서 확인한다. 별도 테스트 데이터 폴더에서 `MAIL_MODE=local`을 지정하면 로컬 메일함으로 시험할 수 있다.
 
+운영판에서 **연결 해제**를 누르면 서버가 Google에 갱신 토큰 철회를 요청한다. 철회가 확인되면 발송 프로필에서 토큰을 지우고, 재연결용 웹 클라이언트 설정만 Windows DPAPI로 보호해 보관한다. 담당자는 **Google로 연결**로 다시 승인할 수 있다. Google이 일시적으로 응답하지 않으면 화면에서 해제를 다시 시도한다. [Google 권한 철회](https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke)
+
 이 PC에서 두 서비스는 같은 Windows 사용자와 `AWARD_DATA_DIR`(기본: 프로젝트의 `var`)을 사용한다. Spring Boot는 기존 Google 연결이 있으면 DPAPI로 암호화된 프로필에 있는 클라이언트를 재사용한다. 최초 설정이나 클라이언트 교체 때만 서버 환경에 `GMAIL_ADDRESS`와 `AWARDS_GMAIL_CLIENT_FILE`(웹 클라이언트 JSON의 절대 경로)을 지정한 뒤 재시작한다. JSON은 저장소 밖에 보관한다. 18765의 계정 상태 조회·Google 승인·앱 비밀번호 설정은 8765가 꺼져 있어도 된다. 운영판 워커는 PostgreSQL과 Spring Boot에 연결하며 `./start-intake.ps1`로 시작한다. 시연판은 `./start-service.ps1`과 별도의 SQLite 대기열을 사용한다.
 
 ## 6. 구현 순서와 인수 시험

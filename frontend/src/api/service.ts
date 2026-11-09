@@ -225,6 +225,9 @@ export const connectGmail = (appPassword: string) =>
 export const startGmailOAuth = (clientJson?: string) =>
   sendJson<{ url: string }>('/api/settings/gmail/oauth/start', clientJson ? { client_json: clientJson } : {});
 
+export const disconnectGmailOAuth = () =>
+  api<Pick<Dashboard, 'gmail_account' | 'gmail_oauth_connected' | 'mail_ready'>>('/api/settings/gmail/oauth/disconnect', { method: 'POST' });
+
 // ── 보조 ─────────────────────────────────────────────
 
 /** 저장된 검토 내용을 바탕으로 일부만 바꿔 PUT 본문을 만든다. */

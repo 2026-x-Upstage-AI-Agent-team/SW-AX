@@ -52,10 +52,18 @@ class GmailController {
 
     @PostMapping("/oauth/start")
     Map<String, String> start(HttpSession session, Principal staff) {
+        long generation = profile.generation();
         var account = profile.requireAccount();
-        var attempt = google.begin(staff.getName(), account.address(), profile.client(account), redirect.toString());
+        var attempt = google.begin(staff.getName(), account.address(), profile.client(account), redirect.toString(), generation);
         synchronized (WebUtils.getSessionMutex(session)) { session.setAttribute(ATTEMPT, attempt); }
         return Map.of("url", google.authorize(attempt));
+    }
+
+    @PostMapping("/oauth/disconnect")
+    Status disconnect(HttpSession session) {
+        profile.disconnectGoogle(google::revoke);
+        synchronized (WebUtils.getSessionMutex(session)) { session.removeAttribute(ATTEMPT); }
+        return status();
     }
 
     @GetMapping("/callback")
@@ -69,7 +77,7 @@ class GmailController {
             if (attempt == null || !attempt.staff().equals(staff.getName()) || !attempt.matches(state)) return back("expired");
             session.removeAttribute(ATTEMPT);
         }
-        if (!Instant.now().isBefore(attempt.expires())) return back("expired");
+        if (!Instant.now().isBefore(attempt.expires()) || attempt.generation() != profile.generation()) return back("expired");
         if ("access_denied".equals(providerError)) return back("cancelled");
         if (providerError != null || code == null || code.isBlank()) return back("failed");
         try {

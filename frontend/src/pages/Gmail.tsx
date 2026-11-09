@@ -3,7 +3,7 @@ import { ExternalLink } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import { isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
-import { connectGmail, startGmailOAuth, type Dashboard } from '../api/service';
+import { connectGmail, disconnectGmailOAuth, startGmailOAuth, type Dashboard } from '../api/service';
 import { Page } from '../components/Layout';
 import { Card, Feedback, Notice, PageHeader, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
@@ -12,6 +12,7 @@ const localHosts = ['localhost', '127.0.0.1', '[::1]'];
 type Account = Pick<Dashboard, 'gmail_account' | 'gmail_oauth_connected' | 'mail_ready'>;
 const results: Record<string, string> = {
   connected: 'Google 계정을 연결했습니다.',
+  disconnected: 'Google 계정의 메일 발송 권한을 해제했습니다.',
   cancelled: 'Google 연결을 취소했습니다. 기존 연결 상태를 유지합니다.',
   expired: '연결 요청이 만료되었거나 다른 브라우저에서 열렸습니다. 여기서 다시 시작하세요.',
   permission: '메일을 발송하려면 Google 동의 화면에서 이메일 보내기를 허용하세요.',
@@ -47,22 +48,26 @@ export default function Gmail() {
   const [revision, setRevision] = useState(0);
   const status = useApi<Account & { redirect_uri: string }>(isDemoBackend ? null : '/api/settings/gmail', revision);
   const [params, setParams] = useSearchParams();
-  const [result] = useState(() => params.get('result') ?? '');
+  const [result, setResult] = useState(() => params.get('result') ?? '');
   useEffect(() => {
     if (params.has('result')) setParams({}, { replace: true });
   }, [params, setParams]);
   const origin = isDemoBackend ? getReviewOrigin() : undefined;
   useEffect(() => {
-    if (!isDemoBackend) return;
-    window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
+    const onFocus = () => isDemoBackend ? refresh() : setRevision((v) => v + 1);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, [refresh]);
 
   let content;
   if (!isDemoBackend) {
     const reload = () => setRevision((v) => v + 1);
     content = status.data
-      ? <AccountSetup d={status.data} callback={new URL(status.data.redirect_uri)} refresh={reload} />
+      ? <AccountSetup d={status.data} callback={new URL(status.data.redirect_uri)} refresh={reload} onDisconnected={() => {
+          setResult('disconnected');
+          reload();
+          refresh();
+        }} />
       : <Notice error={status.error} onRetry={reload} />;
   } else if (!origin) {
     content = <Feedback error="운영자가 이 웹앱에 Windows 검토 서비스 주소(VITE_REVIEW_SERVICE_URL)를 설정해야 합니다." />;
@@ -74,14 +79,15 @@ export default function Gmail() {
   return (
     <Page tone="gray" width="normal">
       <PageHeader title="Gmail 연결" lead="팀장 안내와 담당자 알림을 보낼 Gmail 계정을 연결합니다." />
-      {Object.hasOwn(results, result) && <Feedback {...(result === 'connected' || result === 'cancelled' ? { message: results[result] } : { error: results[result] })} />}
+      {Object.hasOwn(results, result) && <Feedback {...(['connected', 'cancelled', 'disconnected'].includes(result) ? { message: results[result] } : { error: results[result] })} />}
       {content}
     </Page>
   );
 }
 
-function AccountSetup({ d, callback, refresh }: { d: Account; callback: URL; refresh: () => void }) {
-  const [busy, setBusy] = useState(false);
+function AccountSetup({ d, callback, refresh, onDisconnected }: { d: Account; callback: URL; refresh: () => void; onDisconnected?: () => void }) {
+  const [action, setAction] = useState<'google' | 'password' | 'disconnect' | null>(null);
+  const busy = action !== null;
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const account = d.gmail_account;
@@ -89,12 +95,25 @@ function AccountSetup({ d, callback, refresh }: { d: Account; callback: URL; ref
   // Google 콜백에 시작 요청의 호스트 전용 state 쿠키가 전달돼야 한다.
   const sameCookieHost = callback.hostname === location.hostname && callback.protocol === location.protocol;
 
+  async function disconnect() {
+    if (busy || !onDisconnected) return;
+    setAction('disconnect'); setError(''); setMessage('');
+    try {
+      await disconnectGmailOAuth();
+      onDisconnected();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAction(null);
+    }
+  }
+
   async function submit(e: FormEvent<HTMLFormElement>, method: 'google' | 'password') {
     e.preventDefault();
     if (busy) return;
     const form = e.currentTarget;
     const data = new FormData(form);
-    setBusy(true); setError(''); setMessage('');
+    setAction(method); setError(''); setMessage('');
     try {
       if (method === 'google') {
         const file = data.get('client');
@@ -112,7 +131,7 @@ function AccountSetup({ d, callback, refresh }: { d: Account; callback: URL; ref
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setBusy(false);
+      setAction(null);
     }
   }
 
@@ -128,13 +147,20 @@ function AccountSetup({ d, callback, refresh }: { d: Account; callback: URL; ref
         <div><p className="mb-2 text-sm text-muted">{isDemoBackend ? 'Windows 검토 서비스에서 MAIL_MODE를 gmail로, GMAIL_ADDRESS를 담당자 주소로 설정하세요.' : '운영 서버에 담당자 발신 주소(GMAIL_ADDRESS)를 설정하세요.'}</p><button type="button" className={buttonStyles.secondary} onClick={refresh}>설정 다시 확인</button></div>
       ) : (
         <>
-          {sameCookieHost ? (
+          {d.gmail_oauth_connected && onDisconnected ? (
+            <div className="flex flex-col items-start gap-3 border-t border-line pt-4">
+              <p className="text-sm text-muted">연결을 해제하면 이 계정으로 보내는 메일은 다시 연결할 때까지 대기합니다.</p>
+              <button type="button" className={buttonStyles.danger} disabled={busy} onClick={disconnect}>
+                {action === 'disconnect' ? '해제 중…' : '연결 해제'}
+              </button>
+            </div>
+          ) : sameCookieHost ? (
             <form onSubmit={(e) => submit(e, 'google')} className="flex flex-col items-start gap-3 border-t border-line pt-4">
               {isDemoBackend ? <label className="flex max-w-full flex-col gap-2 text-sm font-semibold">
                 Google Cloud 웹 클라이언트 JSON
                 <input type="file" name="client" accept=".json,application/json" required disabled={busy} className="max-w-full text-sm file:mr-2 file:rounded-md file:border file:border-line-2 file:px-3 file:py-2" />
               </label> : <p className="text-sm text-muted">Google에서 담당자 계정을 선택해 메일 발송을 허용하면 이 화면으로 돌아옵니다.</p>}
-              <button className={buttonStyles.primary} disabled={busy}>{busy ? '연결 중…' : 'Google로 연결'}</button>
+              <button className={buttonStyles.primary} disabled={busy}>{action === 'google' ? '연결 중…' : 'Google로 연결'}</button>
               <details className="max-w-full text-sm text-muted"><summary className="cursor-pointer">Google에 등록할 복귀 주소</summary>
                 <p className="mt-2">Google Cloud에서 Gmail API를 사용 설정하고 웹 클라이언트의 승인된 리디렉션 URI에 아래 주소를 등록하세요.</p>
                 <code className="mt-1 block select-all break-all">{callback.href}</code>

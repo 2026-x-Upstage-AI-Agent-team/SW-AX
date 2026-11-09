@@ -17,6 +17,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
@@ -36,14 +37,14 @@ class GoogleGmail {
 
     GoogleGmail(RestClient http) { this.http = http; }
 
-    record Attempt(String state, String verifier, Instant expires, String staff, String address, GmailProfile.Client client, String redirect) {
+    record Attempt(String state, String verifier, Instant expires, String staff, String address, GmailProfile.Client client, String redirect, long generation) {
         boolean matches(String returnedState) {
             return returnedState != null && MessageDigest.isEqual(state.getBytes(US_ASCII), returnedState.getBytes(UTF_8));
         }
     }
 
-    Attempt begin(String staff, String address, GmailProfile.Client client, String redirect) {
-        return new Attempt(random(), random(), Instant.now().plusSeconds(600), staff, address, client, redirect);
+    Attempt begin(String staff, String address, GmailProfile.Client client, String redirect, long generation) {
+        return new Attempt(random(), random(), Instant.now().plusSeconds(600), staff, address, client, redirect, generation);
     }
 
     String authorize(Attempt a) {
@@ -71,8 +72,26 @@ class GoogleGmail {
                 .headers(h -> h.setBearerAuth(token.path("access_token").asString())).retrieve().body(JsonNode.class);
         if (identity == null || !identity.path("email_verified").isBoolean() || !identity.path("email_verified").asBoolean()
                 || !a.address().equalsIgnoreCase(identity.path("email").asString(""))) return "account";
-        profile.saveOAuth(a.address(), a.client(), refresh);
+        profile.saveOAuth(a.generation(), a.address(), a.client(), refresh);
         return "connected";
+    }
+
+    void revoke(String refreshToken) {
+        var form = new LinkedMultiValueMap<String, String>();
+        form.add("token", refreshToken);
+        try {
+            boolean revoked = http.post().uri("https://oauth2.googleapis.com/revoke")
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(form).exchange((request, response) -> {
+                        int status = response.getStatusCode().value();
+                        if (status == 200) return true;
+                        if (status != 400) return false;
+                        JsonNode detail = response.bodyTo(JsonNode.class);
+                        return detail != null && "invalid_token".equals(detail.path("error").asString(""));
+                    });
+            if (!revoked) throw ApiErrors.error(502, "Google에서 연결 해제를 확인하지 못했습니다. 다시 시도하세요.");
+        } catch (RestClientException ex) {
+            throw ApiErrors.error(503, "Google에 연결하지 못했습니다. 잠시 후 연결 해제를 다시 시도하세요.");
+        }
     }
 
     private static String random() {

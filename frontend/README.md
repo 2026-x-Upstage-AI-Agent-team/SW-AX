@@ -28,7 +28,7 @@ Spring Boot가 `dist/`를 정적 파일로 내보내므로 해시 라우팅(`/#/
 
 사이드바나 모바일 메뉴에서 **Gmail 연결**을 연다. **발송 이력 → Gmail 연결**로도 들어갈 수 있다. 검토 서비스 모드에서는 등록된 발신 주소와 인증 상태를 확인하고 Google 로그인 또는 16자리 앱 비밀번호로 연결한다. Google 로그인에는 웹 클라이언트 JSON을 사용한다. [계정 준비 방법](../docs/IMPLEMENTATION_PLAN.md#51-담당자-gmail-연결)
 
-Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:18765/#/gmail)에서 계정 상태를 확인한다. **Google로 연결**은 같은 탭에서 Google 승인을 열고 완료·취소 후 이 화면으로 돌아온다. Google 클라이언트는 서버에서 읽으며, 앱 비밀번호 설정도 18765에서 처리한다. 두 방법 모두 8765 실행이 필요 없다. `VITE_REVIEW_SERVICE_URL`은 `dev:service`에서 별도 검토 서비스에 연결할 때만 사용한다.
+Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:18765/#/gmail)에서 계정 상태를 확인한다. **Google로 연결**은 같은 탭에서 Google 승인을 열고 완료·취소 후 이 화면으로 돌아온다. Google 계정이 연결되면 버튼이 **연결 해제**로 바뀐다. 해제가 완료되면 새 Gmail 발송은 대기하고 같은 버튼으로 다시 연결할 수 있다. Google 클라이언트는 서버에서 읽으며, 앱 비밀번호 설정도 18765에서 처리한다. 두 방법 모두 8765 실행이 필요 없다. `VITE_REVIEW_SERVICE_URL`은 `dev:service`에서 별도 검토 서비스에 연결할 때만 사용한다.
 
 ## 화면과 API
 
@@ -40,7 +40,7 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 | `/intake/batches[/:id]` | 접수 내역 · 접수 상세 | `GET /api/intake-batches/{id}` |
 | `/assign` | 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
 | `/mail` | 발송 이력 (팀장 안내·담당자 알림, 본문, 재시도, Gmail 연결, 팀장 이메일 입력) | `GET·POST /api/mail/{id}[/retry]`, `POST /api/settings/gmail/...` |
-| `/gmail` | 담당자 Gmail 연결·재인증 | Spring Boot 상태 `GET /api/settings/gmail`, 양쪽 서비스 `POST /api/settings/gmail/oauth/start`, `GET /api/settings/gmail/callback`, `POST /api/settings/gmail/connect` |
+| `/gmail` | 담당자 Gmail 연결·해제·재인증 | Spring Boot 상태 `GET /api/settings/gmail`, Google 연결 해제 `POST /api/settings/gmail/oauth/disconnect`. 양쪽 서비스 `POST /api/settings/gmail/oauth/start`, `GET /api/settings/gmail/callback`, `POST /api/settings/gmail/connect` |
 | `/report` | 보고서 확정 (팀 순서, 지급 정보 입력, 두 표 미리보기, 생성·확정·다운로드) | `GET /api/events/{id}/draft`, `POST /api/reports`, `GET·POST /api/reports/{id}[/confirm|/edited|/preview|/hwpx|/pdf]` |
 | `/manage` | 대회·팀 관리 | `POST /api/events`, `POST /api/events/{id}/teams` |
 

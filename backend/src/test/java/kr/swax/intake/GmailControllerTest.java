@@ -17,6 +17,8 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -38,6 +40,7 @@ class GmailControllerTest {
     final MockHttpSession session = new MockHttpSession();
     GmailProfile profile = mock(GmailProfile.class);
     GmailController app;
+    GoogleGmail google;
     MockRestServiceServer upstream;
 
     @BeforeEach void startApp() {
@@ -46,7 +49,8 @@ class GmailControllerTest {
         var account = new GmailProfile.Account(address, "", "");
         when(profile.requireAccount()).thenReturn(account);
         when(profile.client(account)).thenReturn(client);
-        app = new GmailController(profile, new GoogleGmail(http.build()), callback);
+        google = new GoogleGmail(http.build());
+        app = new GmailController(profile, google, callback);
     }
 
     private Map<String, String> fields(String query) {
@@ -91,7 +95,7 @@ class GmailControllerTest {
                         "{\"email_verified\":true,\"email\":\"" + address + "\"}", MediaType.APPLICATION_JSON));
         assertEquals("/#/gmail?result=connected", finish(session, q.get("state"), "only-once", null));
         assertEquals("/#/gmail?result=expired", finish(session, q.get("state"), "replay", null));
-        verify(profile).saveOAuth(address, client, "test-refresh");
+        verify(profile).saveOAuth(0L, address, client, "test-refresh");
         upstream.verify();
     }
 
@@ -105,7 +109,7 @@ class GmailControllerTest {
         assertEquals("/#/gmail?result=expired", finish(session, "foreign-state", "code", null));
         assertEquals("/#/gmail?result=cancelled", finish(session, state, null, "access_denied"));
         assertEquals("/#/gmail?result=expired", finish(session, state, "code", null));
-        verify(profile, never()).saveOAuth(anyString(), any(), anyString());
+        verify(profile, never()).saveOAuth(anyLong(), anyString(), any(), anyString());
         upstream.verify();
     }
 
@@ -117,7 +121,7 @@ class GmailControllerTest {
         if (reason.equals("account")) upstream.expect(requestTo("https://openidconnect.googleapis.com/v1/userinfo"))
                 .andRespond(withSuccess("{\"email_verified\":true,\"email\":\"other@example.org\"}", MediaType.APPLICATION_JSON));
         assertEquals("/#/gmail?result=" + reason, finish(session, state, "code", null));
-        verify(profile, never()).saveOAuth(anyString(), any(), anyString());
+        verify(profile, never()).saveOAuth(anyLong(), anyString(), any(), anyString());
         upstream.verify();
     }
 
@@ -126,7 +130,7 @@ class GmailControllerTest {
         var json = JsonMapper.builder().build();
         var first = new GmailProfile(json, dir, address, "");
         first.savePassword(address, "test-app-password");
-        first.saveOAuth(address, client, "test-refresh");
+        first.saveOAuth(first.generation(), address, client, "test-refresh");
         var reopened = new GmailProfile(json, dir, "", "");
         assertEquals(address, reopened.current().address());
         assertEquals(client, reopened.client(reopened.requireAccount()));
@@ -136,5 +140,52 @@ class GmailControllerTest {
         var encrypted = json.readTree(disk).get("oauth").asString();
         var stored = json.readTree(com.sun.jna.platform.win32.Crypt32Util.cryptUnprotectData(Base64.getDecoder().decode(encrypted)));
         assertEquals("test-refresh", stored.get("refresh_token").asString());
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true}) @EnabledOnOs(OS.WINDOWS)
+    void disconnectRevokesOnceAndCanReconnectAfterRestart(boolean alreadyRevoked, @TempDir Path dir) throws Exception {
+        var json = JsonMapper.builder().build();
+        profile = new GmailProfile(json, dir, address, "");
+        profile.saveOAuth(profile.generation(), address, client, "test-refresh");
+        app = new GmailController(profile, google, callback);
+        String previousState = start().get("state");
+        upstream.expect(requestTo("https://oauth2.googleapis.com/revoke")).andExpect(method(HttpMethod.POST))
+                .andExpect(req -> assertEquals(Map.of("token", "test-refresh"), fields(((MockClientHttpRequest) req).getBodyAsString())))
+                .andRespond(alreadyRevoked ? withBadRequest().body("{\"error\":\"invalid_token\"}").contentType(MediaType.APPLICATION_JSON) : withSuccess());
+
+        var state = app.disconnect(new MockHttpSession());
+        assertFalse(state.gmailOauthConnected());
+        assertFalse(state.mailReady());
+        assertEquals(address, state.gmailAccount());
+        assertEquals("/#/gmail?result=expired", finish(session, previousState, "stale-code", null));
+        assertEquals(state, app.disconnect(session));
+        var workerProfile = json.readTree(Files.readAllBytes(dir.resolve("gmail.json")));
+        assertEquals("", workerProfile.get("oauth").asString());
+        assertEquals("", workerProfile.get("credential").asString());
+        var appBytes = Files.readAllBytes(dir.resolve("gmail-oauth-client.dpapi"));
+        var registration = json.readTree(com.sun.jna.platform.win32.Crypt32Util.cryptUnprotectData(appBytes));
+        assertEquals(2, registration.size());
+        assertFalse(registration.has("refresh_token"));
+        var reopened = new GmailProfile(json, dir, "", "");
+        app = new GmailController(reopened, google, callback);
+        assertEquals(client.id(), start().get("client_id"));
+        upstream.verify();
+    }
+
+    @Test @EnabledOnOs(OS.WINDOWS)
+    void failedRevocationCanBeRetriedAndAnAppPasswordIsNeverRevoked(@TempDir Path dir) {
+        profile = new GmailProfile(JsonMapper.builder().build(), dir, address, "");
+        profile.saveOAuth(profile.generation(), address, client, "test-refresh");
+        app = new GmailController(profile, google, callback);
+        var before = profile.current();
+        upstream.expect(requestTo("https://oauth2.googleapis.com/revoke")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> app.disconnect(session));
+        assertEquals(before, profile.current());
+        assertTrue(app.status().gmailOauthConnected());
+        profile.savePassword(address, "test-password");
+        var passwordState = profile.current();
+        assertTrue(app.disconnect(session).mailReady());
+        assertEquals(passwordState, profile.current());
+        upstream.verify();
     }
 }
