@@ -206,19 +206,26 @@ if (mailId) {
       assert.equal(pdf.status(), 200);
       assert.equal((await pdf.body()).subarray(0, 5).toString(), '%PDF-');
     }
-    for (const [set, label] of [['set03', '대표 계좌·예금주 일치'], ['set05', '동의서 2부 접수'], ['set10', '동의서 명단에 없음']]) {
+    for (const [set, label, shown] of [
+      ['set03', '대표 계좌·예금주 일치', '지급확인서·통장 계좌 정보 대조'],
+      ['set05', '동의서 2부 접수', '개인정보 동의서 중복 제출 (2부)'],
+      ['set10', '동의서 명단에 없음', '동의서 작성자 명단 대조'],
+    ]) {
       const detail = await openTeam(set);
       const check = detail.result.checks.find((c) => c.label.includes(label));
       assert.ok(check && check.refs.length >= 2, label);
-      const buttons = checklist.getByRole('listitem').filter({ has: page.getByText(check.label, { exact: true }) }).getByRole('button');
-      assert.equal(await buttons.count(), check.refs.length);
-      for (const [i, ref] of check.refs.entries()) {
-        await buttons.nth(i).click();
+      const item = checklist.getByRole('listitem').filter({ has: page.getByText(shown, { exact: true }) });
+      for (const ref of check.refs) {
+        const [kind, copies] = Object.entries(detail.result.documents).find(([, refs]) => refs.some(r => r.id === ref.id));
+        const copy = copies.length > 1 ? ` (${copies.findIndex(r => r.id === ref.id) + 1}번째)` : '';
+        const names = { '01': '지급확인서', '02': '개인정보 동의서', '03': '신분증·통장 사본' };
+        const location = `${kind} ${names[kind]}${copy} · ${ref.page}쪽` + (ref.row ? ` · ${ref.row}행` : '');
+        await item.getByRole('button', { name: location, exact: true }).click();
         await assertPreview(detail.files.find((f) => f.id === ref.id), ref);
       }
     }
     const detail = await openTeam('set04');
-    const missing = checklist.getByRole('listitem').filter({ hasText: '동의서 0부 접수' });
+    const missing = checklist.getByRole('listitem').filter({ hasText: '개인정보 동의서 미제출' });
     await missing.getByRole('button', { name: '확정 파일 목록 보기' }).click();
     const files = preview.getByRole('region', { name: '확정 파일 목록' });
     await files.getByRole('heading', { name: `제출 v${detail.version} 확정 파일 목록 · 2개` }).waitFor();

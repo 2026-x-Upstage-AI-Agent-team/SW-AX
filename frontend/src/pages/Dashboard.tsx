@@ -57,7 +57,7 @@ export default function Dashboard() {
     else if (priorAccess)
       alerts.push({ key: r.id + 'access', text: `${r.name} · Studio 접근 권한 확인`, sub: `제출 v${priorAccess.version}에서 인증 오류가 발생했습니다. 키·사용량을 확인한 뒤 재개할 수 있습니다.`, to: `/teams/${priorAccess.id}`, action: '인증 확인' });
     else if (s.verdict === '담당자확인' && !s.decision)
-      alerts.push({ key: r.id + 'check', text: `${r.name} · 원본 대조가 필요합니다.`, sub: r.detail?.result?.reason ?? '판정 근거를 확인한 뒤 ‘승인’ 또는 ‘보완 필요’를 기록하면 팀장에게 결과 한 통이 발송됩니다.', to: `/teams/${s.id}`, action: '원본 대조하기' });
+      alerts.push({ key: r.id + 'check', text: `${r.name} · 원본 대조가 필요합니다.`, sub: r.reviewSummary ?? '검토할 서류를 확인해 주세요.', to: `/teams/${s.id}`, action: '원본 대조하기' });
     else if (r.leaderMail?.state === 'recipient_check')
       alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내가 보류 중입니다. 신청서와 원접수의 주소를 대조해 주세요.', to: `/teams/${s.id}`, action: '주소 확인' });
     else if (s.verdict === '재제출요청' && !r.email)
@@ -206,7 +206,7 @@ function TeamTable({
                 <th scope="col" className="border-b border-line px-5 py-3.5 font-medium">팀</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">접수 서류</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">판정</th>
-                <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">근거</th>
+                <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">판정 사유</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">담당자 결정</th>
                 <th scope="col" className="border-b border-line px-5 py-3.5 font-medium">팀장 안내</th>
                 <th scope="col" className="border-b border-line px-5 py-3.5 text-right font-medium">검토</th>
@@ -246,8 +246,8 @@ function TeamTable({
                     </td>
                     <td className="team-reason min-w-44 max-w-[380px] px-3 py-4 align-top leading-relaxed text-ink-2">
                       {r.held
-                        ? '이 팀에 속할 수 있는 미배정 파일이 있어 판정을 기다립니다.'
-                        : s?.error || r.detail?.result?.reason || (s && busyStates.has(s.state) ? 'Studio 판정을 기다리는 중입니다.' : '')}
+                        ? '미배정 파일의 소속 확인'
+                        : r.reviewSummary || s?.error || (s && busyStates.has(s.state) ? '판정 결과 대기 중' : '')}
                     </td>
                     <td data-label="담당자 결정" className="team-decision whitespace-nowrap px-3 py-4 align-top">
                       {s?.decision ? <span className={cx('text-xs font-bold', s.decision === '승인' ? 'text-brand-strong' : 'text-alert-strong')}>{s.decision}</span> : <span className="text-xs text-subtle">미기록</span>}

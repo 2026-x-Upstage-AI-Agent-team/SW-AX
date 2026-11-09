@@ -82,7 +82,7 @@ export type FileInfo = {
 };
 
 export type Ref = { id: string; page: number; row?: number };
-export type Check = { label: string; passed: boolean | null; refs: Ref[] };
+export type Check = { label: string; passed: boolean | null; refs: Ref[]; issue?: string; fields?: string[] };
 
 export type Member = { role: string; name: string; student_id: string; major: string; school: string };
 export type Recipient = {

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 import { useAsync, usePolling } from '../api/client';
 import { isDemoBackend } from '../api/backend';
 import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
+import { reviewEvidence } from '../api/reviewEvidence';
 import {
   filePreviewUrl,
   getSubmission,
@@ -11,6 +12,7 @@ import {
   saveReview,
   setTeamEmail,
   type Decision,
+  type Check,
   type DocKey,
   type Member,
   type Recipient,
@@ -58,7 +60,8 @@ export default function TeamReview() {
 function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   const res = s.result;
   const docs = res?.documents;
-  const firstIssue = res?.checks.find((c) => c.passed !== true && c.refs.length);
+  const evidence = reviewEvidence(res, s.verdict);
+  const firstIssue = evidence.problems.find(c => c.refs.length);
   const initialRef = firstIssue?.refs[0] ?? DOC_KEYS.map((k) => docs?.[k]?.[0]).find(Boolean);
   const [view, setView] = useState<Partial<Ref>>(initialRef ?? { id: s.files[0]?.id });
   const previewPanel = useRef<HTMLElement>(null);
@@ -70,6 +73,31 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   function showEvidence(ref?: Ref) {
     setView(ref ?? {});
     previewPanel.current?.focus();
+  }
+
+  function renderChecks(checks: Check[]) {
+    return <ul>{checks.map(c => {
+      const state = checkState(c.passed);
+      return (
+        <li key={c.label} className={cx('border-t border-line-soft px-[22px] py-3', state === 'fail' && 'bg-alert-soft', state === 'check' && 'bg-caution-bg')}>
+          <div className="flex items-center gap-3">
+            <CheckIcon state={state} /><span className="text-sm font-medium text-ink">{c.label}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 pl-7">
+            {c.refs.length ? c.refs.map((r, j) => {
+              const kind = fileDoc(r.id) ?? '?';
+              const copies = docs?.[kind] ?? [];
+              const copy = copies.findIndex(entry => entry.id === r.id);
+              return (
+                <button key={j} type="button" aria-controls="review-preview" onClick={() => showEvidence(r)} className={buttonStyles.text}>
+                  {kind} {docLabels[kind]}{copies.length > 1 && copy >= 0 && ` (${copy + 1}번째)`} · {r.page}쪽{r.row && ` · ${r.row}행`}
+                </button>
+              );
+            }) : <button type="button" aria-controls="review-preview" onClick={() => showEvidence()} className={buttonStyles.text}>확정 파일 목록 보기</button>}
+          </div>
+        </li>
+      );
+    })}</ul>;
   }
 
   return (
@@ -103,7 +131,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
           </Link>
         )}
       </div>
-      {res?.reason && <p className="max-w-4xl text-[17px] leading-relaxed text-ink-2">{res.reason}</p>}
+      {evidence.summary && <p className="max-w-4xl text-[17px] leading-relaxed text-ink-2">{evidence.summary}</p>}
       {s.held && <Feedback error="이 팀에 속할 수 있는 미배정 파일이 있어 검토 저장과 안내가 보류됩니다. 팀 배정 확인에서 먼저 정리해 주세요." />}
       {s.state !== 'done' && <StatusCard s={s} onSaved={onSaved} />}
 
@@ -186,47 +214,14 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
             <h2 className="px-[22px] pb-2 pt-4 text-[17px] font-extrabold">검토 항목</h2>
             {!res ? (
               <p className="px-[22px] pb-4 text-sm text-muted">Studio 판정이 끝나면 항목이 표시됩니다.</p>
-            ) : (
-              <ul>
-                {[...res.checks]
-                  .sort((a, b) => rank(a.passed) - rank(b.passed))
-                  .map((c, i) => {
-                    const st = checkState(c.passed);
-                    return (
-                      <li key={c.label + i} className={cx('border-t border-line-soft px-[22px] py-3', st === 'fail' && 'bg-alert-soft', st === 'check' && 'bg-caution-bg')}>
-                        <div className="flex items-center gap-3">
-                          <CheckIcon state={st} />
-                          <span className="text-sm font-medium text-ink">{c.label}</span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-x-3 pl-7">
-                          {c.refs.length ? c.refs.map((r, j) => {
-                            const kind = fileDoc(r.id) ?? '?';
-                            const copies = docs?.[kind] ?? [];
-                            const copy = copies.findIndex((entry) => entry.id === r.id);
-                            return (
-                              <button key={j} type="button" aria-controls="review-preview" onClick={() => showEvidence(r)}
-                                className={buttonStyles.text}>
-                                {kind} {docLabels[kind]}{copies.length > 1 && copy >= 0 && ` (${copy + 1}번째)`} · {r.page}쪽{r.row && ` · ${r.row}행`}
-                              </button>
-                            );
-                          }) : (
-                            <button type="button" aria-controls="review-preview" onClick={() => showEvidence()} className={buttonStyles.text}>
-                              확정 파일 목록 보기
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-              </ul>
-            )}
+            ) : <>
+              {renderChecks(evidence.problems)}
+              {evidence.passed.length > 0 && <details className="border-t border-line-soft">
+                <summary className="cursor-pointer px-[22px] py-3 text-sm font-semibold text-muted">통과한 항목 {evidence.passed.length}개</summary>
+                {renderChecks(evidence.passed)}
+              </details>}
+            </>}
           </div>
-          {typeof res?.staff_report === 'string' && res.staff_report.trim() && (
-            <details className="rounded-[22px] border border-line bg-white px-[22px] py-4">
-              <summary className="cursor-pointer text-[15px] font-extrabold">Studio 검토보고서</summary>
-              <p className="mt-3 whitespace-pre-line text-[13px] leading-relaxed text-ink-2">{res.staff_report}</p>
-            </details>
-          )}
           <DecisionCard key={s.revision} s={s} onSaved={onSaved} />
           <LeaderCard s={s} onSaved={onSaved} />
         </aside>
@@ -247,7 +242,6 @@ function decidedMessage(s: SubmissionDetail, d: Decision) {
   return '승인했습니다. 시상구분·지원액을 넣으면 보고서에 편철할 수 있습니다.';
 }
 
-const rank = (p: boolean | null) => (p === false ? 0 : p === null ? 1 : 2);
 
 /** 판정 전·실패 상태 안내와 재개 */
 function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
@@ -496,12 +490,12 @@ function MembersCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void 
   const members = s.fields.members;
   const r = s.fields.recipient;
   return (
-    <section className="min-w-0 flex-[2_1_560px] rounded-[22px] border border-line bg-white p-[22px]">
-      <h2 className="mb-3 text-[17px] font-extrabold">추출된 명단과 대표 지급 정보</h2>
+    <details className="min-w-0 flex-[2_1_560px] rounded-[22px] border border-line bg-white p-[22px]">
+      <summary className="cursor-pointer text-[17px] font-extrabold">명단·지급 정보 대조</summary>
       {members.length === 0 ? (
         <p className="text-sm text-muted">추출된 명단이 없습니다.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse text-[13px]">
             <thead>
               <tr className="text-left text-muted">
@@ -541,7 +535,7 @@ function MembersCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void 
         </details>
       )}
       <p className="mt-3 text-xs text-subtle">명단·계좌는 원본에서 읽은 값입니다. 원본이 틀렸다면 보완본을 받아 교체해 주세요.</p>
-    </section>
+    </details>
   );
 }
 

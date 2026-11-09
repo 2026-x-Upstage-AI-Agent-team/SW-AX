@@ -71,6 +71,67 @@ test('좁은 화면에서 파일을 열고 목록으로 돌아오면 키보드 �
   assert.equal(await page.locator('#detail-h').count(), 0);
 });
 
+test('판정 사유는 문제만 요약하고 검토 상세에서 원본 근거로 이동한다', async t => {
+  const page = await newPage(t);
+  const ref = id => ({ id, page: 1 });
+  const documents = { '01': [ref('app')], '02': [ref('consent-a'), ref('consent-b')], '03': [ref('identity')], '?': [] };
+  const raw = '계좌번호 123456789012가 일치합니다.【†1】 신분증 issued_date 누락, Sub-doc 2 동의서 명단 확인.';
+  const report = '| 문서 | 대상자 | 항목 | 관측 상태 | 적용 기준 | 결과 | 근거 |\n|---|---|---|---|---|---|---|\n| 신분증 | 대표 | issued_date | 빈 값 | 필수 | 실패 | 미기재 |';
+  const base = { version: 1, state: 'done', email: '', note: '', count: 4, history: [], audit: [], mail: [], fields: { members: [], recipient: {} } };
+  const detail = { ...base, id: 'multiple', current: 'multiple', team: 'multiple', team_name: '중복팀', verdict: '재제출요청',
+    files: Object.entries(documents).flatMap(([kind, refs]) => refs.map(r => ({ ...file, ...r, name: r.id + '.hwp', kind, url: '/pdf/' + r.id }))),
+    result: { verdict: '재제출요청', reason: raw, staff_report: report, documents, issues: ['duplicate', 'consent'], checks: [
+      { label: '동의서 2부 접수', passed: false, refs: documents['02'] },
+      { label: '신청 명단과 동의서 작성자 일치', passed: false, refs: documents['02'] },
+      { label: raw, passed: false, refs: documents['03'] },
+      { label: '대표 서명', passed: true, refs: documents['01'] },
+    ] } };
+  const success = { ...detail, id: 'success', current: 'success', team_name: '정상팀', verdict: '성공',
+    result: { ...detail.result, verdict: '성공', documents: { ...documents, '02': [ref('consent-a')] }, checks: [], issues: [] } };
+  const missing = { ...detail, id: 'missing', current: 'missing', team_name: '누락팀',
+    result: { ...detail.result, documents: { ...documents, '02': [], '03': [] }, issues: ['consent', 'account'], checks: [
+      { label: '과제명', passed: false, refs: [] }, { label: '통장 계좌 신뢰도', passed: false, refs: [] },
+    ] } };
+  const manual = { ...detail, id: 'manual', current: 'manual', team_name: '대조팀', verdict: '담당자확인',
+    result: { ...success.result, verdict: '담당자확인', staff_report: '', issues: ['affiliation'],
+      checks: [{ label: '신청서·동의서 소속 표기 일치', passed: false, refs: documents['01'] }] } };
+  const historic = { ...manual, id: 'historic', current: 'historic', team_name: '과거팀',
+    result: { ...manual.result, documents: { '01': [], '02': [], '03': [], '?': [] }, checks: [], issues: [] } };
+  const unknown = { ...manual, id: 'unknown', current: 'unknown', team_name: '추가검사팀',
+    result: { ...manual.result, checks: [...manual.result.checks, { label: '내부검사_123456789012', passed: null, refs: documents['03'] }] } };
+  const submissions = [detail, success, missing, manual, historic, unknown];
+  const teams = submissions.map(s => ({ id: s.id, current: s.id, name: s.team_name, submission: s }));
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
+  for (const s of submissions) {
+    await page.route('**/api/operations/submissions/' + s.id, route => route.fulfill({ json: s }));
+  }
+  await page.goto('/#/');
+  const table = page.getByRole('region', { name: '팀별 판정 표' });
+  const reason = name => table.getByRole('row').filter({ hasText: name }).locator('.team-reason');
+  await reason('중복팀').filter({ hasText: /신분증 발급일/ }).waitFor();
+  assert.match(await reason('중복팀').innerText(), /동의서 중복.*신분증 발급일 미기재.*외 1건/);
+  assert.match(await reason('정상팀').innerText(), /보완 사항 없음/);
+  assert.equal(await reason('누락팀').innerText(), '개인정보 동의서 미제출 · 신분증·통장 사본 미제출');
+  assert.match(await reason('대조팀').innerText(), /소속 표기 대조/);
+  assert.equal(await reason('과거팀').innerText(), '제출 서류 원본 확인');
+  assert.equal(await reason('추가검사팀').innerText(), '신청서·동의서 소속 표기 대조 · 제출 서류 원본 확인');
+  const privateText = /123456789012|issued_date|Sub-doc|【†/;
+  assert.doesNotMatch(await page.locator('main').innerText(), privateText);
+  await table.getByRole('link', { name: '중복팀 검토 열기', exact: true }).click();
+  const checks = page.getByRole('complementary', { name: '검토 체크리스트' });
+  await checks.getByText('신분증 발급일 미기재', { exact: true }).waitFor();
+  assert.doesNotMatch(await checks.textContent(), privateText);
+  assert.equal(await checks.getByText('대표 서명', { exact: true }).isVisible(), false);
+  await checks.getByText('통과한 항목 3개', { exact: true }).click();
+  assert.equal(await checks.getByText('대표 서명', { exact: true }).isVisible(), true);
+  await checks.getByRole('listitem').filter({ hasText: '신분증 발급일 미기재' }).getByRole('button').click();
+  assert.equal(await page.getByRole('region', { name: '원문 미리보기' }).getByRole('tab', { name: /03 신분증·통장 사본/, selected: true }).count(), 1);
+  const payout = page.locator('details').filter({ has: page.getByText('명단·지급 정보 대조', { exact: true }) });
+  assert.equal(await payout.getByText('은행·계좌', { exact: true }).isVisible(), false);
+  await payout.locator('summary').first().click();
+  assert.equal(await payout.getByText('은행·계좌', { exact: true }).isVisible(), true);
+});
+
 test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본 없는 팀에는 링크를 표시하지 않는다', async t => {
   const page = await newPage(t);
   const submission = { id: 'submission-v2', version: 2, state: 'done', verdict: '재제출요청', decision: null, count: 1 };
