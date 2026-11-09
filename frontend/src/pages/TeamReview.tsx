@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useAsync, usePolling } from '../api/client';
 import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when } from '../api/labels';
@@ -13,6 +13,7 @@ import {
   type DocKey,
   type Member,
   type Recipient,
+  type Ref,
   type SubmissionDetail,
 } from '../api/service';
 import { Page } from '../components/Layout';
@@ -58,11 +59,17 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   const docs = res?.documents;
   const firstIssue = res?.checks.find((c) => c.passed !== true && c.refs.length);
   const initialRef = firstIssue?.refs[0] ?? DOC_KEYS.map((k) => docs?.[k]?.[0]).find(Boolean);
-  const [view, setView] = useState<{ file?: string; page?: number }>({ file: initialRef?.id ?? s.files[0]?.id, page: initialRef?.page });
-  const file = s.files.find((f) => f.id === view.file);
+  const [view, setView] = useState<Partial<Ref>>(initialRef ?? { id: s.files[0]?.id });
+  const previewPanel = useRef<HTMLElement>(null);
+  const file = s.files.find((f) => f.id === view.id);
   const fileDoc = (fid?: string) => DOC_KEYS.find((k) => docs?.[k]?.some((r) => r.id === fid)) ?? (s.files.find((f) => f.id === fid)?.kind as DocKey | undefined);
-  const activeDoc = fileDoc(view.file);
+  const activeDoc = fileDoc(view.id);
   const outdated = s.current !== s.id;
+
+  function showEvidence(ref?: Ref) {
+    setView(ref ?? {});
+    previewPanel.current?.focus();
+  }
 
   return (
     <>
@@ -100,7 +107,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
       {s.state !== 'done' && <StatusCard s={s} onSaved={onSaved} />}
 
       <div className="mt-4 flex flex-wrap items-start gap-6">
-        <section aria-label="원문 미리보기" className="min-w-0 flex-[999_1_560px] overflow-hidden rounded-[22px] border border-line bg-white">
+        <section ref={previewPanel} id="review-preview" tabIndex={-1} aria-label="원문 미리보기" className="min-w-0 flex-[999_1_560px] overflow-hidden rounded-[22px] border border-line bg-white">
           <div role="tablist" aria-label="서류" className="flex flex-wrap gap-1 border-b border-line px-4 py-3">
             {DOC_KEYS.filter((k) => k !== '?' || (docs?.['?']?.length ?? 0) > 0).map((k) => {
               const refs = docs?.[k] ?? s.files.filter((f) => f.kind === k).map((f) => ({ id: f.id, page: f.page }));
@@ -111,7 +118,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                   role="tab"
                   aria-selected={activeDoc === k}
                   disabled={refs.length === 0}
-                  onClick={() => setView({ file: refs[0]?.id, page: refs[0]?.page })}
+                  onClick={() => setView(refs[0])}
                   className={cx(
                     'min-h-10 rounded-[10px] px-3.5 text-[13px] disabled:cursor-not-allowed',
                     activeDoc === k ? 'bg-ink font-bold text-white' : refs.length ? 'text-muted hover:bg-canvas' : 'text-alert-strong',
@@ -123,6 +130,10 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                 </button>
               );
             })}
+            <button type="button" role="tab" aria-selected={!file} onClick={() => setView({})}
+              className={cx('min-h-10 rounded-[10px] px-3.5 text-[13px]', !file ? 'bg-ink font-bold text-white' : 'text-muted hover:bg-canvas')}>
+              확정 파일 목록
+            </button>
           </div>
           {activeDoc && (docs?.[activeDoc]?.length ?? 0) > 1 && (
             <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2">
@@ -130,8 +141,8 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                 <button
                   key={r.id}
                   type="button"
-                  onClick={() => setView({ file: r.id, page: r.page })}
-                  className={cx('min-h-9 rounded-lg px-3 text-xs', view.file === r.id ? 'bg-alert-tint font-bold text-alert-strong' : 'bg-canvas text-ink-2')}
+                  onClick={() => setView(r)}
+                  className={cx('min-h-9 rounded-lg px-3 text-xs', view.id === r.id ? 'bg-alert-tint font-bold text-alert-strong' : 'bg-canvas text-ink-2')}
                 >
                   {i + 1}번째 · {s.files.find((f) => f.id === r.id)?.name}
                 </button>
@@ -139,10 +150,10 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
             </div>
           )}
           <div className="flex flex-col gap-2 bg-paper p-3 sm:p-5">
-            {file && (
+            {file ? (<>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
                 <span className="break-all">
-                  {file.name} {view.page ? `· ${view.page}쪽` : ''}
+                  {file.name} {view.page ? `· ${view.page}쪽` : ''} {view.row ? `· ${view.row}행` : ''}
                 </span>
                 {file.url && (
                   <a href={filePreviewUrl(file, view.page)} target="_blank" rel="noreferrer" className="font-bold text-brand-strong">
@@ -150,8 +161,22 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                   </a>
                 )}
               </div>
+              <PdfFrame key={`${file.id}-${view.page}`} url={filePreviewUrl(file, view.page)} title={file.name} />
+            </>) : (
+              <section aria-label="확정 파일 목록" className="rounded-xl bg-white p-4">
+                <h2 className="font-bold">제출 v{s.version} 확정 파일 목록 · {s.files.length}개</h2>
+                <ol className="mt-2 list-decimal space-y-1 pl-6">
+                  {s.files.map((f) => (
+                    <li key={f.id}>
+                      <button type="button" onClick={() => showEvidence({ id: f.id, page: f.page || 1 })}
+                        className="min-h-10 break-all text-left text-sm font-bold text-brand-strong underline underline-offset-2">
+                        {f.name}
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </section>
             )}
-            <PdfFrame key={(file?.id ?? '') + (view.page ?? '')} url={file ? filePreviewUrl(file, view.page) : ''} title={file?.name ?? '원본 미리보기'} />
           </div>
         </section>
 
@@ -166,24 +191,29 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                   .sort((a, b) => rank(a.passed) - rank(b.passed))
                   .map((c, i) => {
                     const st = checkState(c.passed);
-                    const ref = c.refs[0];
                     return (
-                      <li key={c.label + i} className="border-t border-line-soft">
-                        <button
-                          type="button"
-                          disabled={!ref}
-                          onClick={() => ref && setView({ file: ref.id, page: ref.page })}
-                          className={cx('flex min-h-[52px] w-full items-center gap-3 px-[22px] py-3 text-left hover:bg-canvas disabled:cursor-default', st === 'fail' && 'bg-alert-soft', st === 'check' && 'bg-caution-bg')}
-                        >
+                      <li key={c.label + i} className={cx('border-t border-line-soft px-[22px] py-3', st === 'fail' && 'bg-alert-soft', st === 'check' && 'bg-caution-bg')}>
+                        <div className="flex items-center gap-3">
                           <CheckIcon state={st} />
-                          <span className="flex-1 text-sm font-medium text-ink">{c.label}</span>
-                          <span className="font-mono text-[11px] text-subtle">
-                            {c.refs
-                              .map((r) => `${fileDoc(r.id) ?? '?'}${r.row ? ` ${r.row}행` : ''}`)
-                              .filter((v, j, a) => a.indexOf(v) === j)
-                              .join(' · ')}
-                          </span>
-                        </button>
+                          <span className="text-sm font-medium text-ink">{c.label}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 pl-7">
+                          {c.refs.length ? c.refs.map((r, j) => {
+                            const kind = fileDoc(r.id) ?? '?';
+                            const copies = docs?.[kind] ?? [];
+                            const copy = copies.findIndex((entry) => entry.id === r.id);
+                            return (
+                              <button key={j} type="button" aria-controls="review-preview" onClick={() => showEvidence(r)}
+                                className={buttonStyles.text}>
+                                {kind} {docLabels[kind]}{copies.length > 1 && copy >= 0 && ` (${copy + 1}번째)`} · {r.page}쪽{r.row && ` · ${r.row}행`}
+                              </button>
+                            );
+                          }) : (
+                            <button type="button" aria-controls="review-preview" onClick={() => showEvidence()} className={buttonStyles.text}>
+                              확정 파일 목록 보기
+                            </button>
+                          )}
+                        </div>
                       </li>
                     );
                   })}

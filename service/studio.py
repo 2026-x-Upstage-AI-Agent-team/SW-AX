@@ -85,9 +85,30 @@ def parse_result(job, files):
             for start, end in av.get("page_ranges", []):
                 id_pages.update(range(start, end + 1))
     docs = {k: [] for k in ("01", "02", "03", "?")}
+    member_locations = {"01": {}, "02": {}}
     for f in files:
         k = classes.get(f["id"], f["kind"])
-        docs[k if k in docs else "?"].append({"id": f["id"], "page": json.loads(f["signals"]).get("page", 1)})
+        signals = json.loads(f["signals"])
+        ref = {"id": f["id"], "page": signals.get("page", 1)}
+        docs[k if k in docs else "?"].append(ref)
+        if k == "01":
+            for form in signals.get("apps", []):
+                for row, person in enumerate(form.get("roster", []), 1):
+                    member_locations[k].setdefault(person["name"], []).append(dict(ref, page=form.get("page", ref["page"]), row=row))
+        if k == "02":
+            rows = Counter()
+            for person in signals.get("consent", []):
+                page = person.get("page", ref["page"])
+                rows[page] += 1
+                member_locations[k].setdefault(person["name"], []).append(dict(ref, page=page, row=rows[page]))
+
+    def member_refs(kind, name, row):
+        located = member_locations[kind].get(name)
+        if located:
+            return located
+        # Older analyses may have only the Studio row and the document's default evidence page.
+        return [dict(docs[kind][0], row=row)] if len(docs[kind]) == 1 else docs[kind]
+
     elements = (unpack(parse.get("text", {})) or {}).get("elements", [])
     id_lines = [e.get("content", {}).get("text", "") for e in elements if e.get("page") in id_pages]
     rrns = set(re.findall(r"(?<!\d)\d{6}\s*-\s*(?:\d\*{6}|\*{7})(?![\d*])", "\n".join(id_lines)))
@@ -117,11 +138,11 @@ def parse_result(job, files):
         for i, member in enumerate(members, 1):
             name = member["name"]
             found = [(j,b) for j,b in enumerate(consent,1) if b.get("name") == name]
-            refs = [dict(ref, row=i) for ref in docs["01"]]
+            refs = member_refs("01", name, i)
             if not found:
                 checks.append({"label":name+" · 동의서 명단에 없음", "passed":False, "refs":refs+docs["02"]})
             for j, b in found:
-                located = refs + [dict(ref, row=j) for ref in docs["02"]]
+                located = refs + member_refs("02", name, j)
                 if member["major"] != b.get("department"):
                     checks.append({"label":name+" · 소속 표기 대조","passed":False,"refs":located})
                 if any(b.get(k) is not True for k in ("collection_consent","identifier_consent","third_party_consent","signed")):

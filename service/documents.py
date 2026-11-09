@@ -94,7 +94,7 @@ def read_signals(f, renderer=None):
                 major = re.search(r"학부\s*\(과\)[ \t]+(.*?)[ \t]+E-?mail", segment, re.I)
                 roster.append({"name": person[1], "major": " ".join(major[1].split()) if major else ""})
             if team and roster:
-                applications.append({"name": " ".join(team[1].split()), "rep": roster[0]["name"], "roster": roster})
+                applications.append({"name": " ".join(team[1].split()), "rep": roster[0]["name"], "roster": roster, "page": p})
         if "개인정보" in s and ("동의서(수혜인력)" in s or "개인정보및과세정보" in s or "소속부서(학과)" in s):
             kinds.add("02")
         if "수혜인력" in s and "소속부서" in s:

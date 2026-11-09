@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:service": "vite --mode service",
     "typecheck": "tsc --noEmit",
+    "test:review": "node --test tests/review-navigation.mjs",
     "prebuild": "node -e \"require('node:fs/promises').rm('dist', { recursive: true, force: true })\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
@@ -22,6 +23,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.0",
+    "playwright-core": "1.62.1",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.9.3",
     "vite": "^7.3.1"

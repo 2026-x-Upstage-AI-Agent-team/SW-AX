@@ -18,6 +18,26 @@ from service.studio import parse_result
 from tests.test_intake_postgres import login
 
 
+class ReviewEvidence(unittest.TestCase):
+    def test_member_evidence_uses_the_original_file_page_and_row(self):
+        def source(fid, kind, **signals):
+            return {"id": fid, "kind": kind, "signals": json.dumps(signals)}
+
+        files = [
+            source("a", "01", apps=[{"page":2,"roster":[{"name":"최가람"},{"name":"김한별"}]}]),
+            source("b", "02", page=3, consent=[{"name":"최가람","page":1},{"name":"김한별","page":3}]),
+            source("c", "02", page=2, consent=[{"name":"최가람","page":2}]),
+        ]
+        values = {
+            "Instruct - 최종판정":{"enum":"재제출요청","reason":"서명 확인"},
+            "Information Extract - 지급확인서":{"representative_name":"최가람","members":[{"name":"김한별"}]},
+            "Information Extract - 개인정보동의":{"beneficiaries":[{"name":"최가람"},{"name":"김한별","signed":False}]},
+        }
+        result = parse_result({"output":[{"model":name,"content":[{"text":value}]} for name,value in values.items()]}, files)
+        row = next(c for c in result["checks"] if c["label"] == "김한별 · 동의 표시 또는 서명 확인")
+        self.assertEqual(row["refs"], [{"id":"a","page":2,"row":2},{"id":"b","page":3,"row":1}])
+
+
 class AssignmentEvidence(unittest.TestCase):
     def test_conflicting_and_incomplete_evidence(self):
         teams = [{"id":"a","name":"Alpha","rep":"가나다","roster":[{"name":"가나다","major":"전산"},{"name":"한가람","major":"전산"}]},
@@ -128,6 +148,8 @@ class OfficialCases(unittest.TestCase):
                     result=parse_result({"output":[{"model":k,"content":[{"text":v}]} for k,v in structured.items()]},files)
                     expected={"set03":{"account"},"set04":{"consent"},"set05":{"duplicate","identity"},"set10":{"consent"}}[case]
                     self.assertTrue(expected<=set(result["issues"]))
+                    if case == "set04":
+                        self.assertEqual(next(c["refs"] for c in result["checks"] if c["label"] == "동의서 0부 접수"), [])
                     if case=="set03":
                         refs=next(c["refs"] for c in result["checks"] if "예금주" in c["label"])
                         self.assertEqual({r["id"] for r in refs},{f["id"] for f in files if f["kind"] in ("01","03")})
