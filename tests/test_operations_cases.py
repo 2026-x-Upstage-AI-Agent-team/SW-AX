@@ -61,6 +61,63 @@ class ReviewEvidence(unittest.TestCase):
         self.assertEqual(parse_result(job,[file])["representative_emails"],["form@award.test","studio@award.test"])
         self.assertEqual(parse_result(job,[dict(file,kind="03")])["representative_emails"],[])
 
+    def test_report_bank_name_uses_the_studio_extract(self):
+        cases = [
+            ("국민", ["KB 국민은행"]),
+            ("국민", ["은행명: KB국민은행 통장사본"]),
+            ("카카오", ["한국카카오은행(주) 확인서"]),
+            ("토스뱅크", ["토스뱅크"]),
+            ("국민", ["KB 국민은행", "국민은행"]),
+            ("", ["KB 국민은행"]),
+        ]
+        files = [{"id":"copy","kind":"03","signals":"{}"}]
+        for bank, lines in cases:
+            with self.subTest(bank=bank, lines=lines):
+                job = {"output":[
+                    {"model":"step_1_parse","content":[{"text":{"elements":[
+                        {"page":1,"content":{"text":line}} for line in lines
+                    ]}}]},
+                    {"model":"step_2_classify","content":[{"text":"신분증·통장 사본",
+                        "additional_values":{"page_ranges":[[1,1]]}}]},
+                    {"model":"Information Extract - 신분증정보","content":[{"text":{"bank_name":bank}}]},
+                    {"model":"Instruct - 최종판정","content":[{"text":{"enum":"성공","reason":"증빙 확인 완료"}}]},
+                ]}
+                result = parse_result(job, files)
+                self.assertEqual(result["recipient"]["bank_name"], bank)
+                self.assertEqual(result["verdict"], "성공")
+
+    def test_report_fields_preserve_the_extracted_values(self):
+        application = {
+            "program_name":"가상 대회", "team_name":"가상 팀", "representative_name":"김예린",
+            "representative_student_id":"00202601", "representative_affiliation":"가상대학교",
+            "representative_department":"컴퓨터공학과",
+            "members":[{"name":"이서준","student_id":"00202602", "affiliation":"가상대학교",
+                        "department":"인공지능학과"}],
+        }
+        job = {"output":[
+            {"model":"Information Extract - 지급확인서","content":[{"text":application}]},
+            {"model":"Information Extract - 신분증정보","content":[{"text":{
+                "bank_name":"NH농협은행", "account_number":"001-002-0003", "account_holder":"김예린",
+            }}]},
+            {"model":"step_1_parse","content":[{"text":{"elements":[
+                {"page":3,"content":{"text":"020101-3******"}},
+            ]}}]},
+            {"model":"step_2_classify","content":[{"text":"신분증·통장 사본",
+                "additional_values":{"page_ranges":[[3,3]]}}]},
+            {"model":"Instruct - 최종판정","content":[{"text":{"enum":"성공","reason":"증빙 확인 완료"}}]},
+        ]}
+        result = parse_result(job, [{"id":"copy","kind":"03","signals":"{}"}])
+        self.assertEqual((result["program"],result["team_name"],result["rep"]),
+                         ("가상 대회","가상 팀","김예린"))
+        self.assertEqual(result["members"], [
+            {"role":"대표","name":"김예린","student_id":"00202601","school":"가상대학교","major":"컴퓨터공학과"},
+            {"role":"팀원","name":"이서준","student_id":"00202602","school":"가상대학교","major":"인공지능학과"},
+        ])
+        self.assertEqual(result["recipient"], {
+            "rrn_display":"020101-3******", "bank_name":"NH농협은행",
+            "account_number":"001-002-0003", "account_holder":"김예린",
+        })
+
     def test_member_evidence_uses_the_original_file_page_and_row(self):
         def source(fid, kind, **signals):
             return {"id": fid, "kind": kind, "signals": json.dumps(signals)}

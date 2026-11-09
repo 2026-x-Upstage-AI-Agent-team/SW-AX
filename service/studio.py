@@ -200,9 +200,8 @@ def parse_result(job, files):
     elements = (unpack(parse.get("text", {})) or {}).get("elements", [])
     id_lines = [e.get("content", {}).get("text", "") for e in elements if e.get("page") in id_pages]
     rrns = set(re.findall(r"(?<!\d)\d{6}\s*-\s*(?:\d\*{6}|\*{7})(?![\d*])", "\n".join(id_lines)))
-    bank_lines = {m[1] for s in id_lines if (m := re.search(r"(?:^|[\s|])((?:[A-Z]{2,3}[ \t]*)?[가-힣]{1,8}은행)[\s|]*$", s))}
     recipient = {"rrn_display": re.sub(r"\s+", "", rrns.pop()) if len(rrns) == 1 else "",
-                 "bank_name": bank_lines.pop() if len(bank_lines) == 1 else "",
+                 "bank_name": str(identity.get("bank_name") or ""),
                  "account_number": str(identity.get("account_number") or ""), "account_holder": identity.get("account_holder") or ""}
     members = []
     if app.get("representative_name"):

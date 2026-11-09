@@ -340,10 +340,10 @@ function Tables({ teams }: { teams: DraftTeam[] }) {
       <div className="flex flex-col gap-3 rounded-[20px] bg-white p-[22px]">
         <strong className="text-base">지급대상자 상세 (팀 대표)</strong>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-[13px]">
+          <table className="w-full min-w-[980px] border-collapse text-[13px]">
             <thead>
               <tr className="text-left text-muted">
-                {['연번', '성명', '주민번호', '은행', '계좌번호', '예금주', '지급총액', '세액', '차인지급액'].map((h) => (
+                {['연번', '성명', '학번', '전공', '주민번호', '은행', '계좌번호', '예금주', '지급총액', '세액', '차인지급액'].map((h) => (
                   <th key={h} scope="col" className={head}>
                     {h}
                   </th>
@@ -358,6 +358,8 @@ function Tables({ teams }: { teams: DraftTeam[] }) {
                   <tr key={t.submission} className="border-b border-line-soft">
                     <td className={cx(cell, 'font-mono')}>{i + 1}</td>
                     <td className={cell}>{rep?.name ?? t.rep}</td>
+                    <td className={cx(cell, 'font-mono')}>{unknown(rep?.student_id)}</td>
+                    <td className={cell}>{unknown(rep?.major)}</td>
                     <td className={cx(cell, 'font-mono')}>{unknown(r.rrn_display)}</td>
                     <td className={cell}>{unknown(r.bank_name)}</td>
                     <td className={cx(cell, 'font-mono')}>{unknown(r.account_number)}</td>
