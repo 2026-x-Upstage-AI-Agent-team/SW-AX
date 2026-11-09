@@ -9,7 +9,7 @@ const menu = [
   { to: '/', label: '업무 현황', Icon: LayoutDashboard },
   { to: '/intake', label: '원본 접수', Icon: Inbox },
   { to: '/assign', label: '팀 배정 확인', Icon: Workflow },
-  { to: '/mail', label: '발송 이력', Icon: Mail },
+  { to: '/mail', label: '이메일 발송', Icon: Mail },
   { to: '/gmail', label: 'Gmail 연결', Icon: AtSign },
   { to: '/report', label: '보고서', Icon: Files },
 ];

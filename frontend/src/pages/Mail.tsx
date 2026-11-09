@@ -25,7 +25,7 @@ export default function Mail() {
   return (
     <Page width="normal">
       <PageHeader
-        title="발송 이력"
+        title="이메일 발송"
         lead="같은 팀·제출 버전·안내 종류의 메일은 한 번만 보냅니다. 원본, 주민번호·계좌번호·학번, 다른 팀 정보는 메일에 담지 않습니다."
         side={<Link to="/gmail" className={buttonStyles.secondary}>Gmail 연결</Link>}
       />

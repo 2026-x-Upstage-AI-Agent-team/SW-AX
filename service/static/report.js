@@ -247,7 +247,7 @@ export function mailPage(d) {
       '<p>Windows 검토 서비스에서 MAIL_MODE를 gmail로, GMAIL_ADDRESS를 담당자 주소로 설정한 뒤 서비스를 다시 시작하세요.</p></section>';
   return (
     head(
-      "발송 이력",
+      "이메일 발송",
       d.smtp
         ? "담당자 알림과 팀장 안내의 발송 상태를 확인합니다."
         : "로컬 테스트 메일함에 도착한 안내를 확인합니다.",

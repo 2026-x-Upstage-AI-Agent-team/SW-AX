@@ -158,7 +158,7 @@ def gmail_callback(request: Request, state: str = "", code: str = "", error: str
         failure = "Google 인증을 저장하지 못했습니다. Gmail API 사용 설정과 OAuth 클라이언트를 확인하세요."
     if failure:
         response = HTMLResponse('<html lang="ko"><meta charset="utf-8"><title>Gmail 연결</title><main><h1>Gmail 연결</h1><p>'
-                                + escape(failure) + '</p><a href="/#mail">발송 이력으로 돌아가기</a></main></html>', status_code=400)
+                                + escape(failure) + '</p><a href="/#mail">이메일 발송으로 돌아가기</a></main></html>', status_code=400)
     else:
         response = RedirectResponse("/#mail", status_code=303)
     response.delete_cookie(gmail_oauth.COOKIE, path=gmail_oauth.CALLBACK)

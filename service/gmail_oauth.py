@@ -72,7 +72,7 @@ def finish(address, state, cookie, code, error):
     with _lock:
         attempt = _attempts.pop(state, None)
     if not attempt or attempt.expires <= time.monotonic() or attempt.address != address:
-        raise SetupError("연결 요청이 만료됐습니다. 발송 이력에서 Google 연결을 다시 시작하세요.")
+        raise SetupError("연결 요청이 만료됐습니다. 이메일 발송 화면에서 Google 연결을 다시 시작하세요.")
     if error or not code:
         raise SetupError("Google 사용 승인이 완료되지 않았습니다.")
     with httpx.Client(timeout=15) as client:
