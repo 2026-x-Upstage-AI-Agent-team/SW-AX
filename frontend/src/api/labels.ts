@@ -9,6 +9,8 @@ export const stateLabels: Record<string, string> = {
   read: '파일 판독 완료',
   waiting: '대기',
   recipient_check: '수신자 확인 필요',
+  draft: '승인 대기',
+  approved: '승인됨 · 발송 대기',
   unassigned: '팀 배정 확인',
   outside: '대상 외',
   error: '파일 확인',

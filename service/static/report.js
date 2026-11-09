@@ -245,7 +245,7 @@ export function mailPage(d) {
       '</strong><p class="muted">' +
       (d.mail_ready
         ? (d.gmail_oauth_connected ? "Google 로그인" : "앱 비밀번호") + " · 발신 및 관리자 알림 수신"
-        : "인증 대기 · 연결하면 대기 중인 알림을 발송합니다.") +
+        : "인증 대기 · 연결하면 승인된 메일을 발송할 수 있습니다.") +
       "</p></section>"
     : '<section class="panel">' + section("담당자 Gmail", "주소 미설정") +
       '<p>Windows 검토 서비스에서 MAIL_MODE를 gmail로, GMAIL_ADDRESS를 담당자 주소로 설정한 뒤 서비스를 다시 시작하세요.</p></section>';
@@ -253,8 +253,8 @@ export function mailPage(d) {
     head(
       "이메일 발송",
       d.smtp
-        ? "담당자 알림과 팀장 안내의 발송 상태를 확인합니다."
-        : "로컬 테스트 메일함에 도착한 안내를 확인합니다.",
+        ? "초안의 수신자와 내용을 확인하고 승인하면 발송됩니다."
+        : "승인한 초안은 로컬 테스트 메일함으로 발송됩니다.",
     ) +
     gmail +
     '<section class="panel">' +
@@ -276,7 +276,7 @@ export function mailPage(d) {
               when(m.created) +
               '</td><td><button class="sm" data-mail="' +
               m.id +
-              '">열기</button></td></tr>',
+              '">' + (m.state === "draft" ? "초안 검토" : "열기") + '</button></td></tr>',
           )
           .join("") +
         "</tbody></table></div>"
@@ -373,6 +373,32 @@ export function bindMail(refresh, method) {
     (b) =>
       (b.onclick = async () => {
         const m = await api("/api/mail/" + b.dataset.mail);
+        if (m.state === "draft") {
+          modal("메일 초안 검토",
+            '<form id="mail-draft" class="stack"><p>받는 사람 · ' + esc(m.recipient || "주소 확인 필요") + '</p>' +
+            '<label class="field">제목<input name="subject" required maxlength="255" value="' + esc(m.subject) + '"></label>' +
+            '<label class="field">본문<textarea name="body" required rows="8" maxlength="50000">' + esc(m.body) + '</textarea></label>' +
+            '<p role="alert" id="draft-error"></p><div class="actions"><button value="save">초안 저장</button>' +
+            '<button class="primary" value="approve"' + (m.can_approve ? "" : " disabled") + '>승인 후 발송</button></div></form>');
+          const form = $("#mail-draft");
+          form.onsubmit = async (event) => {
+            event.preventDefault();
+            const approve = event.submitter?.value === "approve";
+            const buttons = form.querySelectorAll("button");
+            buttons.forEach(button => { button.disabled = true; });
+            try {
+              await api("/api/mail/" + m.id + (approve ? "/approve" : "/draft"), approve ? "POST" : "PUT",
+                {revision:m.revision, recipient:m.recipient || "", subject:form.elements.subject.value, body:form.elements.body.value});
+              $("#dialog").close();
+              notice(approve ? "메일 발송을 승인했습니다." : "초안을 저장했습니다.");
+              await refresh();
+            } catch (err) {
+              $("#draft-error").textContent = err.message;
+              buttons.forEach(button => { button.disabled = button.value === "approve" && !m.can_approve; });
+            }
+          };
+          return;
+        }
         modal(
           m.subject || m.kind,
           '<div class="muted">' +
@@ -383,7 +409,7 @@ export function bindMail(refresh, method) {
             esc(m.body) +
             "</pre>" +
             (["failed", "uncertain"].includes(m.state)
-              ? '<label><input type="checkbox" id="unsent"> 미발송을 확인했습니다.</label> <button id="mail-retry" class="sm">발송 재개</button>'
+              ? '<label><input type="checkbox" id="unsent"> 미발송을 확인했습니다.</label> <button id="mail-retry" class="sm">초안으로 다시 열기</button>'
               : ""),
         );
         if ($("#mail-retry"))

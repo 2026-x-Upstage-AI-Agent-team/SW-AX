@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS batch_teams(batch TEXT REFERENCES batches, team TEXT 
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, subject TEXT NOT NULL,
  action TEXT NOT NULL, detail TEXT NOT NULL, actor TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS mail(id TEXT PRIMARY KEY, submission TEXT NOT NULL REFERENCES submissions,
- kind TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'waiting', sent_to TEXT, created INTEGER NOT NULL, UNIQUE(submission,kind));
+ kind TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'draft', sent_to TEXT, created INTEGER NOT NULL,
+ subject TEXT, body TEXT, revision INTEGER NOT NULL DEFAULT 0, approved_at INTEGER, sent_at INTEGER, UNIQUE(submission,kind));
 CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, event TEXT NOT NULL REFERENCES events,
  version INTEGER NOT NULL, selection TEXT NOT NULL, snapshot TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued',
  error TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, parent TEXT REFERENCES reports, UNIQUE(event,version));

@@ -242,8 +242,8 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
 
 /** 결론을 기록했을 때 실제로 일어나는 일 (service/app.py save_review 기준) */
 function decidedMessage(s: SubmissionDetail, d: Decision) {
-  if (s.verdict === '담당자확인') return `‘${d}’으로 기록했습니다. 팀장에게 ${d === '승인' ? '검토 완료' : '보완 요청'} 안내 한 통이 발송됩니다.`;
-  if (d === '보완 필요') return '‘보완 필요’로 기록했습니다. 선택한 항목으로 팀장에게 보완 요청 메일이 발송됩니다.';
+  if (s.verdict === '담당자확인') return `‘${d}’으로 기록했습니다. 이메일 발송에서 팀장에게 보낼 ${d === '승인' ? '검토 완료' : '보완 요청'} 초안을 확인하세요.`;
+  if (d === '보완 필요') return '‘보완 필요’로 기록했습니다. 이메일 발송에서 선택한 항목이 담긴 초안을 확인하세요.';
   return '승인했습니다. 시상구분·지원액을 넣으면 보고서에 편철할 수 있습니다.';
 }
 
@@ -466,7 +466,7 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
         <p className="break-all text-sm text-ink-2">신청서 대표 이메일 · {s.application_emails.join(', ') || '확인된 주소 없음'}</p>
       )}
       {confirmAddress && (
-        <p className="text-sm text-caution">원접수와 신청서를 대조해 수신 주소를 확인해 주세요. 이 제출본의 팀장 안내는 주소 확인 후 발송합니다.</p>
+        <p className="text-sm text-caution">원접수와 신청서를 대조해 수신 주소를 확인한 뒤, 이메일 발송에서 초안을 승인해 주세요.</p>
       )}
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-xs text-muted">

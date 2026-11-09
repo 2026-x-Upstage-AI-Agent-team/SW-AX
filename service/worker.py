@@ -150,7 +150,8 @@ def deliver(mail, cfg):
         return
     sid = mail["submission"]
     with database(True) as db:
-        if require(db,"mail",mail["id"])["state"] != "waiting":
+        mail = require(db,"mail",mail["id"])
+        if mail["state"] != "approved" or mail["approved_at"] is None or not mail["subject"] or not mail["body"]:
             return
         s = require(db, "submissions", sid)
         t = require(db, "teams", s["team"])
@@ -158,32 +159,17 @@ def deliver(mail, cfg):
             return
         smtp = smtp_enabled(cfg)
         address = mail_recipient(mail["kind"], cfg, t["email"], t["id"])
-        if not address:
+        if not address or address != mail["sent_to"]:
+            db.execute("UPDATE mail SET state='draft',sent_to=NULL,approved_at=NULL,revision=revision+1 WHERE id=?", (mail["id"],))
             return
-        result = json.loads(s["result"])
         message = EmailMessage()
         message["From"] = (cfg.get("SMTP_FROM") or "review@award.test") if smtp else "review@award.test"
         message["To"] = address
         domain = cfg["SMTP_FROM"].split("@")[-1] if "GMAIL_CREDENTIAL" in cfg else "award.test"
         message["Message-ID"] = f"<{mail['id']}@{domain}>"
-        team_name = " ".join(t["name"].splitlines())
-        message["Subject"] = f"[시상금 서류 {mail['kind']}] {team_name}"
-        lines = [f"{t['name']} 팀장님, 제출 {s['version']}차 서류의 검토 결과입니다.", ""]
-        if mail["kind"] == ADMIN_NOTICE:
-            lines = [f"{team_name} 팀의 {s['version']}차 서류 판정은 {result['verdict']}입니다.",
-                     "담당자 PC의 ‘팀별 서류 검토’에서 원본과 확인 항목을 열어 주세요."]
-        elif mail["kind"] == "보완 요청":
-            last_review = row(db,"SELECT detail FROM audit WHERE subject=? AND action='검토 저장' ORDER BY id DESC LIMIT 1",sid)
-            review = json.loads(last_review["detail"]) if last_review else {}
-            issues = review.get("issues") if review.get("decision") == "보완 필요" else result["issues"]
-            lines.extend(studio.ISSUES[k] for k in issues if k in studio.ISSUES)
-            lines.append("보완한 서류는 기존 제출 경로로 담당자에게 보내 주세요.")
-        else:
-            lines.append("제출한 서류의 검토를 완료했습니다.")
-        message.set_content("\n".join(lines))
-        if not db.execute("UPDATE mail SET state='sending',sent_to=? WHERE id=? AND state='waiting'",
-                          (address, mail["id"])).rowcount:
-            return
+        message["Subject"] = mail["subject"]
+        message.set_content(mail["body"])
+        db.execute("UPDATE mail SET state='sending' WHERE id=?", (mail["id"],))
     final = "failed"
     sending = False
     try:
@@ -209,7 +195,7 @@ def deliver(mail, cfg):
         pass  # A rejected message remains failed. A QUIT error after acceptance leaves it sent.
     except gmail_oauth.ReconnectRequired:
         discard_revoked_oauth(cfg)
-        final = "waiting"
+        final = "approved"
     except httpx.HTTPStatusError as exc:
         if sending and (exc.response.status_code == 408 or exc.response.status_code >= 500):
             final = "uncertain"
@@ -217,7 +203,7 @@ def deliver(mail, cfg):
         if sending and final != "sent":
             final = "uncertain"
     with database(True) as db:
-        db.execute("UPDATE mail SET state=? WHERE id=?", (final,mail["id"]))
+        db.execute("UPDATE mail SET state=?,sent_at=? WHERE id=?", (final,now() if final in ("sent","local") else None,mail["id"]))
         audit(db,sid,"메일 "+final,{"mail":mail["id"]},"서비스")
 
 
@@ -322,9 +308,8 @@ class Worker:
             batch = row(db,"SELECT * FROM batches WHERE state='preparing' ORDER BY rowid LIMIT 1")
             report = row(db,"SELECT * FROM reports WHERE state='queued' ORDER BY rowid LIMIT 1")
             mails = rows(db,"""SELECT m.*,t.id AS tid,t.email FROM mail m JOIN submissions s ON m.submission=s.id
-                       JOIN teams t ON t.current=s.id WHERE m.state='waiting' AND s.state='done' ORDER BY m.rowid""")
-            mail = next((m for m in mails if mail_recipient(m["kind"], cfg, m["email"], m["tid"])
-                         and not held(db, m["tid"])), None) if cfg["MAIL_READY"] else None
+                       JOIN teams t ON t.current=s.id WHERE m.state='approved' AND m.approved_at IS NOT NULL AND s.state='done' ORDER BY m.rowid""")
+            mail = next((m for m in mails if not held(db, m["tid"])), None) if cfg["MAIL_READY"] else None
         if active or new:
             run_studio(active or new)
         elif batch:

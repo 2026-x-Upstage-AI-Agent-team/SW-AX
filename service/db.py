@@ -64,6 +64,13 @@ def initialize():
         for name in ("agent_id","config_version","config_id"):
             if name not in columns:
                 db.execute(f"ALTER TABLE submissions ADD COLUMN {name} TEXT")
+        db.execute("BEGIN IMMEDIATE")
+        mail_columns = {r[1] for r in db.execute("PRAGMA table_info(mail)")}
+        for name, definition in (("subject","TEXT"),("body","TEXT"),("revision","INTEGER NOT NULL DEFAULT 0"),
+                                 ("approved_at","INTEGER"),("sent_at","INTEGER")):
+            if name not in mail_columns:
+                db.execute(f"ALTER TABLE mail ADD COLUMN {name} {definition}")
+        db.execute("UPDATE mail SET state='draft',sent_to=NULL WHERE state='waiting'")
         db.execute("INSERT OR IGNORE INTO events(id,name) VALUES('wave',?)", (WAVE,))
 
 

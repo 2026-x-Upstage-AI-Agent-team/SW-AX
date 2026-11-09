@@ -194,7 +194,7 @@ async function render(autopoll = false) {
     } else if (page === "mail") {
       view.innerHTML = mailPage(d);
       bindMail(() => render(), d.gmail_account ? id : undefined);
-      polling = d.mail.some((m) => ["waiting", "sending"].includes(m.state));
+      polling = d.mail.some((m) => ["approved", "sending"].includes(m.state));
     } else {
       view.innerHTML = home(d);
       polling =

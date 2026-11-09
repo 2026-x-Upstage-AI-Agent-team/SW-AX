@@ -1,32 +1,26 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { ADMIN_NOTICE } from '../api/labels';
-import { setTeamEmail, type Dashboard } from '../api/service';
+import { isMailDraft, setTeamEmail, type Dashboard } from '../api/service';
 import { Page } from '../components/Layout';
 import MailItem from '../components/MailItem';
 import { Feedback, Notice, PageHeader, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
-type Tab = 'leader' | 'admin';
-
-const rules = [
-  { t: '재제출요청', d: '판정 즉시 보완할 서류와 방법을 팀장에게 한 통으로 보냅니다.' },
-  { t: '담당자확인', d: '원본 대조 후 ‘승인’ 또는 ‘보완 필요’를 기록하면 결과만 한 통 보냅니다.' },
-  { t: '수신자 확인 필요', d: '주소가 없거나 신청서와 다르면 팀장 안내를 보류합니다. 팀별 검토에서 원접수와 대조해 수신 주소를 확인하세요.' },
-  { t: '실패·확인 필요', d: '원인을 해소한 뒤 현재 버전의 그 메일만 다시 보냅니다.' },
-];
+type Tab = 'drafts' | 'leader' | 'admin';
 
 export default function Mail() {
   const { dashboard, dashboardError, refresh } = useEvent();
-  const [tab, setTab] = useState<Tab>('leader');
-  const list = dashboard?.mail.filter((m) => (tab === 'admin' ? m.kind === ADMIN_NOTICE : m.kind !== ADMIN_NOTICE)) ?? [];
+  const [tab, setTab] = useState<Tab>('drafts');
+  const [message, setMessage] = useState('');
+  const list = dashboard?.mail.filter((m) => tab === 'drafts' ? isMailDraft(m) : (tab === 'admin') === (m.kind === ADMIN_NOTICE)) ?? [];
   const noEmail = dashboard?.teams.filter((t) => !t.email && t.submission) ?? [];
 
   return (
     <Page width="normal">
       <PageHeader
         title="이메일 발송"
-        lead="같은 팀·제출 버전·안내 종류의 메일은 한 번만 보냅니다. 원본, 주민번호·계좌번호·학번, 다른 팀 정보는 메일에 담지 않습니다."
+        lead="판정 결과로 작성된 초안을 확인하세요. 담당자가 수신자와 내용을 확인하고 승인한 메일만 발송됩니다."
         side={<Link to="/gmail" className={buttonStyles.secondary}>Gmail 연결</Link>}
       />
 
@@ -34,11 +28,17 @@ export default function Mail() {
         <Notice error={dashboardError} onRetry={refresh} />
       ) : (
         <>
+          {dashboard.smtp && !dashboard.mail_ready && (
+            <p className="rounded-[14px] border border-caution-line bg-caution-bg px-4 py-3 text-sm text-ink-2">
+              발신 계정 연결을 기다리고 있습니다. 승인한 메일은 계정이 연결되면 발송됩니다.
+            </p>
+          )}
           {noEmail.length > 0 && <EmailList teams={noEmail} onSaved={refresh} />}
 
-          <div role="group" aria-label="수신자" className="segments self-start">
+          <div role="group" aria-label="메일 목록" className="segments flex-wrap self-start">
             {(
               [
+                ['drafts', `승인 대기 ${dashboard.mail.filter(isMailDraft).length}`],
                 ['leader', `팀장 안내 ${dashboard.mail.filter((m) => m.kind !== ADMIN_NOTICE).length}`],
                 ['admin', `담당자 알림 ${dashboard.mail.filter((m) => m.kind === ADMIN_NOTICE).length}`],
               ] as Array<[Tab, string]>
@@ -47,39 +47,26 @@ export default function Mail() {
                 key={key}
                 type="button"
                 aria-pressed={tab === key}
-                onClick={() => setTab(key)}
+                onClick={() => { setTab(key); setMessage(''); }}
                 className="segment"
               >
                 {label}
               </button>
             ))}
           </div>
-
+          {message && <p role="status" className="text-sm font-semibold text-brand-strong">{message}</p>}
           {list.length === 0 ? (
-            <p className="rounded-[18px] border border-line px-6 py-8 text-center text-sm text-muted">아직 만들어진 메일이 없습니다.</p>
+            <p className="rounded-[18px] border border-line px-6 py-8 text-center text-sm text-muted">{tab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {list.map((m) => (
-                <MailItem key={m.id} m={m} onSaved={refresh} showTeam />
+                <MailItem key={m.id} m={m} onSaved={refresh} onApproved={setMessage} showTeam />
               ))}
             </ul>
           )}
         </>
       )}
 
-      <section aria-labelledby="legend-h" className="flex flex-col gap-3.5">
-        <h2 id="legend-h" className="text-xl font-extrabold">
-          메일이 나가는 경우
-        </h2>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
-          {rules.map((r) => (
-            <div key={r.t} className="flex flex-col gap-1.5 rounded-[18px] bg-canvas p-5">
-              <strong className="text-sm">{r.t}</strong>
-              <span className="text-[13px] leading-relaxed text-ink-2">{r.d}</span>
-            </div>
-          ))}
-        </div>
-      </section>
     </Page>
   );
 }

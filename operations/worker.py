@@ -7,7 +7,7 @@ import httpx
 
 from service import studio
 from service.mailing import mail_settings
-from .delivery import deliver
+from .delivery import admin_address, deliver
 from .preparation import prepare
 from .reports import report_tick
 from .store import configuration, connect
@@ -36,10 +36,11 @@ def serve(role, cfg, once=False):
                                     remote.headers["Authorization"] = "Bearer " + cfg.get("UPSTAGE_API_KEY", "")
                                 mail = mail_settings(cfg) if role == "mail" else {}
                                 configured = bool(cfg.get("UPSTAGE_API_KEY") and cfg.get("UPSTAGE_AGENT_ID")) if role=="studio" else bool(mail.get("MAIL_READY"))
-                                db.execute("""INSERT INTO workflow_health(role,configured,config,mail_mode) VALUES(%s,%s,%s,%s)
+                                db.execute("""INSERT INTO workflow_health(role,configured,config,mail_mode,mail_recipient) VALUES(%s,%s,%s,%s,%s)
                                     ON CONFLICT(role) DO UPDATE SET updated_at=now(),configured=excluded.configured,
-                                    config=excluded.config,mail_mode=excluded.mail_mode""",
-                                           (role,configured,cfg.get("UPSTAGE_CONFIG_ID",studio.CONFIG),mail.get("MAIL_MODE","local")))
+                                    config=excluded.config,mail_mode=excluded.mail_mode,mail_recipient=excluded.mail_recipient""",
+                                           (role,configured,cfg.get("UPSTAGE_CONFIG_ID",studio.CONFIG),mail.get("MAIL_MODE","local"),
+                                            admin_address(mail) if role=="mail" else None))
                                 heartbeat = time.monotonic()+30
                             if role=="prepare":
                                 busy = prepare(db,api)

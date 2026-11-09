@@ -27,7 +27,40 @@ const queueEvent = process.env.INTAKE_TEST_QUEUE_EVENT;
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
 const delayedId = process.env.INTAKE_TEST_DELAYED_SUBMISSION;
-if (queueEvent) {
+const mailId = process.env.INTAKE_TEST_DRAFT_MAIL;
+if (mailId) {
+  test('이메일 발송에서 초안을 수정해 저장하고 명시적으로 발송을 승인한다', async () => {
+    const event = process.env.INTAKE_TEST_MAIL_EVENT;
+    const dashboard = await (await request.get('/api/dashboard?event=' + event)).json();
+    assert.equal(dashboard.smtp, false);
+    const path = '/api/mail/' + mailId;
+    const draft = await (await request.get(path)).json();
+    assert.equal(draft.state, 'draft');
+    assert.match(draft.recipient, /@award\.test$/);
+    await page.addInitScript(id => localStorage.setItem('swax.event.intake', id), event);
+    await page.goto('/#/mail');
+    const row = page.getByRole('listitem').filter({ hasText: draft.name }).filter({ hasText: draft.kind });
+    await row.getByRole('button', { name: '초안 검토' }).click();
+    assert.equal(await row.getByLabel('제목', { exact: true }).inputValue(), draft.subject);
+    assert.equal(await row.getByLabel('본문', { exact: true }).inputValue(), draft.body);
+    await row.getByText(draft.recipient, { exact: true }).waitFor();
+    const body = draft.body + '\n브라우저 검토 완료';
+    await row.getByLabel('본문', { exact: true }).fill(body);
+    await row.getByRole('button', { name: '초안 저장' }).click();
+    await row.getByText('초안을 저장했습니다.').waitFor();
+    await page.reload();
+    await row.getByRole('button', { name: '초안 검토' }).click();
+    assert.equal(await row.getByLabel('본문', { exact: true }).inputValue(), body);
+    assert.equal((await (await request.get(path)).json()).state, 'draft');
+    const [response] = await Promise.all([
+      page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith(path + '/approve')),
+      row.getByRole('button', { name: '승인 후 발송' }).click(),
+    ]);
+    assert.equal(response.status(), 200);
+    assert.equal((await response.json()).state, 'approved');
+    await page.getByRole('status').filter({ hasText: '발송을 승인했습니다' }).waitFor();
+  });
+} else if (queueEvent) {
   test('처리 대기 중인 팀의 최초 원본 접수 시각을 표시한다', async () => {
     const dashboard = await (await request.get('/api/dashboard?event=' + queueEvent)).json();
     const waiting = dashboard.teams.map((t) => t.submission).filter((s) => s?.state === 'queued');
@@ -55,7 +88,7 @@ if (queueEvent) {
     const row = page.getByRole('listitem').filter({ hasText: '01 지급확인서 1쪽 첫째 행에 학번이 없습니다.' }).first();
     await row.getByRole('button', { name: '01 지급확인서 · 1쪽 · 1행' }).click();
     const mail = page.getByRole('listitem').filter({ hasText: '보완 요청' }).filter({ hasText: 'leader@award.test' });
-    await mail.getByText(/예약 .* · 발송 /).waitFor();
+    await mail.getByText(/초안 생성 .* · 발송 /).waitFor();
   });
 } else if (payoutId) {
   test('지급액 미입력 항목을 팀별로 표시하고 보고서 확정을 막는다', async () => {

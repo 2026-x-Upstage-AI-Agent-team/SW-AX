@@ -124,7 +124,7 @@ def synchronize(db, batch):
                        VALUES(?,?,?,?,?,?,?)""", (sub,t,version,dump([f["id"] for f in selected]),digest,now(),now()))
             db.execute("UPDATE teams SET current=? WHERE id=?", (sub,t))
             if current:
-                db.execute("UPDATE mail SET state='obsolete' WHERE submission=? AND state IN ('waiting','failed')", (current["id"],))
+                db.execute("UPDATE mail SET state='obsolete' WHERE submission=? AND state IN ('draft','approved','failed','uncertain')", (current["id"],))
             audit(db, sub, "제출 버전 생성", {"version": version}, "서비스")
         db.execute("INSERT OR REPLACE INTO batch_teams VALUES(?,?,?)", (batch["id"], t, sub))
     state = "review" if any(f["state"] in ("unassigned","error") for f in files) else "assigned"
@@ -132,7 +132,7 @@ def synchronize(db, batch):
 
 
 def enqueue_mail(db, sub, kind):
-    db.execute("INSERT OR IGNORE INTO mail(id,submission,kind,created) VALUES(?,?,?,?)", (uid(), sub, kind, now()))
+    db.execute("INSERT OR IGNORE INTO mail(id,submission,kind,created,state) VALUES(?,?,?,?,'draft')", (uid(), sub, kind, now()))
 
 
 def effective_fields(sub):

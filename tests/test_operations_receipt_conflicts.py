@@ -17,6 +17,7 @@ from lxml import etree
 from pypdf import PdfWriter
 
 from operations.delivery import deliver
+from tests.mail_approval import approve_ready_notices
 from operations.preparation import prepare
 from operations.printer import print_one, worker_api
 from operations.reports import report_tick
@@ -161,6 +162,8 @@ class ReceiptConflicts(unittest.TestCase):
         sid = current["submission_id"]
         self.staff.put(f"/api/teams/{team}/email",json={"email":"leader@award.test","submission":sid}).raise_for_status()
         self.db.execute("UPDATE review_mail SET created_at=created_at-interval '1 hour' WHERE submission_id=%s",(sid,))
+        self.assertFalse(deliver(self.db,self.cfg))
+        approve_ready_notices(self.staff,sid)
         while deliver(self.db,self.cfg):
             pass
         notices = self.detail("/api/operations/submissions/"+sid)["mail"]

@@ -5,74 +5,9 @@ from email.policy import SMTP
 
 import httpx
 
-from service import gmail_oauth, studio
+from service import gmail_oauth
 from service.db import DATA, smtp_enabled
-from service.mailing import ADMIN_NOTICE, discard_revoked_oauth, mail_settings, smtp_connection
-
-
-def issue_location(issue, documents, checks=()):
-    kinds = {"application":("01",),"consent":("02",),"identity":("03",),"account":("01","03"),
-             "signature":("01","02"),"affiliation":("01","02"),"student_id":("01",),
-             "representative":("01","03")}.get(issue, ())
-    if issue == "duplicate":
-        kinds = [kind for kind in ("01","02","03") if len(documents.get(kind,[])) > 1]
-    locations = []
-    evidence = [ref for check in checks if check.get("issue")==issue and check.get("passed") is False for ref in check.get("refs",())]
-    by_id = {ref["id"]:kind for kind,refs in documents.items() for ref in refs if ref.get("id")}
-    for ref in evidence:
-        kind = by_id.get(ref.get("id"))
-        page,row = ref.get("page"),ref.get("row")
-        if kind in ("01","02","03") and type(page) is int and 0 < page <= 999:
-            location = f"{kind} {page}쪽"
-            if type(row) is int and 0 < row <= 999:
-                location += f" {row}행"
-            if location not in locations:
-                locations.append(location)
-    has_locations = bool(locations)
-    for kind in kinds:
-        if kind not in documents:
-            continue
-        refs = documents[kind]
-        if has_locations and refs:
-            continue
-        pages = sorted({ref["page"] for ref in refs if type(ref.get("page")) is int and ref["page"] > 0})
-        if not refs:
-            locations.append(f"접수 목록 {kind} 미제출")
-        elif len(refs) > 1:
-            locations.append(f"{kind} {len(refs)}부")
-        else:
-            locations.append(kind + (" " + "·".join(map(str,pages)) + "쪽" if pages else ""))
-    return ", ".join(locations)
-
-
-def message_for(m, cfg):
-    msg = EmailMessage(policy=SMTP)
-    name = " ".join(m["name"].splitlines())
-    msg["Subject"] = f"[시상금 서류 {m['kind']}] {name}"
-    msg["From"] = cfg.get("SMTP_FROM") or "review@award.test"
-    msg["To"] = m["address"]
-    msg["Message-ID"] = f"<{m['id']}@{msg['From'].addresses[0].domain}>"
-    if m["kind"] == ADMIN_NOTICE:
-        lines = [f"{name} 팀의 {m['version']}차 판정은 {m['verdict']}입니다.", "팀별 서류 검토에서 원본과 확인 항목을 열어 주세요."]
-    else:
-        lines = [f"{name} 팀장님, 제출 {m['version']}차 서류의 검토 결과입니다.", ""]
-        if m["kind"] == "보완 요청":
-            output = m["output"] or {}
-            issues = m["issues"] if m["decision"] == "보완 필요" else output.get("issues", [])
-            for key in dict.fromkeys(issues or ["other"]):
-                if key in studio.ISSUES:
-                    checks = output.get("checks",[])
-                    location = issue_location(key,output.get("documents",{}),checks)
-                    fields = dict.fromkeys(studio.FIELD_LABELS[field] for check in checks
-                                           if check.get("issue")==key and check.get("passed") is False
-                                           for field in check.get("fields",()) if field in studio.FIELD_LABELS)
-                    hint = " · ".join(filter(None,(location,", ".join(fields))))
-                    lines.append((f"[{hint}] " if hint else "")+studio.ISSUES[key])
-            lines.append("보완한 서류는 기존 제출 경로로 담당자에게 보내 주세요.")
-        else:
-            lines.append("제출한 서류의 검토를 완료했습니다.")
-    msg.set_content("\n".join(lines))
-    return msg
+from service.mailing import discard_revoked_oauth, mail_settings, smtp_connection
 
 
 def send(msg, cfg, path):
@@ -107,6 +42,10 @@ def send(msg, cfg, path):
     return "sent"
 
 
+def admin_address(cfg):
+    return cfg.get("ADMIN_EMAIL") or ("" if smtp_enabled(cfg) else "admin@award.test")
+
+
 def deliver(db, raw_cfg):
     cfg = mail_settings(raw_cfg)
     mailbox = DATA / "operations" / "mail"
@@ -120,37 +59,50 @@ def deliver(db, raw_cfg):
         db.execute("UPDATE review_mail SET state=%s,sent_at=to_timestamp(%s) WHERE id=%s AND state='sending'",
                    ("local" if filed_at is not None else "uncertain",filed_at,item["id"]))
     db.execute("""UPDATE review_mail m SET state='obsolete' FROM review_job_status j
-        WHERE m.submission_id=j.submission_id AND j.state='superseded' AND m.state IN ('waiting','failed')""")
+        WHERE m.submission_id=j.submission_id AND j.state='superseded' AND m.state IN ('draft','approved','failed')""")
     if not cfg.get("MAIL_READY"):
         return False
-    admin = cfg.get("ADMIN_EMAIL") or ("" if smtp_enabled(cfg) else "admin@award.test")
-    query = """SELECT m.id,m.submission_id,m.kind,t.id AS team,t.name,s.version,s.verdict,s.output,s.issues,s.decision,
+    admin = admin_address(cfg)
+    reopen = "state='draft',sent_to=NULL,approved_by=NULL,approved_at=NULL,revision=m.revision+1"
+    db.execute(f"""UPDATE review_mail m SET {reopen} FROM ops_submission s JOIN award_team t ON t.id=s.team_id
+        JOIN ops_leader_recipient r ON r.submission_id=s.id WHERE m.submission_id=s.id AND m.state='approved'
+        AND (m.sent_to IS DISTINCT FROM CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END
+            OR (m.kind<>'담당자 알림' AND r.needs_confirmation))""",(admin,))
+    query = """SELECT m.id,m.submission_id,m.subject,m.body,t.id AS team,
         CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END AS address
         FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
         JOIN intake_team_confirmation c ON c.submission_id=s.id AND c.state='confirmed'
         JOIN ops_leader_recipient r ON r.submission_id=s.id
         WHERE s.state='done' AND NOT ops_team_held(t.id)
+        AND m.approved_by IS NOT NULL AND m.approved_at IS NOT NULL AND m.subject IS NOT NULL AND m.body IS NOT NULL
         AND (m.kind='담당자 알림' OR NOT r.needs_confirmation)
-        AND (CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END)<>''
+        AND m.sent_to<>'' AND m.sent_to=(CASE WHEN m.kind='담당자 알림' THEN %s ELSE t.email END)
         AND (m.kind='담당자 알림' OR (m.kind='보완 요청' AND (s.verdict='재제출요청' OR s.decision='보완 필요'))
           OR (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))) """
     with db.transaction():
-        m = db.execute(query + "AND m.state='waiting' ORDER BY m.created_at,m.id LIMIT 1 FOR UPDATE OF t,c,m", (admin,admin)).fetchone()
+        m = db.execute(query + "AND m.state='approved' ORDER BY m.created_at,m.id LIMIT 1 FOR UPDATE OF t,c,m", (admin,admin)).fetchone()
         if not m:
             return False
-        msg = message_for(m,cfg)
-        db.execute("UPDATE review_mail SET state='sending',sent_to=%s,subject=%s,body=%s WHERE id=%s",
-                   (m["address"],str(msg["Subject"]),msg.get_content(),m["id"]))
+        msg = EmailMessage(policy=SMTP)
+        msg["From"] = cfg.get("SMTP_FROM") or "review@award.test"
+        msg["To"] = m["address"]
+        msg["Subject"] = m["subject"]
+        msg["Message-ID"] = f"<{m['id']}@{msg['From'].addresses[0].domain}>"
+        msg.set_content(m["body"])
+        db.execute("UPDATE review_mail SET state='sending' WHERE id=%s",(m["id"],))
     with db.transaction():
         # Read the address and its version confirmation in a fresh snapshot after taking the team lock.
         db.execute("SELECT id FROM award_team WHERE id=%s FOR NO KEY UPDATE", (m["team"],))
         valid = db.execute(query + "AND m.id=%s AND m.state='sending' FOR UPDATE OF t,c,m", (admin,admin,m["id"])).fetchone()
         if valid and valid["address"] == m["address"]:
             final = send(msg,cfg,mailbox / (str(m["id"])+".eml"))
+            if final == "waiting":  # Gmail will resume this approved envelope after reconnection.
+                final = "approved"
+            db.execute("""UPDATE review_mail SET state=%s,sent_at=CASE WHEN %s THEN clock_timestamp() END WHERE id=%s""",
+                       (final,final in ("sent","local"),m["id"]))
         else:
-            final = "waiting"
-        db.execute("""UPDATE review_mail SET state=%s,sent_at=CASE WHEN %s THEN clock_timestamp() END WHERE id=%s""",
-                   (final,final in ("sent","local"),m["id"]))
+            final = "draft"
+            db.execute(f"UPDATE review_mail m SET {reopen} WHERE id=%s",(m["id"],))
         db.execute("INSERT INTO workflow_audit(submission_id,actor,action) VALUES(%s,'@workflow',%s)",
                    (m["submission_id"],"메일 "+final))
     return True

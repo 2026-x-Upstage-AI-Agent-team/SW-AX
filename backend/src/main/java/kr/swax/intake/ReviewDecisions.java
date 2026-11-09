@@ -34,11 +34,11 @@ class ReviewDecisions {
                 parsed[0].validate();
             } catch(AddressException ex) {throw ApiErrors.error(422,"확인한 팀장 이메일 주소 한 개를 입력하세요.");}
         }
+        String previous=data.db.queryForObject("SELECT email FROM award_team WHERE id=? FOR NO KEY UPDATE",String.class,id);
         if (input.submission()==null) {
             data.db.update("UPDATE award_team SET email=?,email_confirmed_submission=NULL WHERE id=? AND email<>?",address,id,address);
         } else {
             if (address.isEmpty()) throw ApiErrors.error(422,"원접수에서 확인한 수신 주소를 입력하세요.");
-            data.db.queryForObject("SELECT id FROM award_team WHERE id=? FOR NO KEY UPDATE",UUID.class,id);
             if (!data.db.queryForObject("""
                     SELECT EXISTS(SELECT FROM intake_team_confirmation c JOIN ops_submission s ON s.id=c.submission_id
                         WHERE c.team_id=? AND c.submission_id=? AND c.state='confirmed' AND s.state='done' AND NOT ops_team_held(c.team_id))
@@ -49,6 +49,10 @@ class ReviewDecisions {
                     """,address,input.submission(),id,address,input.submission())>0)
                 data.audit(input.submission(),staff.getName(),"원접수 대조 후 팀장 수신 주소 확인");
         }
+        if (!address.equals(previous)) data.db.update("""
+            UPDATE review_mail m SET state='draft',sent_to=NULL,approved_by=NULL,approved_at=NULL,revision=m.revision+1
+            FROM team_submission s WHERE s.id=m.submission_id AND s.team_id=? AND m.kind<>'담당자 알림' AND m.state='approved'
+            """,id);
         return Map.of("saved",true);
     }
 
@@ -150,23 +154,4 @@ class ReviewDecisions {
         return org.springframework.http.ResponseEntity.status(409).body(Map.of("detail","다른 제출본에 연결된 Studio 실행입니다."));
     }
 
-    @GetMapping("/api/mail/{id}")
-    Object mail(Principal staff,@PathVariable UUID id) {
-        data.scope(staff.getName(),MAIL,id);
-        return data.one("""
-            SELECT o.info||jsonb_build_object('subject',coalesce(m.subject,''),'body',coalesce(m.body,'발송된 본문이 없습니다.'))
-            FROM ops_mail o JOIN review_mail m ON m.id=o.id WHERE m.id=?
-            """,id);
-    }
-    @PostMapping("/api/mail/{id}/retry")
-    Object retryMail(Principal staff,@PathVariable UUID id,@RequestBody Recovery form) {
-        data.scope(staff.getName(),MAIL,id);
-        UUID sid=data.db.queryForObject("SELECT submission_id FROM review_mail WHERE id=?",UUID.class,id);
-        data.lockCurrent(sid);
-        String state=data.db.queryForObject("SELECT state FROM review_mail WHERE id=? FOR UPDATE",String.class,id);
-        if("uncertain".equals(state)&&!Boolean.TRUE.equals(form.confirmedAbsent())) throw ApiErrors.error(409,"미발송을 확인한 뒤 재시도하세요.");
-        if(data.db.update("UPDATE review_mail SET state='waiting' WHERE id=? AND state IN ('failed','uncertain')",id)>0)
-            data.audit(sid,staff.getName(),"메일 재시도");
-        return Map.of("saved",true);
-    }
 }

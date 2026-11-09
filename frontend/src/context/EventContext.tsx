@@ -38,7 +38,7 @@ function isBusy(d?: Dashboard) {
     d.batches.some((b) => b.state === 'preparing') ||
     d.teams.some((t) => t.submission && busyStates.has(t.submission.state)) ||
     d.reports.some((r) => r.state === 'queued' || r.state === 'building' || r.state === 'printing' || r.state === 'verifying') ||
-    d.mail.some((m) => m.state === 'waiting' || m.state === 'sending')
+    d.mail.some((m) => m.state === 'approved' || m.state === 'sending')
   );
 }
 

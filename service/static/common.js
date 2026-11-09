@@ -40,6 +40,8 @@ export const states = {
   assigned: "배정 완료",
   read: "파일 판독 완료",
   waiting: "대기",
+  draft: "승인 대기",
+  approved: "승인됨 · 발송 대기",
   unassigned: "팀 배정 확인",
   outside: "대상 외",
   error: "파일 확인",

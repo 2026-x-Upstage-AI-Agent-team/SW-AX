@@ -33,6 +33,7 @@ class LocalServiceTests(unittest.TestCase):
         for mod in (db,web,documents,worker):
             self.scope.enter_context(patch.object(mod,"DATA",location))
         self.scope.enter_context(patch.object(worker,"settings",return_value={"MAIL_MODE":"local","UPSTAGE_AGENT_ID":"test-agent"}))
+        self.scope.enter_context(patch.object(web,"settings",return_value={"MAIL_MODE":"local"}))
         # Any unexpected external request is a test failure.
         self.scope.enter_context(patch.object(studio,"client",side_effect=AssertionError("unexpected network request")))
         db.initialize()
@@ -124,7 +125,13 @@ class LocalServiceTests(unittest.TestCase):
         with db.database() as con:
             mail,=db.rows(con,"SELECT * FROM mail")
         worker.deliver(mail,{"MAIL_MODE":"local"})
-        message=self.client.get("/api/mail/"+mail["id"]).json()
+        mail_url="/api/mail/"+mail["id"]
+        draft=self.client.get(mail_url).json()
+        self.assertEqual("draft",draft["state"])
+        self.assertIn("개인정보 동의서",draft["body"])
+        self.assertEqual(200,self.client.post(mail_url+"/approve",json=draft).status_code)
+        worker.deliver(mail,{"MAIL_MODE":"local"})
+        message=self.client.get(mail_url).json()
         self.assertEqual("local",message["state"])
         self.assertIn("개인정보 동의서",message["body"])
         self.assertNotRegex(message["body"],r"\d{6}|@")

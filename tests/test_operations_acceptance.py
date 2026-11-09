@@ -20,6 +20,7 @@ from pypdf import PdfReader
 
 from tests.test_intake_postgres import login
 from operations.delivery import deliver
+from tests.mail_approval import approve_ready_notices
 from operations.preparation import prepare
 from operations.printer import worker_api
 from operations.reports import report_tick
@@ -120,6 +121,7 @@ class OperationalAcceptance(unittest.TestCase):
         subs = {t["id"]:t["current"] for t in dashboard["teams"]}
         for case,tid in owners.items():
             staff.put(f"/api/teams/{tid}/email",json={"email":case+"@award.test","submission":subs[tid]}).raise_for_status()
+            approve_ready_notices(staff,subs[tid])
         while deliver(db,cfg):
             pass
         details = {s:staff.get("/api/operations/submissions/"+subs[tid]).raise_for_status().json() for s,tid in owners.items()}

@@ -22,6 +22,7 @@ from . import gmail_oauth
 from .db import DATA, ROOT, database, dump, initialize, now, row, rows, settings, smtp_enabled, uid
 from .documents import preview
 from .mailing import connect_gmail, mail_settings, mailbox_address
+from .mail_drafts import detail as mail_detail
 from .studio import CONFIG, ISSUES
 from .worker import REPORT_NAME, Worker
 from .workflow import (audit, check_report, effective_fields, enqueue_mail, files_for, held, missing_payouts,
@@ -106,7 +107,7 @@ def dashboard(event: str = "wave"):
              sum(CASE WHEN f.state IN ('unassigned','error') THEN 1 ELSE 0 END) AS pending
              FROM batches b JOIN files f ON f.batch=b.id WHERE b.event=? GROUP BY b.id ORDER BY b.rowid DESC""",event)
         reports = rows(db,"SELECT id,version,state,error,created FROM reports WHERE event=? ORDER BY version DESC",event)
-        mails = rows(db,"""SELECT m.*,s.version,t.name FROM mail m JOIN submissions s ON m.submission=s.id
+        mails = rows(db,"""SELECT m.id,m.submission,m.kind,m.state,m.sent_to,m.created,m.sent_at,s.version,t.name FROM mail m JOIN submissions s ON m.submission=s.id
                      JOIN teams t ON t.id=s.team WHERE t.event=? ORDER BY m.rowid DESC""",event)
         cfg = mail_settings(settings())
         return {"events":rows(db,"SELECT * FROM events ORDER BY rowid"),"teams":teams,"batches":batches,"reports":reports,
@@ -378,7 +379,7 @@ def submission(sid: str):
             "current":t["current"],"note":s["note"],"fields":effective_fields(s),"result":json.loads(s["result"] or "null"),
             "files":[file_info(f) for f in files_for(db,json.loads(s["files"]))],
             "history":rows(db,"SELECT id,version,state,job,decision FROM submissions WHERE team=? ORDER BY version DESC",t["id"]),
-            "mail":rows(db,"SELECT * FROM mail WHERE submission=? ORDER BY rowid",sid),
+            "mail":rows(db,"SELECT id,submission,kind,state,sent_to,created,sent_at FROM mail WHERE submission=? ORDER BY rowid",sid),
             "audit":rows(db,"SELECT ts,action,actor FROM audit WHERE subject=? ORDER BY id DESC LIMIT 30",sid)}
 
 
@@ -481,20 +482,62 @@ def set_email(tid: str, body: Address):
     except ValueError:
         raise HTTPException(422,"원접수에서 확인한 팀장 이메일 주소 한 개를 입력하세요.") from None
     with database(True) as db:
-        require(db,"teams",tid)
+        team = require(db,"teams",tid)
         db.execute("UPDATE teams SET email=? WHERE id=?",(address,tid))
+        if address != team["email"]:
+            db.execute("""UPDATE mail SET state='draft',sent_to=NULL,approved_at=NULL,revision=revision+1
+                WHERE state='approved' AND kind<>'담당자 알림' AND submission IN (SELECT id FROM submissions WHERE team=?)""",(tid,))
     return {"saved":True}
 
 
 @app.get("/api/mail/{mid}")
 def show_mail(mid: str):
     with database() as db:
-        m = require(db,"mail",mid)
+        m = mail_detail(db,require(db,"mail",mid),mail_settings(settings()))
+    if m["body"] is not None:
+        return m
     path = DATA / "mail" / (mid+".eml")
     if not path.is_file():
         return m | {"body":"발송된 본문이 없습니다."}
     message = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
     return m | {"body":message.get_body().get_content(),"subject":str(message["Subject"])}
+
+
+class MailEdit(BaseModel):
+    revision: int
+    subject: str = Field(min_length=1,max_length=255)
+    body: str = Field(min_length=1,max_length=50000)
+    recipient: str = ""
+
+
+def edit_mail(mid, form, approve):
+    if not form.subject.strip() or any(ord(c)<32 or 127<=ord(c)<=159 for c in form.subject) or not form.body.strip() or "\0" in form.body:
+        raise HTTPException(422,"한 줄 제목과 본문을 입력하세요.")
+    with database(True) as db:
+        m = require(db,"mail",mid)
+        active(db,m["submission"])
+        if m["state"]!="draft" or form.revision!=m["revision"]:
+            raise HTTPException(409,"초안이 변경되었습니다. 다시 열어 확인하세요.")
+        cfg = mail_settings(settings())
+        detail = mail_detail(db,m,cfg)
+        if approve and (not detail["can_approve"] or detail["recipient"]!=form.recipient):
+            raise HTTPException(409,"현재 제출본의 수신 주소를 다시 확인한 뒤 승인하세요.")
+        db.execute("""UPDATE mail SET subject=?,body=?,revision=revision+1,state=?,approved_at=?,sent_to=? WHERE id=?""",
+                   (form.subject,form.body.replace("\r\n","\n"),"approved" if approve else "draft",
+                    now() if approve else None,form.recipient if approve else None,mid))
+        if approve:
+            audit(db,m["submission"],m["kind"]+" 메일 발송 승인",{"mail":mid})
+        return mail_detail(db,require(db,"mail",mid),cfg)
+
+
+@app.put("/api/mail/{mid}/draft")
+def save_mail(mid: str, body: MailEdit):
+    return edit_mail(mid,body,False)
+
+
+@app.post("/api/mail/{mid}/approve")
+def approve_mail(mid: str, body: MailEdit):
+    return edit_mail(mid,body,True)
 
 
 @app.post("/api/mail/{mid}/retry")
@@ -505,8 +548,8 @@ def retry_mail(mid: str, body: Recovery):
         if m["state"] == "uncertain" and not body.confirmed_absent:
             raise HTTPException(409,"미발송을 확인한 뒤 다시 시도하세요.")
         if m["state"] in ("failed","uncertain"):
-            db.execute("UPDATE mail SET state='waiting' WHERE id=?",(mid,))
-            audit(db,m["submission"],"메일 재시도",{"mail":mid})
+            db.execute("UPDATE mail SET state='draft',approved_at=NULL,sent_to=NULL,revision=revision+1 WHERE id=?",(mid,))
+            audit(db,m["submission"],"메일 초안 다시 열기",{"mail":mid})
     return {"saved":True}
 
 

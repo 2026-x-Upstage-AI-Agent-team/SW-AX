@@ -42,7 +42,7 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 | `/intake` · `/intake?base=:id` | 원본 접수 · 보완본 접수 | `POST /api/intake-batches` (`base`, `removed`) |
 | `/intake/batches[/:id]` | 접수 내역 · 접수 상세 | `GET /api/intake-batches/{id}` |
 | `/assign` | 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
-| `/mail` | 이메일 발송 (팀장 안내·담당자 알림, 본문, 재시도, Gmail 연결, 팀장 이메일 입력) | `GET·POST /api/mail/{id}[/retry]`, `POST /api/settings/gmail/...` |
+| `/mail` | 팀장 안내·담당자 알림 초안 검토, 제목·본문 수정, 승인 후 발송, 발송 이력 | `GET /api/mail/{id}`, `PUT /api/mail/{id}/draft`, `POST /api/mail/{id}/approve`, `POST /api/mail/{id}/retry` |
 | `/gmail` | 담당자 Gmail 연결·해제·재인증 | Spring Boot 상태 `GET /api/settings/gmail`, Google 연결 해제 `POST /api/settings/gmail/oauth/disconnect`. 양쪽 서비스 `POST /api/settings/gmail/oauth/start`, `GET /api/settings/gmail/callback`, `POST /api/settings/gmail/connect` |
 | `/report` | 보고서 확정 (팀 순서, 지급 정보 입력, 두 표 미리보기, 생성·확정·다운로드) | `GET /api/events/{id}/draft`, `POST /api/reports`, `GET·POST /api/reports/{id}[/confirm|/edited|/preview|/hwpx|/pdf]` |
 | `/manage` | 대회·팀 관리 | `POST /api/events`, `POST /api/events/{id}/teams` |

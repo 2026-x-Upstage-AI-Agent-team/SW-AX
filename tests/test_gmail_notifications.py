@@ -45,6 +45,15 @@ class GmailNotifications(unittest.TestCase):
     def connect(self):
         return self.api.post("/api/settings/gmail/connect", json={"app_password": self.password})
 
+    def draft(self, kind):
+        mail, = [m for m in self.api.get("/api/dashboard").json()["mail"] if m["kind"] == kind]
+        url = "/api/mail/" + mail["id"]
+        return url,self.api.get(url).raise_for_status().json()
+
+    def approve(self, kind):
+        url,draft = self.draft(kind)
+        return self.api.post(url + "/approve",json=draft).raise_for_status()
+
     def verdict(self, label):
         def reply(request):
             return httpx.Response(200, json={"id":"job_offline","status":"completed"})
@@ -75,11 +84,15 @@ class GmailNotifications(unittest.TestCase):
         loop = worker.Worker()
         self.assertFalse(loop.step())
         self.assertEqual(200, self.connect().status_code)
+        self.assertFalse(loop.step())
+        self.approve(mailing.ADMIN_NOTICE)
         self.assertTrue(loop.step())
         self.assertEqual([self.account], self.smtp.send_message.call_args.kwargs["to_addrs"])
         self.assertFalse(loop.step())
         leader = "leader+award@naver.com"
         self.assertEqual(200, self.api.put("/api/teams/team/email", json={"email":leader}).status_code)
+        self.assertFalse(loop.step())
+        self.approve("보완 요청")
         self.assertTrue(loop.step())
         msg = self.smtp.send_message.call_args.args[0]
         self.assertEqual(self.account, str(msg["From"]))
@@ -95,11 +108,15 @@ class GmailNotifications(unittest.TestCase):
         self.assertEqual(200, self.api.put("/api/teams/team/email", json={"email":"rep@dept.school.ac.kr"}).status_code)
         self.verdict("담당자확인")
         loop = worker.Worker()
+        self.assertFalse(loop.step())
+        self.approve(mailing.ADMIN_NOTICE)
         self.assertTrue(loop.step())
         self.assertFalse(loop.step())
         self.assertEqual([self.account], self.smtp.send_message.call_args.kwargs["to_addrs"])
         body = {"revision":0,"decision":"보완 필요","note":"원본 대조","members":[],"recipient":{},"issues":["identity"]}
         self.assertEqual(200, self.api.put("/api/submissions/sub/review", json=body).status_code)
+        self.assertFalse(loop.step())
+        self.approve("보완 요청")
         self.assertTrue(loop.step())
         msg = self.smtp.send_message.call_args.args[0]
         self.assertEqual("rep@dept.school.ac.kr", str(msg["To"]))
@@ -113,6 +130,47 @@ class GmailNotifications(unittest.TestCase):
         for invalid in ("no-at-sign", "a@b.com, c@d.com", "a@b.com\r\nBcc:other@b.com", "student@@school.kr"):
             with self.subTest(invalid=invalid):
                 self.assertEqual(422, self.api.put("/api/teams/team/email", json={"email":invalid}).status_code)
+
+    def test_saved_edits_and_recipient_require_fresh_approval(self):
+        self.connect().raise_for_status()
+        self.api.put("/api/teams/team/email",json={"email":"first@example.org"}).raise_for_status()
+        self.verdict("재제출요청")
+        url,draft = self.draft("보완 요청")
+        edited = dict(draft,subject="수정한 제목",body=draft["body"]+"\n금요일까지 회신해 주세요.")
+        self.assertEqual(422,self.api.post(url+"/approve",json=dict(draft,subject="제목\nBcc: other@award.test")).status_code)
+        saved=self.api.put(url+"/draft",json=edited).raise_for_status().json()
+        self.assertEqual(self.api.post(url+"/approve",json=edited).status_code,409)
+        self.assertFalse(worker.Worker().step())
+        self.api.post(url+"/approve",json=saved).raise_for_status()
+        self.api.put("/api/teams/team/email",json={"email":"new@example.org"}).raise_for_status()
+        self.assertFalse(worker.Worker().step())
+        self.smtp.send_message.assert_not_called()
+        url,fresh=self.draft("보완 요청")
+        self.assertEqual((fresh["state"],fresh["body"],fresh["recipient"]),("draft",edited["body"],"new@example.org"))
+        self.api.post(url+"/approve",json=fresh).raise_for_status()
+        self.assertEqual(409,self.api.post(url+"/approve",json=fresh).status_code)
+        self.assertTrue(worker.Worker().step())
+        self.assertFalse(worker.Worker().step())
+        self.smtp.send_message.assert_called_once()
+        msg=self.smtp.send_message.call_args.args[0]
+        self.assertEqual((str(msg["Subject"]),str(msg["To"]),msg.get_content().rstrip("\n")),(edited["subject"],fresh["recipient"],edited["body"]))
+
+    def test_uncertain_delivery_returns_to_draft_before_resend(self):
+        self.connect().raise_for_status()
+        self.verdict("재제출요청")
+        url,draft=self.draft(mailing.ADMIN_NOTICE)
+        self.api.post(url+"/approve",json=dict(draft,body="담당자가 확인한 알림")).raise_for_status()
+        self.smtp.send_message.side_effect=TimeoutError()
+        self.assertTrue(worker.Worker().step())
+        self.assertEqual(self.api.get(url).json()["state"],"uncertain")
+        self.assertEqual(self.api.post(url+"/retry",json={"confirmed_absent":False}).status_code,409)
+        self.api.post(url+"/retry",json={"confirmed_absent":True}).raise_for_status()
+        self.assertFalse(worker.Worker().step())
+        self.assertEqual(self.api.get(url).json()["body"],"담당자가 확인한 알림")
+        self.smtp.send_message.side_effect=None
+        self.approve(mailing.ADMIN_NOTICE)
+        self.assertTrue(worker.Worker().step())
+        self.assertEqual(self.api.get(url).json()["state"],"sent")
 
     def test_gmail_wire_format_for_korean_subject_and_international_address(self):
         subject = "[시상금 서류 보완 요청] 메일 수신 테스트팀"
@@ -184,9 +242,12 @@ class GmailNotifications(unittest.TestCase):
             self.assertNotIn("mock-client-secret", (db.DATA / "gmail.json").read_text())
             self.assertEqual([], sent)
             loop = worker.Worker()
+            self.assertFalse(loop.step())
+            self.approve(mailing.ADMIN_NOTICE)
             self.assertTrue(loop.step())
             self.assertEqual([self.account], [str(msg["To"]) for msg in sent])
             self.assertEqual(200, self.api.put("/api/teams/team/email",json={"email":"leader@naver.com"}).status_code)
+            self.approve("보완 요청")
             revoked = True
             self.assertTrue(loop.step())
             self.assertFalse(self.api.get("/api/dashboard").json()["mail_ready"])

@@ -3,6 +3,8 @@ import json
 import os
 import subprocess
 import unittest
+from email import policy
+from email.parser import BytesParser
 from unittest.mock import patch
 from io import BytesIO
 from pathlib import Path
@@ -13,6 +15,7 @@ import httpx
 from pypdf import PdfWriter
 
 from operations.delivery import deliver
+from tests.mail_approval import approve_ready_notices
 from operations.store import configuration, connect
 from operations.studio_worker import run_studio
 from operations.worker import serve
@@ -176,13 +179,39 @@ class Recovery(unittest.TestCase):
         response_status="completed"
         tick()
         self.assertFalse(submission_status()["polling_delayed"])
+        self.assertFalse(deliver(db,cfg))
+        approve_ready_notices(staff,sid)
         while deliver(db,cfg):
             pass
         notices = db.execute("SELECT kind,state FROM review_mail WHERE submission_id=%s",(sid,)).fetchall()
-        self.assertEqual({x["kind"]:x["state"] for x in notices},{"담당자 알림":"local","보완 요청":"waiting"})
+        self.assertEqual({x["kind"]:x["state"] for x in notices},{"담당자 알림":"local","보완 요청":"draft"})
         staff.put("/api/teams/"+team+"/email",json={"email":"leader@award.test"}).raise_for_status()
+        self.assertFalse(deliver(db,cfg))
+        leader, = [m for m in submission_status()["mail"] if m["kind"]=="보완 요청"]
+        url_mail = "/api/mail/" + leader["id"]
+        draft = staff.get(url_mail).raise_for_status().json()
+        self.assertTrue(draft["subject"] and draft["body"])
+        edited = dict(draft,subject="담당자가 확인한 보완 안내",body=draft["body"]+"\n금요일까지 회신해 주세요.")
+        saved = staff.put(url_mail+"/draft",json=edited).raise_for_status().json()
+        self.assertEqual(staff.post(url_mail+"/approve",json=edited).status_code,409)
+        self.assertFalse(deliver(db,cfg))
+        self.assertEqual(staff.get(url_mail).json()["body"],edited["body"])
+        self.assertEqual(staff.post(url_mail+"/approve",json=dict(saved,recipient="wrong@award.test")).status_code,409)
+        if os.getenv("INTAKE_TEST_MAIL_BROWSER")=="1":
+            subprocess.run(["node","--test","tests/review-navigation.mjs"],cwd=ROOT/"frontend",check=True,timeout=90,
+                           env=dict(os.environ,INTAKE_TEST_DRAFT_MAIL=leader["id"],INTAKE_TEST_MAIL_EVENT=event))
+            edited["body"]+="\n브라우저 검토 완료"
+        else:
+            staff.post(url_mail+"/approve",json=saved).raise_for_status()
+        self.assertEqual(staff.post(url_mail+"/approve",json=saved).status_code,409)
         while deliver(db,cfg):
             pass
+        sent=staff.get(url_mail).raise_for_status().json()
+        self.assertEqual((sent["state"],sent["body"],sent["approved_by"]),("local",edited["body"],os.environ["INTAKE_TEST_LOGIN_A"]))
+        from service.db import DATA
+        envelope=BytesParser(policy=policy.default).parsebytes((DATA/"operations/mail"/(leader["id"]+".eml")).read_bytes())
+        self.assertEqual((str(envelope["Subject"]),str(envelope["To"]),envelope.get_content().splitlines()),
+                         (edited["subject"],saved["recipient"],edited["body"].splitlines()))
         self.assertFalse(deliver(db,cfg))
         self.assertEqual(len(creates),1)
         # Adding only the missing 02 retains the exact previously confirmed 01/03 originals.
@@ -220,6 +249,7 @@ class Recovery(unittest.TestCase):
         body=dict(detail["fields"],revision=detail["revision"],decision="보완 필요",note="중복된 동의서 확인",issues=["duplicate"])
         staff.put("/api/submissions/"+third+"/review",json=body).raise_for_status()
         self.assertEqual(staff.put("/api/submissions/"+third+"/review",json=body).status_code,409)
+        approve_ready_notices(staff,third)
         while deliver(db,cfg):
             pass
         self.assertEqual(db.execute("SELECT count(*) AS n FROM review_mail WHERE submission_id=%s AND kind='보완 요청' AND state='local'",
@@ -257,6 +287,7 @@ class Recovery(unittest.TestCase):
         verdict="성공"
         tick()
         self.assertEqual(execution()["remote_id"],remote)
+        approve_ready_notices(staff,sid)
         while deliver(db,cfg):
             pass
         notices=db.execute("SELECT kind,state FROM review_mail WHERE submission_id=%s",(sid,)).fetchall()
@@ -304,6 +335,8 @@ class Recovery(unittest.TestCase):
         self.assertEqual(len(creates),before+2)
         self.assertFalse(db.execute("SELECT 1 FROM review_mail WHERE submission_id=%s",(retired,)).fetchone())
         # The registered address is valid, but differs from this version's extracted address.
+        approve_ready_notices(staff,next_sid)
+        approve_ready_notices(staff,replacement)
         while deliver(db,cfg):
             pass
         recipient_url=f"/api/teams/{team}/email"
@@ -314,6 +347,7 @@ class Recovery(unittest.TestCase):
             self.assertEqual(staff.put(recipient_url,json={"email":"leader@award.test","submission":stale}).status_code,409)
         for _ in range(2):
             staff.put(recipient_url,json={"email":"leader@award.test","submission":replacement}).raise_for_status()
+            approve_ready_notices(staff,replacement)
             while deliver(db,cfg):
                 pass
         self.assertEqual(recipients(),{"보완 요청":"local","담당자 알림":"local"})
@@ -321,6 +355,7 @@ class Recovery(unittest.TestCase):
         tick()
         due()
         tick()
+        approve_ready_notices(staff,sid)
         while deliver(db,cfg):
             pass
         detail=staff.get("/api/operations/submissions/"+sid).raise_for_status().json()

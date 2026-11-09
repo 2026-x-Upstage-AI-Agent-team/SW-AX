@@ -165,7 +165,11 @@ export type ReportView = {
   teams: string[];
 };
 
-export type MailView = MailRow & { body: string; subject?: string };
+export type MailView = MailRow & {
+  subject: string; body: string; revision: number; recipient: string | null; can_approve: boolean;
+  approved_by?: string | null; approved_at?: number | null;
+};
+export const isMailDraft = (m: MailRow) => m.state === 'draft' || m.state === 'recipient_check';
 
 export type ReviewInput = {
   revision: number;
@@ -187,6 +191,9 @@ export const getSubmission = (sid: string) => api<SubmissionDetail>(`${submissio
 export const getBatch = (bid: string) => api<BatchDetail>(`${batches}/${enc(bid)}`);
 export const getDraft = (event: string) => api<{ teams: DraftTeam[] }>(`/api/events/${enc(event)}/draft`);
 export const getMail = (mid: string) => api<MailView>(`/api/mail/${enc(mid)}`);
+export const saveMailDraft = (mail: MailView, approve: boolean) =>
+  sendJson<MailView>(`/api/mail/${enc(mail.id)}/${approve ? 'approve' : 'draft'}`,
+    { revision: mail.revision, subject: mail.subject, body: mail.body, recipient: mail.recipient ?? '' }, approve ? 'POST' : 'PUT');
 export const getReport = (rid: string) => api<ReportView>(`/api/reports/${enc(rid)}`);
 export const reviewBatchConflict = (id: string) => sendJson<{ saved: boolean }>(`/api/intake-batches/${enc(id)}/conflict-review`, {}, 'PUT');
 

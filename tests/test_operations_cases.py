@@ -9,7 +9,8 @@ from zipfile import ZipFile
 
 import httpx
 
-from operations.delivery import deliver, message_for
+from operations.delivery import deliver
+from tests.mail_approval import approve_ready_notices
 from operations.preparation import prepare
 from operations.store import cached_file, configuration, connect
 from service.db import DATA, ROOT
@@ -30,14 +31,8 @@ class ReviewEvidence(unittest.TestCase):
         checks = {c["label"]:c for c in result["checks"]}
         self.assertEqual(checks[validate]["refs"],[{"id":"doc01","page":1},{"id":"doc03","page":1}])
         self.assertEqual(checks[reason.split(". ")[0]+"."]["refs"],[{"id":"doc01","page":2,"row":1}])
-        mail = {"id":"test","name":"Alpha","kind":"보완 요청","address":"leader@award.test",
-                "version":1,"output":result,"decision":None}
-        body = message_for(mail,{}).get_content()
-        self.assertIn("[01 2쪽 1행] 지급확인서의 해당 학번",body)
-        self.assertIn("[01 1쪽, 03 1쪽] 지급확인서의 대표 성명",body)
-        self.assertNotIn("123456",body)
-        mail.update(decision="보완 필요",issues=["representative"])
-        self.assertNotIn("학번",message_for(mail,{}).get_content())
+        self.assertIn("student_id",result["issues"])
+        self.assertIn("representative",result["issues"])
 
         final = {"enum":"재제출요청","reason":"01 학번은 누락 없이 기재됐습니다. 03 신분증이 없습니다."}
         result = parse_result({"output":[{"model":"Instruct - 최종판정","content":[{"text":final}]}]}, files[:2])
@@ -97,10 +92,7 @@ class ReviewEvidence(unittest.TestCase):
         grouped = {c["label"]:c for c in result["checks"]}
         self.assertEqual(grouped["전화 길이"]["refs"],[{"id":"01","page":1}])
         self.assertEqual(grouped["코드 대조"]["refs"],[{"id":"01","page":1},{"id":"02","page":1}])
-        mail = {"id":"test","name":"Alpha","kind":"보완 요청","address":"team@award.test","version":1,"output":result,"decision":None}
-        body = message_for(mail,{}).get_content()
-        self.assertIn("[01 1쪽 · 대표 전화번호]",body)
-        self.assertNotIn("private",body)
+        self.assertEqual(grouped["전화 길이"]["fields"],["representative_phone"])
 
 
 class AssignmentEvidence(unittest.TestCase):
@@ -256,6 +248,8 @@ class OfficialCases(unittest.TestCase):
                         result["representative_email"]=case+"@award.test"
                     api.put("review-jobs/"+job["review_job_id"]+"/result",headers={"X-Claim-Token":job["claim_token"]},
                             json={"state":"done","studio_job_id":"job_mock_"+job["review_job_id"],"verdict":result["verdict"],"reason":result["reason"],"output":result}).raise_for_status()
+                    self.assertFalse(deliver(db,cfg))
+                    approve_ready_notices(staff,job["submission_id"])
                     while deliver(db,cfg):
                         pass
                     sid = job["submission_id"]
@@ -272,6 +266,7 @@ class OfficialCases(unittest.TestCase):
                     confirm_address = {"email":case+"@award.test","submission":sid}
                     for _ in range(2):
                         staff.put(f"/api/teams/{team}/email",json=confirm_address).raise_for_status()
+                        approve_ready_notices(staff,sid)
                         while deliver(db,cfg):
                             pass
                     self.assertEqual(staff.get("/api/mail/"+leader["id"]).json()["sent_to"],case+"@award.test")

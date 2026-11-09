@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS workflow_health (
     role text PRIMARY KEY, updated_at timestamptz NOT NULL DEFAULT now(), configured boolean NOT NULL,
     config text NOT NULL DEFAULT '', mail_mode text NOT NULL DEFAULT ''
 );
+ALTER TABLE workflow_health ADD COLUMN IF NOT EXISTS mail_recipient text;
 CREATE TABLE IF NOT EXISTS studio_execution (
     job_id uuid PRIMARY KEY REFERENCES review_job, phase text NOT NULL DEFAULT 'queued',
     remote_id text, agent text, config text, config_id text, started_at timestamptz,
@@ -63,13 +64,23 @@ CREATE TABLE IF NOT EXISTS review_resolution (
 );
 CREATE TABLE IF NOT EXISTS review_mail (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(), submission_id uuid NOT NULL REFERENCES team_submission,
-    kind text NOT NULL CHECK (kind IN ('담당자 알림','보완 요청','검토 완료')), state text NOT NULL DEFAULT 'waiting'
-        CHECK (state IN ('waiting','sending','local','sent','uncertain','failed','obsolete')),
+    kind text NOT NULL CHECK (kind IN ('담당자 알림','보완 요청','검토 완료')), state text NOT NULL DEFAULT 'draft',
     sent_to text, subject text, body text, created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     UNIQUE (submission_id,kind)
 );
-CREATE INDEX IF NOT EXISTS review_mail_queue ON review_mail (created_at) WHERE state='waiting';
 ALTER TABLE review_mail ADD COLUMN IF NOT EXISTS sent_at timestamptz;
+ALTER TABLE review_mail ADD COLUMN IF NOT EXISTS revision integer NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS approved_by varchar(64) REFERENCES staff_account,
+    ADD COLUMN IF NOT EXISTS approved_at timestamptz,
+    ALTER COLUMN state SET DEFAULT 'draft';
+ALTER TABLE review_mail DROP CONSTRAINT IF EXISTS review_mail_state_check;
+UPDATE review_mail SET state='draft',sent_to=NULL WHERE state='waiting';
+ALTER TABLE review_mail ADD CONSTRAINT review_mail_state_check CHECK (
+    state IN ('draft','approved','sending','local','sent','uncertain','failed','obsolete')
+    AND (state<>'approved' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL
+        AND nullif(btrim(sent_to),'') IS NOT NULL AND nullif(btrim(subject),'') IS NOT NULL AND nullif(btrim(body),'') IS NOT NULL)));
+DROP INDEX IF EXISTS review_mail_queue;
+CREATE INDEX IF NOT EXISTS review_mail_approved_queue ON review_mail (created_at) WHERE state='approved';
 CREATE TABLE IF NOT EXISTS award_report (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_id uuid NOT NULL REFERENCES award_event,
     version integer NOT NULL, created_by varchar(64) NOT NULL REFERENCES staff_account,
@@ -141,8 +152,8 @@ CROSS JOIN LATERAL (SELECT ARRAY(
 
 CREATE OR REPLACE VIEW ops_mail AS
 SELECT m.id,m.submission_id,s.event_id,m.created_at,jsonb_build_object('id',m.id,'submission',m.submission_id,'kind',m.kind,
-    'state',CASE WHEN s.job_state='superseded' AND m.state IN ('waiting','failed') THEN 'obsolete'
-                 WHEN m.state='waiting' AND m.kind<>'담당자 알림' AND r.needs_confirmation THEN 'recipient_check' ELSE m.state END,
+    'state',CASE WHEN s.job_state='superseded' AND m.state IN ('draft','approved','failed','uncertain') THEN 'obsolete'
+                 WHEN m.state='draft' AND m.kind<>'담당자 알림' AND r.needs_confirmation THEN 'recipient_check' ELSE m.state END,
     'sent_to',m.sent_to,'created',extract(epoch FROM m.created_at),'sent_at',extract(epoch FROM m.sent_at),
     'name',t.name,'version',s.version) AS info
 FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
