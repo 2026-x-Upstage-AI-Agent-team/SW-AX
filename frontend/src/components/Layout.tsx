@@ -4,7 +4,7 @@ import { AtSign, CalendarDays, CheckCheck, ChevronDown, FolderOpen, Inbox, LogOu
 import { backend, isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { isLeaderMail, isMailDraft } from '../api/service';
-import { categoryPath, workspacePath } from '../api/workspaces';
+import { categoryPath, workspacePath, type Category } from '../api/workspaces';
 import { useEvent } from '../context/EventContext';
 import { WorkspaceOverviewProvider, useWorkspaceOverview } from '../context/WorkspaceOverviewContext';
 import { queueGroups } from '../hooks/reviewQueue';
@@ -21,7 +21,7 @@ type NavigationControl = {
   search: () => void; account: () => void; toggleRail: () => void; prepareGuide: () => void;
 };
 
-function Brand({ subtitle = '시상금 서류 검토실', compact = false, onNavigate }: { subtitle?: string; compact?: boolean; onNavigate?: () => void }) {
+function Brand({ subtitle, compact = false, onNavigate }: { subtitle: string; compact?: boolean; onNavigate?: () => void }) {
   return <PortalLink to="/" className="brand-lockup" onClick={onNavigate} aria-label="SW·AX 업무 선택">
     <span className="brand-mark"><CheckCheck size={22} strokeWidth={2.5} aria-hidden="true" /></span>
     <span className={compact ? 'sr-only' : 'min-w-0'}><strong>SW·AX</strong><small title={subtitle}>{subtitle}</small></span>
@@ -97,6 +97,11 @@ function WorkspaceLayout() {
   const worker = useWorkerControl();
   const { active, menuDialog, openMenu, closeMenu: close } = useWorkspaceTour();
   const { event } = useEvent();
+  const { categoryId = 'awards' } = useParams();
+  const categories = useApi<Category[]>('/api/categories');
+  const categoryName = categories.data?.find(category => category.id === categoryId)?.name
+    ?? (categoryId === 'awards' ? '시상금 서류 검토' : '확인 중');
+  const brandSubtitle = `업무: ${categoryName}`;
   const { pathname } = useLocation();
   const navigation = useNavigationType();
   const previousPath = useRef(pathname);
@@ -137,10 +142,10 @@ function WorkspaceLayout() {
   };
   return <div className="workspace" data-rail-collapsed={collapsed}>
     <a className="skip-link" href="#workspace-content" onClick={event => { event.preventDefault(); document.getElementById('workspace-content')?.focus(); }}>본문으로 바로가기</a>
-    <aside className="workspace-rail" aria-label="작업 공간"><Brand compact={collapsed} /><WorkspaceNav worker={worker} control={control} /></aside>
-    <header className="mobile-bar"><Brand subtitle={event?.name} /><button type="button" className="icon-button" aria-label="메뉴 열기" aria-haspopup="dialog" data-tour="menu-open" aria-controls="workspace-menu" onClick={openMenu}><Menu size={22} aria-hidden="true" /></button></header>
+    <aside className="workspace-rail" aria-label="작업 공간"><Brand subtitle={brandSubtitle} compact={collapsed} /><WorkspaceNav worker={worker} control={control} /></aside>
+    <header className="mobile-bar"><Brand subtitle={brandSubtitle} /><button type="button" className="icon-button" aria-label="메뉴 열기" aria-haspopup="dialog" data-tour="menu-open" aria-controls="workspace-menu" onClick={openMenu}><Menu size={22} aria-hidden="true" /></button></header>
     <dialog ref={menuDialog} id="workspace-menu" className="mobile-menu" aria-label="작업 메뉴" onClose={close} onClick={event => { if (event.target === event.currentTarget) close(); }}>
-      <div className="mobile-menu-body"><div className="flex items-center justify-between gap-2"><Brand onNavigate={close} /><button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus><PanelLeftClose size={20} aria-hidden="true" /></button></div><WorkspaceNav worker={worker} control={{ ...control, compact: false }} onNavigate={close} /></div>
+      <div className="mobile-menu-body"><div className="flex items-center justify-between gap-2"><Brand subtitle={brandSubtitle} onNavigate={close} /><button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus><PanelLeftClose size={20} aria-hidden="true" /></button></div><WorkspaceNav worker={worker} control={{ ...control, compact: false }} onNavigate={close} /></div>
     </dialog>
     <div className="workspace-body"><Outlet /></div>
     <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
