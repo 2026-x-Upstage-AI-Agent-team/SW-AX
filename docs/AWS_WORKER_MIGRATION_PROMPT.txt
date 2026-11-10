@@ -1,0 +1,151 @@
+SW-AX 기존 AWS 서버에 문서 워커 통합 및 시연 사양 실측
+작성 기준: 2026-11-10, 한국 시간
+
+최신 실행 위치는 기존 배포 계정에 인증된 팀원의 PC다. 사용자는 팀원 측에서 먼저 설치하도록 이 프롬프트를 전달했다. 의뢰자 본인의 IAM 첫 로그인·권한 추가·CLI 인증은 이번 설치의 선행 조건이 아니다. 기존 배포 담당자의 인증으로 실행하며 비밀번호나 액세스 키를 서로 공유하지 않는다.
+당신은 이미 배포한 SW-AX의 후속 작업 담당자다. 설명에서 끝내지 말고 허용된 설치·연결·검증을 실행하고, 실행하지 못한 부분은 사유와 필요한 입력을 반환하라. 이 프롬프트 작성 자체는 설치·실측 완료를 뜻하지 않는다.
+
+1. 확정된 목표와 범위
+
+- 기존 Windows EC2 t3.medium, 2 vCPU, 4 GiB를 유지한다. API·mail이 있는 같은 서버에 한글과 prepare·studio·report·printer를 배치해 개인 PC를 꺼도 문서 처리가 되도록 한다. RDS는 기존 관리형 DB를 유지한다.
+- 시연 입력은 한 번에 한 팀이다. 한글 변환도 한 번에 하나만 실행한다. 실제로 CPU·메모리 등이 부족한지, 반대로 현재 서버가 과잉 사양인지 모두 측정해서 보고한다.
+- 서버 사양 상향·하향, 추가 서버 생성, 유료 플랜 전환은 임의로 실행하지 않는다. 하향 후보가 있어도 이번에는 근거·예상 절감액·검증 계획을 보고한다. 실서비스 서버 구성은 추후 회의에서 결정한다.
+- t3.medium은 프리티어 대상 유형이 아니다. 사용자는 이를 설명받은 뒤 기존 medium 유지로 확정했다. 실제 Free/Paid 플랜과 크레딧은 조회 가능한 만큼 보고하되, 추가로 무료 조건 승인을 받느라 이미 허용된 기존 서버 작업을 중단하지 않는다. 혜택·잔액을 모르면 null과 사유를 적고 0원으로 단정하지 않는다.
+- 신규 인프라 전체 재배포, 데이터 이관, Gmail 신규 연결, 실제 메일 발송, 서비스 전체 기능 추가는 이번 범위가 아니다. 기존 API·mail 및 자료는 보존한다. 사용자 요청 없이 commit·push하지 않는다.
+
+2. 기존 배포 식별자
+
+  AWS 계정: 416775509196 (팀원 소유)
+  리전: ap-northeast-2 (서울)
+  배포 ID: d1110a
+  공개 주소: https://d3nkw8bzgv8pom.cloudfront.net
+  CloudFront: E1COORMHPX6N70
+  Windows EC2: i-0bad7f8ee33fac864 / t3.medium
+  RDS: swax-demo-d1110a / PostgreSQL 16.15 / db.t4g.micro
+  DB: swax_intake
+  스택: swax-demo-d1110a-{network,data,app,edge}
+  보고된 배포 릴리스: r20261110-034750
+
+이 값은 인계 기준이다. 기존 배포 담당자의 CLI 인증을 사용하고 aws sts get-caller-identity와 EC2·SSM·스택 조회로 현재 값을 대조한다. 다른 계정이나 다른 서버에는 설치하지 않는다. 의뢰자용 IAM 사용자 swax-pc-russe의 준비를 기다리느라 이번 설치를 중단하지 않는다. 현재 배포 담당자의 권한이 부족하면 필요한 작업·대상 리소스를 구체적으로 보고한다. 액세스 키·비밀번호를 채팅으로 요청하지 않는다.
+
+의뢰자의 작업 PC에서는 AWS 프로필이 없어 서버에 접근하지 못했다. 이 문서를 실행하는 배포 PC의 인증 상태는 별도로 확인한다. prepare·studio·report·printer의 클라우드 실행과 한글→Studio→최종 HWPX→PDF는 미검증이다. 담당자 staff-a·staff-b의 로그인 및 공식 set01의 원본 접수·다운로드 해시는 확인했지만 문서 처리 성공을 뜻하지 않는다.
+
+3. 실제 코드와 배포 소스를 먼저 대조
+
+- AGENTS.md, PROJECT_PLAN.md, backend/build.gradle, application.properties, WorkerStatus.java, operations/worker.py, operations/store.py, operations/preparation.py, operations/studio_worker.py, operations/reports.py, operations/printer.py, operations/native.py, service/convert.ps1과 실제 배포 스크립트를 읽는다. 누락된 경로는 최신 소스에서 찾아 확인한다.
+- 현재 저장소에는 배포 후 다른 기능 수정이 섞여 있을 수 있다. 설치된 릴리스의 소스·DB 마이그레이션과 대조하고 워커 이전에 필요한 변경만 적용한다. 동작하는 API를 무관한 작업 중 코드로 덮어쓰지 않는다.
+- 기존 인계가 필요하면 버전이 지정된 S3 객체를 사용한다.
+  bucket: swax-demo-d1110a-artifacts-416775509196
+  key: handoff/d1110a/swax-deployment-handoff.zip
+  version: oVzfBvQj_Do5Wi0sGWR.8WAOrOT6ojAW
+  SHA-256: 1bccfd488811c0e773c466d02065d9773bfb3685c96d18ae1c347d8a35a81114
+  결과 JSON key: handoff/d1110a/deployment-result.json
+  결과 JSON version: KDrg7I2Fg2wrzcL.XdLqHC8lFMWVblBq
+  더 최신 자료가 있다면 실제 릴리스와 대응 관계를 먼저 확인한다. ZIP은 해시·경로 이탈을 검사하고 스크립트를 읽은 뒤 사용한다.
+- API와 mail은 기존 인계상 SYSTEM으로 동작한다. Gmail의 Windows DPAPI 저장 계정·머신·AWARD_DATA_DIR 의존성을 확인하고 보존한다. 개인 PC의 DPAPI 파일을 복사해서 연결 완료로 처리하지 않는다.
+- operations.worker는 기본 실행 시 prepare·studio·mail·report를 모두 스레드로 띄운다. 기존 mail과 중복 실행하지 않도록 --role 및 실제 관리 방식을 확인한다. PostgreSQL 역할별 잠금과 printer의 상태 갱신도 확인한다.
+- Studio가 문서 분류·추출·판정을 계속 담당한다. 임의 로컬 판정으로 교체하지 않는다. 원본·미리보기·보고서는 현재 DB 저장 방식을 유지한다. S3 저장소 전환은 하지 않는다.
+
+4. 기존 서버에 설치하고 워커 연결
+
+- 기존 API·mail의 기동 방식·설정·실행 계정과 복구 절차를 확인한다. 변경할 파일은 접근을 제한한 위치에 백업한다. 민감 설정 원문은 로그·인계 ZIP에 넣지 않는다.
+- 서버의 한글 설치 여부, 기존 라이선스로 Windows Server·서버 자동화 사용이 허용되는지, 설치 가능한 정식 매체가 있는지 확인한다. 임의 구매하지 않는다. 필요한 라이선스·매체가 없으면 그 단계는 pending으로 남기고 다른 준비·유휴 측정은 계속한다. 실제 한글을 실행하지 못했으면 전체 흐름과 사양 적합성은 미검증으로 보고한다.
+- 설치된 Java·Python·PowerShell·한글 버전과 비트 수를 확인한다. 배포 소스에 맞는 Python 3.12 가상환경·requirements와 report converter를 준비한다. 무거운 JAR·프런트 빌드는 가능한 기존 빌드 PC에서 수행하고 해시를 확인해 배포한다. 필요한 경우 gradlew prepareReportConverter 결과물도 포함한다.
+- 00번 지급내역서는 보고서 양식으로 준비하고 실행 입력에 넣지 않는다. 공식 01·02·03 원본은 보존한다.
+- prepare·studio·report·printer의 실행 계정과 한글 보안 모듈·작업 폴더 권한을 확인한다. API·mail을 유지하면서 문서 자동화에 필요한 계정·세션을 구성한다. 로그인된 RDP 세션에서만 성공하는 방식으로 완료 처리하지 않는다.
+- 같은 서버의 API와 기존 private RDS를 사용한다. DB는 verify-full TLS, 제한된 워커 계정과 기존 비밀값 참조를 사용한다. 외부 DB 포트 공개·PC용 SSM 터널 상시 실행은 필요하지 않다. Upstage 설정·토큰은 적절한 서버 측 비밀 저장소와 파일 권한으로 공급하고 원문을 출력하지 않는다.
+- 클라우드의 managed worker 설정, 원격 printer 설정 및 실행 요청 409 동작을 실제 배치에 맞게 확인한다. UI가 중복 워커를 생성하지 않게 하고 기존 인증·CSRF·프록시 신뢰 설정을 보존한다.
+- 서버 재기동 시 워커가 자동 시작하고 비정상 종료 시 재시작되도록 기존 서비스·작업 스케줄러 구조를 확장한다. 한글 COM을 사용하는 prepare와 printer가 겹치지 않도록 실제 동시 실행을 제어하고 확인한다. 시연은 한 팀만 대기열에 넣고 처리 완료 후 다음 팀을 받는다. 다른 접수 자료를 임의로 실행하거나 삭제하지 않는다.
+
+5. 최소 문서 흐름 및 무인 실행 검증
+
+- 이미 승인된 공식 set01 원본 3개만 기본으로 사용한다. 기존 검증 대회 ID는 b5e83efb-6e09-4176-a086-8deb976b4c1b, 접수 ID는 b9e18b7a-2fe7-47cd-9091-e995a4203c20이다. 대상과 현재 상태를 먼저 확인한다. 기존 대용량 합성 파일이 대기 중이면 시연 입력으로 잘못 실행하지 않는다.
+- 한글 원본→PDF 준비→실제 Studio 실행→결과 저장→HWPX 보고서→한글 PDF 출력→공개 주소 다운로드를 확인한다. JSON·PDF 페이지 수뿐 아니라 대표 페이지의 표·글꼴·한글·레이아웃도 대조한다. 보고서에 필요한 수동 입력은 시험값임을 명시하고 업무 자료를 덮어쓰지 않는다. 기대 정답 파일은 실제 실행 후에만 대조한다.
+- 시험한 팀 수·입력 크기·쪽수·시도 횟수·성공/실패·실제 Studio 사용 여부·원본/산출물 해시·다운로드 결과를 기록한다. 시상구분·금액의 미확인 처리와 담당자 입력 정책을 유지한다. Gmail 연결·메일 송신은 실행했다고 보고하지 않는다.
+- 모든 관리자의 RDP 로그오프 후 실행과 재부팅 후 자동 기동·문서 처리도 각각 확인한다. 단순 잠금이나 RDP 창 닫기는 로그오프 증거로 대체하지 않는다. 한글 팝업·권한·세션 문제와 PC 의존성이 남으면 정확히 보고한다.
+
+6. 자원 실측: 부족과 과잉 사양을 모두 평가
+
+- 새 모니터링 서버를 만들지 않는다. 게스트 Windows에서 재실행 가능한 측정 스크립트를 준비하고 서버 총 메모리·프로세스·디스크를 수집한다. Windows 표시 언어에 따라 성능 카운터 이름이 달라질 수 있으므로 CIM/WMI 등 실제 동작을 확인한 방식을 쓴다. 기존 CloudWatch 조회도 함께 활용하되 관측하지 않은 값을 만들지 않는다.
+- 구간을 분리한다: 기동 직후, 워커가 뜬 유휴 최소 5분, 한 팀 전체 처리, 처리 후 유휴. 가능하면 동일 조건의 추가 1회로 최초 실행과 재실행을 구분한다. 추가 Studio 호출은 필요한 최소 횟수로 하고 실제 횟수를 보고한다.
+- 문서 처리 중에는 5초 이하 간격으로 수집하고, 누락된 구간·짧은 피크를 놓칠 가능성·총 관측 시간을 적는다. API 응답 확인과 문서 처리 지연도 같은 시간축으로 연결한다.
+- 최소 수집 항목:
+  * 서버 CPU 평균·p95·최대와 전체 사용률의 지속 시간
+  * 전체 RAM 총량·사용량 평균/p95/최대·최소 가용 메모리, 커밋·페이지 파일 및 페이징 징후
+  * API JVM·Python 역할별·한글 프로세스의 메모리 및 CPU 사용량과 단계별 피크
+  * 디스크 여유, 읽기·쓰기·대기 및 OOM·프로세스 종료·재시도·멈춤 여부
+  * 업로드/조회/다운로드 등 실제 시연 API의 응답 시간·오류율·측정 횟수
+  * 준비·Studio 대기/호출·보고서 생성·PDF 출력·전체 완료까지의 소요 시간
+  * t3 CPUCreditBalance 및 Surplus/Charged 등 사용 가능한 지표의 시작·종료·추세
+- t3 CPU 크레딧과 AWS 청구서의 프로모션 크레딧을 혼동하지 않는다. 짧은 버스트가 끝난 뒤 성능이나 비용이 달라질 수 있는지 측정 범위 안에서 설명한다. OS 전체 메모리와 프로세스 메모리 합계는 구분하고 공유 메모리를 중복 합산하지 않는다.
+- 한 팀만 실행했어도 prepare·printer 등의 한글 동시 실행이 없었는지 기록한다. 부족하면 실패한 단계와 CPU·RAM·I/O·외부 Studio 대기 중 실제 원인을 구분한다. 관측 근거가 부족하면 추정이라고 표시한다.
+
+7. 사양 판단과 하향 보고서
+
+- 결론은 유지 권장 / 하향 시험 권장 / 자원 부족 / 근거 부족 중 하나로 명확히 적는다. 유휴 CPU가 낮다는 이유만으로 과잉 사양이라고 결론 내리지 않는다. Windows·JVM·한글의 기동 피크, 작업 중 메모리, 페이징, API 응답 및 처리시간을 함께 본다.
+- 하향을 검토할 때 계정·서울 리전·현재 Windows AMI·CPU 아키텍처·네트워크/드라이버와 호환되는 더 작은 후보를 조회한다. 이름의 small/large나 프리티어 표시로 사양 크기·최저 비용을 판단하지 않는다. Windows 한글용 서버를 ARM Linux 유형으로 바꾸지 않는다.
+- 후보별 vCPU·RAM, 현재 실측 피크에 대한 예상 여유, 절감액, 예상 성능 영향, 호환성 및 미검증 사항을 표로 보고한다. 더 작은 RAM이 현재 피크와 OS 여유를 감당하지 못하면 하향 불가 근거를 적는다. 적합한 하향 후보가 없으면 없다고 보고한다.
+- 현재 서버의 측정만으로 작은 서버에서의 성공을 보장하지 않는다. 실제 하향 시험을 하지 않았다면 후보는 미검증으로 표시하고, 다음 시험에서 확인할 조건과 원상복구 방법을 적는다. 이번에 하향 시험용 서버를 추가하거나 운영 서버를 임의 변경하지 않는다.
+- 현재 유형과 후보의 서울 리전 Windows 라이선스 포함 온디맨드 요금을 최신 공식 가격으로 비교한다. Linux/BYOL 가격을 섞지 않는다. 가격 출처·조회일, 시간당·24시간·730시간 기준 및 예상 절감액을 적고, 바뀌지 않는 RDS·ALB·스토리지 등 비용과 구분한다. CPU 잉여 크레딧·소프트웨어·Upstage 비용은 해당 여부와 가정을 따로 적는다. 계정 크레딧 적용 후 금액은 실제 적용을 확인할 수 있을 때만 제시한다.
+
+8. 반드시 남길 결과물
+
+배포 머신의 var/aws-worker-migration-d1110a/에 다음을 만든다. 실제 경로가 다르면 결과에 적는다.
+
+- migration-result.json: 실제 배치·상태·검증·인계 파일의 기준본
+- capacity-report.md: 실측 요약 표, 병목, 과잉/부족 판단, 하향 후보 및 절감액
+- metrics.csv: 타임스탬프·구간·원시 측정값. 누락값을 0으로 대체하지 않는다.
+- phase-timings.json 및 검증 로그: 각 단계, 재부팅·로그오프 시험과 실패 증거
+- 설치·기동·상태 확인·측정 재실행·문서 워커만 중지/복구하는 스크립트와 소스 변경 patch
+- worker-migration-handoff.zip 및 SHA-256: 위 자료의 allowlist 패키지. 비밀값·라이선스 키·설치 매체·전체 사용자 원본을 넣지 않는다.
+
+migration-result.json은 아래 구조를 바탕으로 실제 값을 채운다. not_run과 null은 실행 후 확인한 값으로만 바꾼다. 파일 경로만 반환하지 말고 최종 채팅에 비밀값을 제외한 migration-result.json 전문을 JSON 코드 블록으로 포함한다. 원시 측정 데이터는 CSV로 분리하고 JSON에는 요약값·측정 범위·증거 경로를 기록해 다른 에이전트가 채팅 결과만으로 상태와 사양 판단을 이어받을 수 있게 한다. 핵심 결과와 남은 사용자 작업도 한국어로 적는다.
+
+[RESULT_JSON_BEGIN]
+{
+  "schema_version": "swax.worker-migration.v1",
+  "status": "not_run",
+  "aws_account_id": "416775509196",
+  "region": "ap-northeast-2",
+  "deployment_id": "d1110a",
+  "public_origin": "https://d3nkw8bzgv8pom.cloudfront.net",
+  "instance_id": "i-0bad7f8ee33fac864",
+  "instance_type_before": "t3.medium",
+  "instance_type_after": null,
+  "instance_type_changed": null,
+  "release_id": null,
+  "worker_hosts_and_accounts": {},
+  "hancom_version_and_license_status": null,
+  "worker_roles_online": [],
+  "single_team_and_hancom_serial_execution_verified": false,
+  "set01_full_document_flow_verified": false,
+  "rdp_logoff_processing_verified": false,
+  "reboot_and_processing_verified": false,
+  "personal_pc_independent_verified": false,
+  "existing_api_and_mail_preserved": false,
+  "measurement": {
+    "started_at": null,
+    "ended_at": null,
+    "sample_interval_seconds": null,
+    "team_runs": null,
+    "cpu_avg_p95_max": null,
+    "ram_used_avg_p95_max_mib": null,
+    "ram_available_min_mib": null,
+    "paging_and_process_peaks": null,
+    "api_latency_and_errors": null,
+    "phase_timings_seconds": null,
+    "cpu_credit_metrics": null,
+    "raw_metrics_path": null
+  },
+  "sizing_conclusion": "insufficient_evidence",
+  "sizing_reason": null,
+  "downsize_candidates": [],
+  "billing_plan_and_credit_verification": null,
+  "remaining_blockers": [],
+  "artifact_paths_and_sha256": {},
+  "no_secret_values_included": null
+}
+[RESULT_JSON_END]
+
+downsize_candidates의 각 후보에는 instance_type, vcpu, ram_gib, hourly_usd_before_credits, monthly_usd_730h, monthly_saving_usd, measured_headroom_basis, performance_risk, tested, price_source, price_checked_at을 실제 확인 결과에 따라 기록한다.
+
+마지막 채팅 응답에는 (1) 개인 PC를 끄고 실행할 수 있음을 확인한 범위, (2) 기존 medium 유지 여부, (3) 유지/하향/부족의 결론과 실측 근거, (4) 하향 후보와 예상 절감액, (5) 미검증 항목과 다음 작업, (6) 결과 ZIP 위치와 해시를 한국어로 보고한다. 실행하지 못한 기능을 완료로 처리하지 않는다.

@@ -1,0 +1,622 @@
+SW-AX AWS CLI 배포 실행 지시문
+작성 기준: 2026-11-10, 한국 시간
+
+최신 사용자 결정 — 기존 단일 서버에서 시연용 워커 통합
+
+이번 후속 실행은 docs/AWS_WORKER_MIGRATION_PROMPT.txt를 사용한다. 최신 확정은 기존 t3.medium(2 vCPU·4 GiB) 유지, 같은 서버에 한글·워커 배치, 한 팀씩 처리, 실측에 따른 부족·과잉 사양 및 하향 후보 보고다. 사양 상향·하향·추가 서버·유료 플랜 전환을 임의로 실행하지 않는다.
+
+아래 1절 이후는 최초 API·DB + 작업 PC 워커 배포를 위해 작성한 참고 기록이다. 초기 인프라 생성·PC 워커 연결 지시나 hybrid_windows 결과 예시를 최신 실행에 그대로 적용하지 않는다. 기존 medium 유지안은 더 이상 비용 확인 전 잠정안이 아니며 사용자 확정 사항이다. t3.medium 자체가 프리티어 대상이라는 뜻은 아니다.
+
+아래 지시는 배포를 수행할 에이전트에게 전달하는 실행 프롬프트다. 이 문서 작성 자체가 실제 AWS 배포 완료를 뜻하지 않는다.
+
+당신은 현재 프로젝트의 AWS 배포 담당자다. 코드를 직접 확인하고 AWS CLI로 인프라 준비, 빌드, 배포, 검증과 인계 자료 작성을 수행하라. 계획 설명이나 명령어 나열에서 끝내지 말고 실행 가능한 범위는 실제로 수행하라. 다만 사용자 입력, 권한, 무료 플랜의 서비스 제한 등으로 막힌 단계는 실제 상태와 정확한 후속 조치를 반환하라.
+
+다른 에이전트가 최종 결과물만 읽고 이 프로젝트의 프런트엔드, 현재 Windows 작업 PC, Gmail과 운영 관리를 연결할 수 있어야 한다. 따라서 실제 주소, 리소스 식별자, 배포한 소스의 해시, 환경 설정, 비밀값 참조, 연결 스크립트와 검증 증거를 반드시 남겨라. 모르는 값은 만들어 내지 말고 null과 사유를 기록하라.
+
+1. 사용자 결정과 작업 범위
+
+- 사용자 확정: 비용을 우선한다. API와 DB를 AWS에 두고 현재 한글이 설치된 Windows PC를 문서 작업에 계속 사용한다.
+- 사용자 확정: 현재 사용할 도메인이 없다. 도메인 구매나 등록은 수행하지 않는다.
+- 기본 리전은 서울 ap-northeast-2다. 국내 사용자와 작업 PC의 왕복 지연, 파일 전송을 고려한 선택이다. EC2, RDS, S3 아티팩트, 로그와 비밀 저장소는 이 리전에 둔다. AWS 전체 서비스가 모두 국내에서만 처리된다는 보장은 하지 않는다. CloudFront는 글로벌 서비스이고 Upstage·Google은 외부 서비스다.
+- 아래 Windows API 및 메일 워커 배치는 현재 코드의 DPAPI 의존성을 유지하기 위한 구현 선택이다. 문서 처리용 한글을 AWS에 새로 설치하는 구성은 이번 범위가 아니다.
+- 배포 환경은 시연용 demo, 단일 API 인스턴스, 단일 AZ RDS를 기본으로 한다. 고가용성 운영 환경이라고 보고하지 않는다.
+- 기존 로컬 18765 서비스와 DB의 자료를 임의로 이관하거나 변경하지 않는다. 기본은 새 클라우드 DB다. 데이터 이관을 별도 요청받았다면 백업, 대상 범위, 원본 해시와 복구 계획을 먼저 정리한다.
+- 이미 허용된 계정과 범위 안에서 필요한 작업은 진행한다. AWS 계정이 여러 개여서 대상이 모호하거나 실제로 필요한 권한·정보가 없을 때만 구체적으로 질문한다.
+- 무료 플랜을 유료 플랜으로 자동 전환하지 않는다. 비용 우선이라는 결정을 무료 보장으로 해석하지 않는다. 무료 여부는 계정의 실제 혜택·크레딧·서비스 제한을 확인한 뒤 판단한다.
+- 현재 레포의 AGENTS.md와 PROJECT_PLAN.md를 먼저 읽는다. 사용자 요청 없이 문서 판정 로직을 Upstage Studio 밖으로 옮기지 않는다.
+- 사용자가 별도 요청하지 않았다면 commit, push, 강제 push, 기존 브랜치 초기화는 하지 않는다. 변경은 최소화하고 패치로도 인계한다.
+
+2. 반드시 알고 시작할 현재 코드 구조
+
+기준 파일을 실제로 읽어 최신 상태와 이 설명의 차이를 확인하라.
+
+  PROJECT_PLAN.md
+  README.md
+  docs/IMPLEMENTATION_PLAN.md
+  backend/build.gradle
+  backend/src/main/resources/application.properties
+  backend/src/main/java/kr/swax/intake/StaffSecurity.java
+  backend/src/main/java/kr/swax/intake/StaffSessionController.java
+  backend/src/main/java/kr/swax/intake/StaffAdmin.java
+  backend/src/main/java/kr/swax/intake/GmailProfile.java
+  backend/src/main/java/kr/swax/intake/GmailController.java
+  backend/src/main/java/kr/swax/intake/WorkerStatus.java
+  backend/src/main/java/kr/swax/intake/ReviewWorkerAccess.java
+  backend/src/main/java/kr/swax/intake/ReviewWorkerController.java
+  backend/src/main/java/kr/swax/intake/OutputJobs.java
+  backend/src/main/java/kr/swax/intake/IntakeUpload.java
+  backend/src/main/resources/db/migration/
+  frontend/package.json
+  frontend/package-lock.json
+  frontend/vite.config.ts
+  frontend/src/api/backend.ts
+  frontend/src/api/client.ts
+  frontend/scripts/prepare-rhwp.mjs
+  operations/worker.py
+  operations/store.py
+  operations/preparation.py
+  operations/studio_worker.py
+  operations/delivery.py
+  operations/reports.py
+  operations/printer.py
+  service/db.py
+  service/mailing.py
+  service/gmail_oauth.py
+  operations/hancom/setup.ps1
+  start-intake.ps1
+  start-output-printer.ps1
+
+현재 확인한 사항:
+
+- 운영 API는 Spring Boot 4.1.2, Java 21, Gradle Wrapper 9.5.1이다. 최신 버전으로 임의 업그레이드하지 말고 레포의 버전을 사용한다.
+- React·TypeScript·Vite 화면은 Gradle processResources에서 빌드되어 bootJar의 정적 리소스에 포함된다. 기본은 화면과 API를 같은 출처에서 제공한다.
+- 프런트엔드는 상대경로 /api를 사용한다. VITE_API_TARGET은 intake/service를 고르는 값이며 API URL 설정값이 아니다. 현재 존재하지 않는 VITE_API_URL을 넣으면 연결된다고 가정하지 않는다.
+- frontend/vite.config.ts의 127.0.0.1:18765 프록시는 개발 서버 전용이다. 배포한 JAR의 API 주소를 바꾸는 설정이 아니다.
+- Node는 프로젝트 안내에 맞는 22.12 이상 또는 24 LTS를 선택하고, Python은 3.12 이상 중 requirements와 호환되는 버전을 사용한다. 검증한 실제 버전을 기록한다.
+- API의 기본 바인딩은 127.0.0.1:18765다. ALB가 접근하려면 클라우드 환경에서 SERVER_ADDRESS=0.0.0.0을 덮어써야 한다.
+- DB는 PostgreSQL 16이다. Flyway가 DB 스키마를 준비한다. SQLite 기반 service/app.py 및 8765 시연판은 운영 백엔드 배포 대상이 아니다. 운영 워커가 import하는 service 모듈은 필요하다.
+- 원본은 intake_file.original, 미리보기는 original_analysis.pdf, 보고서는 award_report.hwpx/pdf, 편집본은 document_edit_version.hwpx 등 PostgreSQL bytea에 저장된다. S3 버킷만 만든다고 앱의 저장소가 S3로 바뀌지 않는다. 이번에는 저장 방식 변경을 하지 않는다.
+- operations.worker는 prepare, studio, mail, report 네 역할을 가진다. --role을 생략하면 네 역할이 모두 실행된다. 각 역할은 DB에 직접 접속하고 advisory lock으로 작업을 조정한다.
+- prepare는 현재 Windows 한글, PowerShell 및 Windows OCR 경로를 사용한다. report는 현재 PC에서 Java 변환 라이브러리와 00 양식을 사용해 HWPX를 만든다. printer는 한글을 통해 PDF를 만들고 HTTPS API로 반환한다.
+- operations/store.py는 DB URL의 jdbc: 접두어를 제거해 psycopg에 전달한다. JDBC URL과 libpq URL의 지원 옵션을 혼동하지 않는다.
+- GmailProfile.java와 service/mailing.py는 Windows 사용자별 DPAPI를 사용한다. 현재 PC의 gmail.json이나 .dpapi 파일을 다른 서버에 복사해도 그대로 복호화할 수 없다.
+- 따라서 클라우드의 Spring API와 메일 워커는 같은 Windows 머신, 같은 OS 실행 계정, 같은 AWARD_DATA_DIR를 사용해야 한다. 이 의존성을 무시한 Linux 컨테이너 배포를 완료라고 보고하지 않는다.
+- 담당자 로그인은 JSESSIONID 세션과 CSRF를 사용한다. JWT 또는 Cognito로 임의 교체하지 않는다.
+- 입력은 한 팀의 01·02·03 묶음이며 00은 출력 템플릿이다. 시상구분과 지원액을 추정하지 않는다. 팀장 메일은 담당자가 초안을 확인하고 승인한 건만 발송한다. 담당자 알림 메일을 새로 만들지 않는다.
+- 최종 공식 입력은 test case/upstage_data.zip의 upstage_data/set01~set20, 58개 한글 문서다. 테스트한다면 먼저 실행하고 나서 유형표·정답 JSON과 대조한다. 배포 작업이라는 이유로 20팀 모두의 유료 Studio 실행을 자동으로 시작하지 않는다.
+
+3. 소스 식별과 비밀 정보 취급
+
+- 이 프롬프트 작성 시 관찰한 Git HEAD는 91813d28938a965dfaa211a73384be6979efb38a였고 작업 트리에 다수의 수정 및 미추적 파일이 있었다. 이것은 배포할 커밋을 고정하라는 지시가 아니다. 실행 시 최신 상태를 다시 확인하고 실제 소스 스냅샷을 식별한다.
+- 원격 main만 clone하거나 git archive HEAD만 사용하면 미커밋 구현이 빠질 수 있다. 필요한 수정·미추적 소스를 포함한 현재 작업 트리의 스냅샷 또는 사용자가 지정한 완성 아티팩트를 사용한다.
+- 배포 머신에 현재 소스가 없고 원격 저장소만 있는 경우 최신 구현이 들어 있다고 추측하지 않는다. 소스 스냅샷 또는 검증 가능한 JAR가 없으면 해당 이유로 소스 준비 단계를 보류한다.
+- Git commit SHA, dirty 여부, 필요한 미추적 파일 목록, 변경 패치, 배포 소스 파일별 SHA-256과 최종 아티팩트 SHA-256을 남긴다. 소스 해시는 잠금 파일을 포함한 정렬된 파일 목록에 대해 재현 가능하게 계산한다. 산출물 디렉터리와 비밀 파일은 소스 해시에서 제외하고 포함 규칙도 기록한다.
+- .env.local, AWS credentials/config의 비밀값, var, 기존 DB 덤프, 학생 제출 원본, 테스트 ZIP, output, node_modules, .git, 기존 Gmail 프로필 및 클라이언트 비밀 JSON을 통째로 업로드하지 않는다.
+- 필요한 파일은 allowlist로 패키징한다. backend JAR, 클라우드 메일 워커가 import할 operations/service/reporting의 필요한 소스와 requirements, 부트스트랩·운영 스크립트를 포함한다. 한글 출력 양식은 현재 작업 PC에 남겨도 된다.
+- 프런트엔드 rhwp 0.9.0 정적 자산은 prepare-rhwp.mjs가 고정 SHA-256을 확인한 뒤 준비한다. 빌드 결과의 /rhwp/ HTML·WASM·폰트와 라이선스를 누락하지 않는다.
+- 비밀값은 Secrets Manager 또는 검토한 SSM SecureString에 보관하고, 부트스트랩에서 메모리로 받아 프로세스에 주입한다. UserData, CloudFormation 파라미터 출력, SSM 명령 본문, 로그, 결과 JSON, 인계 ZIP에 비밀번호·토큰·OAuth secret·AWS 키를 직접 넣지 않는다.
+- IAM 역할/SSO 등 기존 인증을 사용한다. 사용자의 AWS 키를 요청해 채팅에 붙이게 하거나 새 장기 액세스 키를 만들지 않는다.
+
+4. AWS 계정·프리티어·비용을 먼저 확인
+
+다음은 조회용 시작 명령의 예다. 선택한 프로필을 명시하고 결과에 비밀이 없도록 요약하라.
+
+  aws --version
+  aws configure list-profiles
+  aws sts get-caller-identity --profile <선택한프로필>
+  aws freetier get-account-plan-state --profile <선택한프로필> --region <해당API지원리전>
+  aws freetier get-free-tier-usage --profile <선택한프로필> --region <해당API지원리전>
+  aws ec2 describe-availability-zones --region ap-northeast-2 --profile <선택한프로필>
+  aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true --region ap-northeast-2 --profile <선택한프로필>
+
+- 실행 시 최신 공식 문서와 CLI help를 확인한다. 현재 CLI에 freetier 하위 명령이 없다면 CLI 버전을 확인하고 공식 설치·업데이트 경로를 사용한다.
+- 계정 ID, principal ARN, 프로필 이름과 실제 플랜 상태를 기록한다. 조회 권한이 없어 크레딧을 확인하지 못하면 확인 불가로 기록한다. 신규 계정이라고 추측해 200달러가 있다고 적지 않는다.
+- 2025년 7월 이후 변경된 크레딧 기반 Free Tier와 예전 750시간·12개월 제도를 혼동하지 않는다. Free tier eligible 표시도 무기한 무료를 뜻하지 않는다. 크레딧 액수·만료일과 실제 플랜의 사용 가능 서비스를 확인한다.
+- 이번 Windows API는 x86_64가 필요하다. EC2 t4g 같은 ARM Linux 전용 유형으로 대체하지 않는다. RDS db.t4g.micro 사용은 API 머신의 CPU 아키텍처와 별개의 선택이다.
+- 클라우드에서는 빌드하지 않고 검증된 JAR를 가져오는 것을 우선한다. Windows OS + API + mail만 실행할 서버는 최소 4 GiB RAM 후보에서 시작해 실측한다. 4 GiB로 안정성을 보장하지 말고 JVM·OS 메모리와 실제 업로드 부하를 확인한다.
+- 새 Free plan이면 현재 계정이 허용하는 x86_64/Windows 호환, 4 GiB 이상 유형 중 비용을 비교한다. c7i-flex.large 등도 실제 서울 제공 여부와 해당 계정의 허용 여부를 조회한다. 기존 Paid plan에서는 t3.medium 등과 비교한다. 더 작은 서버에 억지로 맞추거나 큰 서버로 조용히 올리지 않는다.
+- RDS는 PostgreSQL 16, Single-AZ, db.t4g.micro 또는 허용되는 db.t3.micro, 암호화된 약 20 GiB 스토리지부터 검토한다. 서울에서 주문 가능한 엔진 패치 버전·인스턴스·스토리지를 CLI로 조회해 선택한다. RDS Extended Support가 붙는 구형 메이저 버전을 고르지 않는다.
+- AWS 공식 가격표/Price List 또는 Pricing Calculator로 Windows 라이선스 포함 EC2, EBS, RDS 컴퓨트·스토리지·백업, ALB·LCU, CloudFront 요청·전송, 공인 IPv4, S3 아티팩트, 비밀 저장소와 로그 비용을 각각 계산한다. Price List 조회 엔드포인트 리전과 실제 배포 리전을 구별한다.
+- 24시간 시연 비용과 730시간 가동 월 비용을 USD로 각각 내고, 크레딧 적용 전 금액과 적용 후 예상치를 구분한다. 세금·환율·Upstage 사용료·불확실한 트래픽 가정을 별도로 적는다. 확인하지 못한 금액은 0으로 채우지 않는다.
+- 사용자가 비용 상한을 제공했다면 지킨다. 제공하지 않았다면 가장 작은 적합 구성의 예상 비용을 명시하고, 불필요한 유료 리소스를 추가하지 않는다. Free plan에서 막히는 서비스를 쓰려고 upgrade-account-plan을 실행하지 않는다.
+- 아래 공개 HTTPS 구성도 ALB 등 고정 비용이 있다. 무료가 확인됐다고 말하지 않는다. 해당 계정의 무료 플랜 제한으로 공개 구성이 불가능하면 SSM 전용 시험 구성의 비용·접속 범위를 별도 대안으로 제시하고, 공개 배포가 완료됐다고 보고하지 않는다.
+- EC2 중지만으로 ALB·RDS·스토리지 비용이 모두 사라지지 않는다. RDS는 중지해도 스토리지 비용이 남고 7일 뒤 자동 재시작할 수 있다. 정확한 종료·정리 방법을 인계한다.
+
+5. 기본 배포 구조: 서울, Windows API, RDS, 현재 PC 문서 워커
+
+코드 변경과 매달 고정 비용을 함께 줄이기 위한 기본 구조다. 실행 환경에서 지원 여부를 확인하라.
+
+  사용자 브라우저
+    -> HTTPS, CloudFront 기본 배포 도메인 d....cloudfront.net
+    -> CloudFront VPC origin
+    -> 두 AZ의 private subnet에 있는 internal ALB
+    -> EC2의 private IP:18765, Windows API + mail 역할
+    -> private RDS PostgreSQL:5432
+
+  현재 Windows PC
+    -> HTTPS API, prepare/studio/report 역할 + printer
+    -> AWS SSM 원격 호스트 포트 포워딩 -> EC2 -> private RDS
+
+- CloudFront의 기본 인증서로 HTTPS 주소를 발급한다. 소유하지 않은 도메인이나 IP 주소에 ACM 인증서를 발급할 수 있다고 가정하지 않는다.
+- VPC origins는 서울에서 지원된다. ALB를 private subnet의 VPC origin으로 사용하고 ALB 자체를 인터넷에 공개하지 않는다.
+- API EC2는 별도 public subnet에 둔다. 자동 할당 공인 IPv4와 IGW 경로는 SSM·패키지 다운로드·Google 접속 등 아웃바운드를 위한 것이다. 인바운드는 ALB security group에서 18765로 들어오는 요청만 허용한다. 공인 IP가 있어도 18765/3389/5432를 인터넷에 열지 않는다.
+- 이 구조는 private ALB와 RDS가 있는 subnet에 인터넷 출구를 만들 필요가 없고, EC2가 직접 아웃바운드 통신하므로 NAT Gateway를 기본 생성하지 않는다. EC2의 모든 트래픽이 private하다고 잘못 설명하지 않는다.
+- ALB는 두 AZ에 배치하되 EC2와 RDS는 비용을 위해 단일 AZ다. 계정마다 AZ 문자의 물리 위치가 달라질 수 있으므로 실제 AZ ID도 기록한다. ALB subnet의 여유 주소 등 서비스 요건을 충족시킨다.
+- 신규 VPC CIDR은 기존 VPC·로컬 네트워크와 겹치지 않는 RFC1918 대역을 골라 기록한다. 기존 리소스를 이름이 비슷하다는 이유로 재사용하거나 덮어쓰지 않는다.
+- SG 경로는 CloudFront VPC origin의 서비스 관리 SG -> ALB 80, ALB SG -> EC2 18765, EC2 SG -> RDS 5432다. 로컬 워커의 DB 통신도 SSM이 EC2를 거쳐 RDS로 보내므로 RDS를 공인 IP/CIDR에 열지 않는다.
+- VPC origin 생성 초기에 필요한 CloudFront origin-facing managed prefix list와 최종 service-managed SG 설정은 공식 절차를 따른다. AWS가 관리하는 SG 자체를 수정하지 않는다.
+- SSM용 instance profile, IMDSv2 강제, 기본 암호화, 최소 권한과 필요한 아웃바운드를 설정한다. 관리용 RDP/SSH를 공개하지 않는다. 꼭 필요하면 인증된 SSM 터널을 사용한다.
+- ALB를 생략하려고 민감한 원본을 공용 HTTP origin으로 노출하지 않는다. private EC2 + NAT Gateway 같은 다른 구조를 선택한다면 기본 구조와 비용·운영 차이를 먼저 명시하고 결과에 기록한다.
+- CloudFront/ALB 또는 Free plan 제약으로 구성이 막히면 막힌 리소스와 이유를 반환한다. 검증하지 않은 임의 아키텍처로 바꾼 뒤 완료라고 보고하지 않는다.
+
+6. AWS CLI와 재실행 가능한 인프라 산출물
+
+- AWS CLI v2를 기본으로 하고 CloudFormation 템플릿을 작성해 CLI로 배포한다. 임시 콘솔 클릭만으로 끝내지 않는다. CloudFormation을 사용하지 못한 부분은 재실행 가능한 스크립트와 이유를 남긴다.
+- 네트워크·DB·비밀 저장소와 앱·엣지를 분리해 업데이트 시 DB가 교체되지 않도록 한다. 스택 이름과 모든 리소스에 Project=SW-AX, Environment=demo, DeploymentId=<고유ID>, ManagedBy=<사용도구> 태그를 붙인다.
+- 배포·변경 전 대상 계정과 기존 스택, 태그, 변경 내용을 확인한다. 기존 프로덕션 리소스를 삭제·교체하지 않는다. 새로 만든 리소스도 실패 시 무조건 지우지 말고 생성 목록과 정리 방법을 남긴다.
+- Windows AMI는 서울의 /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base 공개 SSM 파라미터에서 현재 AMI ID를 조회한다. ID를 다른 리전에서 복사하지 않는다. Amazon 소유자, x86_64, SSM 지원을 확인한다. 다른 Windows 버전을 쓰면 이유와 검증을 기록한다.
+- Windows용 Java 21, Python, PowerShell 7.2 이상을 공식 배포 경로로 설치하고 실제 버전·체크섬을 기록한다. 클라우드에 Node를 설치할 필요는 빌드 방식에 따라 판단한다.
+- RDS는 private, 저장 시 암호화, TLS 강제, 자동 백업 7일, 삭제 보호를 기본으로 한다. 스키마와 데이터가 담긴 DB 리소스는 Retain/Snapshot 등 보존 정책을 명시한다. 용량 자동 확장에는 작은 명시적 상한을 두고 기록한다.
+- RDS 관리자 계정과 애플리케이션 계정을 구별한다. 앱/워커를 DB 관리자 계정으로 운영하지 않는다. Flyway 스키마 소유 권한, 워커 DML·시퀀스 권한과 향후 테이블 기본 권한을 실제 질의로 검증한다.
+- RDS DB subnet group은 두 AZ를 포함하고, 엔진은 Single-AZ여도 이 요건을 지킨다. 보안 그룹은 EC2 SG만 허용한다.
+- 빌드 아티팩트용 S3는 private, public access block, 암호화, 접근 범위 제한을 적용한다. 이 버킷을 앱의 원본 저장소라고 설명하지 않는다. 불필요한 객체 버전과 로그가 무한히 쌓이지 않도록 작은 보존 기간을 정한다.
+- 메일 자격 증명을 담는 Windows 프로필·데이터 디렉터리를 릴리스 폴더와 분리한다. OS 디스크/프로필 소실 시 Gmail 재연결이 필요함을 복구 문서에 적는다. 다른 서버에 DPAPI 파일만 복사하는 복구 절차를 만들지 않는다.
+- 계정 내 인스턴스 역할은 필요한 아티팩트 읽기, 지정 secret/parameter 읽기, 지정 로그 쓰기만 허용한다. 인계용 접근 권한도 실제 ARN 범위로 제한한다. IAM 정책에서 임의의 모든 secret 접근을 허용하지 않는다.
+- CLI JSON은 파일로 만들어 --cli-input-json file://... 또는 --parameters file://...로 넘긴다. 셸 인용 때문에 비밀값이 로그에 펼쳐지지 않게 한다. --debug 및 TLS 검증 우회를 사용하지 않는다.
+
+7. 최소한의 배포 대응 코드와 빌드
+
+- 현재 기본 바인딩, 쿠키, DB, 외부 URL은 배포 환경 설정으로 덮어쓴다. 레포의 로컬 실행 기본값은 유지한다.
+- WorkerStatus.start()는 현재 서버에서 --role 없는 operations.worker를 실행한다. 하이브리드 환경에서 이 동작은 AWS에 prepare/studio/report까지 잘못 띄울 수 있다.
+- 배포 대응으로 awards.worker.managed 플래그를 추가하라. 기본 false로 기존 로컬 실행을 보존하고 클라우드에서 true로 설정한다. managed일 때 상태 조회는 계속 제공하되, 정지한 원격 워커를 서버가 새로 실행하지 않고 명확한 409와 작업 PC 연결 안내를 반환하게 한다. 실행 중인 상태 조회와 로컬 모드의 기존 동작을 검증한다. 프런트엔드를 손대야 한다면 이 안내에 필요한 최소 범위로 제한한다.
+- API/DB readiness를 익명 세션 생성 엔드포인트로 대신하지 않는다. 현재 없으면 Boot와 같은 BOM의 Actuator health만 노출하거나 이에 준하는 작은 readiness/liveness를 추가한다. health 응답에 DB 주소, 계정, 환경 변수와 세부 정보를 공개하지 않는다. worker offline은 API DB health와 별도로 나타낸다.
+- 세션 인증·CSRF·업무 권한을 배포를 위해 끄지 않는다. CORS * + credentials를 추가하지 않는다. Linux 이식을 위해 Gmail의 암호화/인증 구조를 임의로 변경하지 않는다.
+- 기존 JUnit 및 변경에 직접 관련된 검증을 실행한다. requirements/lock 파일을 이유 없이 수정하거나 테스트를 건너뛰지 않는다. 로컬 전용 통합 시험은 빈 시험 DB에서만 실행한다. 그 시험의 localhost 보호를 실제 RDS에 돌리려고 제거하지 않는다.
+- 현재 코드 스냅샷에서 frontend npm ci와 타입 검사·Vite 빌드, backend test와 bootJar를 실행한다. 예: backend 디렉터리에서 gradlew.bat --no-daemon --console=plain test bootJar prepareReportConverter. OS에 맞는 wrapper를 사용한다.
+- bootJar 내부 BOOT-INF/classes/static의 index, assets, rhwp HTML·WASM·폰트와 서버 로그인 자산을 확인한다. report converter의 런타임 JAR는 작업 PC 연결 패키지에도 준비 방법 또는 실물을 포함한다.
+- JAR, 클라우드 워커 소스 묶음, 작업 PC 소스·스크립트 및 변경 patch 각각에 SHA-256을 붙인다. 소스가 다른 두 버전을 섞지 않는다.
+
+8. 런타임 환경과 프로세스
+
+클라우드 API와 mail이 공유할 비밀이 아닌 설정의 예. 실제 경로와 주소로 치환하라.
+
+  SERVER_ADDRESS=0.0.0.0
+  AWARDS_PORT=18765
+  AWARD_DATA_DIR=C:/swax/data
+  AWARDS_WORKER_DIR=C:/swax/current
+  AWARDS_WORKER_PYTHON=C:/swax/venv/Scripts/python.exe
+  AWARDS_REMOTE_PRINTER=true
+  AWARDS_API_URL=http://127.0.0.1:18765
+  AWARDS_DB_URL=jdbc:postgresql://<실제RDS엔드포인트>:5432/swax_intake?sslmode=verify-full&sslrootcert=<URL인코딩한CA경로>
+  AWARDS_DB_USER=<실제앱DB역할>
+  AWARDS_GMAIL_REDIRECT_URI=https://<실제CloudFront도메인>/api/settings/gmail/callback
+  MAIL_MODE=gmail
+  GMAIL_ADDRESS=<담당자발신주소, 미제공이면연결대기>
+  AWARDS_GMAIL_CLIENT_FILE=<클라우드에안전하게준비한Google웹클라이언트JSON경로>
+
+- AWARDS_DB_PASSWORD, AWARDS_REVIEW_WORKER_TOKEN, AWARDS_OUTPUT_WORKER_TOKEN은 각각 secret 참조에서 받는다. 두 워커 토큰은 서로 다른 256-bit 이상 난수로 새로 생성한다. 비밀번호를 URL에 포함하지 않는다.
+- managed 플래그의 정확한 환경 변수/외부 프로퍼티 매핑을 구현하고 인계한다. 이 플래그는 현재 코드에 없는 신규 배포 설정임을 표시한다.
+- 위 AWARDS_API_URL의 loopback은 같은 EC2의 mail 워커용이다. 현재 PC에는 반드시 외부 HTTPS 주소를 주입한다.
+- Java와 Python에 JDBC URL 옵션을 그대로 복사했을 때 실제로 두 드라이버가 CA 경로·옵션을 해석하는지 확인한다. CA 경로는 공백 없는 절대 경로를 쓰거나 각각 맞게 URL 인코딩한다.
+- 새로운 호스트의 API와 mail은 동일한 Windows 실행 계정으로 실행한다. 한글을 돌리지 않는 이 두 프로세스는 SYSTEM 등 한 가지 서비스 계정으로 통일할 수 있다. 선택한 SID, 프로필 위치, 작업/서비스 이름을 기록하고 두 런타임의 DPAPI 호환을 검증한다.
+- API용 서비스/시작 작업과 mail용 작업을 분리해 재시작·로그·종료를 관리한다. mail 명령은 python -u -m operations.worker --role mail이다. --role 없는 전체 워커를 AWS에 띄우지 않는다.
+- 웹 서버를 부팅마다 bootRun으로 빌드하지 않는다. 검증된 JAR를 고정 Java 경로로 실행하고 시작 시 secret을 메모리로 불러온다. 작업 디렉터리와 로그 위치를 명시한다.
+- CloudFormation/SSM의 실행 성공만으로 서비스 정상 기동을 판단하지 않는다. 실제 프로세스·계정·포트·DB 연결·로그·health를 확인한다.
+- 릴리스 경로는 C:/swax/releases/<release-id>, 데이터는 C:/swax/data 등으로 분리한다. 업데이트할 때 구버전 JAR/워커를 보존하고 사용 중인 프로세스를 확인해 교체한다.
+- MAIL_MODE=local을 실제 메일 운영의 대체 성공값으로 두지 않는다. Gmail이 준비되지 않았으면 MAIL_MODE=gmail에서 연결 대기로 남기고 결과에도 미연결로 기록한다.
+
+9. CloudFront·ALB·세션·업로드 설정
+
+- 처음에는 정적 파일을 포함해 캐시를 꺼서 검증한다. CachingDisabled와 모든 필요한 viewer header/cookie/query 및 CloudFront-Forwarded-Proto를 전달하는 origin request policy를 사용한다. 정책 이름/ID와 실제 설정을 결과에 남긴다.
+- Authorization은 GET에서도 origin까지 전달되어야 한다. CloudFront가 기본 동작에서 이를 제거할 수 있음을 주의한다. 세션 Cookie, Set-Cookie, X-CSRF-TOKEN, X-Claim-Token, X-Hwpx-Sha256, Idempotency-Key, Content-Type, Origin, Sec-Fetch-Site와 query string을 보존한다.
+- GET/HEAD/OPTIONS/POST/PUT/PATCH/DELETE를 허용한다. /api, /login, /logout, Gmail callback, 원본·보고서 다운로드, 워커 경로를 모두 같은 origin으로 전달한다.
+- 사용자별 응답, CSRF 토큰, 원본, 보고서, 로그인 응답을 캐시하지 않는다. 다른 계정의 쿠키나 파일이 섞이지 않는지 검증한다. 401/403/404를 index.html의 200으로 바꾸는 SPA 오류 규칙을 만들지 않는다.
+- 브라우저는 HTTPS만 사용한다. 외부 HTTP는 리다이렉트하거나 거부하고 POST body 보존을 확인한다. JSESSIONID에는 Secure, HttpOnly, SameSite=Lax를 적용하며 공유 Domain을 불필요하게 설정하지 않는다.
+- origin 통신이 HTTP여도 최종 viewer의 HTTPS가 Spring에 정확히 전달되어야 한다. CloudFront-Forwarded-Proto와 ALB의 X-Forwarded-Proto가 서로 다른 홉을 나타냄을 고려하라. 신뢰하는 프록시 경계에서 생성한 헤더만 사용하도록 Tomcat/배포 설정을 정하고, 사용자가 넣은 임의 X-Forwarded-*로 외부 리다이렉트 주소를 조작할 수 없게 검증한다.
+- 로그인 성공 Location, OAuth callback, 쿠키와 인증 상태 조회를 실제 CloudFront 주소로 검증한다. 서버 내부 주소나 http://ALB 주소가 외부 리다이렉트에 나오지 않아야 한다.
+- ALB target은 instance private IP/port 18765에 연결한다. health path를 명시하고 healthy 상태를 확인한 뒤 CloudFront를 붙인다. 업로드와 다운로드를 고려해 idle/read timeout을 설정하고 실제 값과 서비스 상한을 기록한다.
+- 현재 앱 제한: 파일당 40 MiB, 파일 합계 300 MiB, multipart 요청 302 MB, 최대 100파일, PDF 반환 최대 120 MiB. 서버와 프록시에서 이 한도를 임의로 10 MB 등으로 줄이지 않는다. 지원되는 최대 요청 크기·시간 제한을 확인해 큰 전송도 시험한다.
+- 이 제한 때문에 기본 API 경로를 API Gateway/Lambda로 교체하지 않는다. 전송 한도를 확인하지 않은 채 40 MiB 업로드 가능하다고 보고하지 않는다.
+- rhwp의 iframe, WASM, Blob worker와 폰트가 같은 출처에서 동작해야 한다. 무조건적인 X-Frame-Options DENY 또는 임의 CSP로 편집기를 깨뜨리지 않는다. Content-Type application/wasm 및 한글 파일명 다운로드를 확인한다.
+- 배포는 단일 API 인스턴스다. 현재 메모리 세션을 여러 API 인스턴스로 늘릴 때의 세션 공유 문제는 이번에 해결된 것으로 표시하지 않는다.
+
+10. RDS TLS와 현재 PC의 DB 연결
+
+- RDS endpoint는 private로 둔다. AWS가 제공하는 현재 RDS CA bundle을 공식 URL에서 받고 API와 작업 PC에서 sslmode=verify-full로 검증한다. rds.force_ssl 및 pg_stat_ssl을 조회해 실제 TLS 사용을 확인한다.
+- 작업 PC에는 AWS CLI v2, Session Manager plugin, 같은 계정에 대한 기존 AWS 인증이 필요하다. CLI가 설치됐다는 사실만으로 인증됐다고 가정하지 않는다.
+- 작업 PC의 기존 PostgreSQL 55432와 충돌하지 않도록 기본 로컬 터널 포트를 15432로 잡고 사용 여부를 확인한다. 원격 호스트는 결과에 담긴 실제 RDS endpoint:5432, SSM target은 실제 API EC2 ID다.
+- 실행 예는 아래와 같다. PowerShell 인용 문제를 피하려고 parameters JSON 파일을 생성해 전달한다.
+
+  {"host":["<실제RDS엔드포인트>"],"portNumber":["5432"],"localPortNumber":["15432"]}
+  aws ssm start-session --target <실제EC2-ID> --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters file://<실제parameters파일> --region ap-northeast-2 --profile <실제프로필>
+
+- 호스트·DNS·포트 연결을 EC2에서 먼저 확인한다. SSM Agent는 원격 호스트 포워딩을 지원하는 버전이어야 한다. 로컬 터널이 시작됐는지 확인한 다음 워커를 실행한다.
+- TLS 서버 이름을 localhost로 바꾸어 verify-full 오류를 만드는 실수를 피한다. 로컬 psycopg/libpq URL에는 host를 실제 RDS 이름으로 유지하고 hostaddr=127.0.0.1, port=15432를 사용한다. 이렇게 TCP는 터널을 사용하고 인증서는 실제 RDS 이름으로 검증한다.
+- 로컬 워커 예시 URL:
+  jdbc:postgresql://<실제RDS엔드포인트>:15432/swax_intake?hostaddr=127.0.0.1&sslmode=verify-full&sslrootcert=C%3A%2Fswax-connect%2Frds-ca.pem
+- 위 hostaddr는 로컬 psycopg용 설정이다. 클라우드 Java JDBC 연결에는 이 파라미터/로컬 포트를 재사용하지 않는다.
+- API와 로컬 워커의 DB 사용자/secret 참조를 명시하고 현재 스키마의 필요한 권한을 확인한다. 결과 JSON에는 SQL 비밀번호 대신 secret의 ARN/parameter 경로와 JSON key를 적는다.
+- SSM 인증 만료나 연결 종료 시 작업은 대기할 수 있다. 연결 스크립트는 자신의 터널을 식별하고 재연결 절차를 제공해야 한다. 다른 사람이 사용하는 터널·로컬 서버·한글 프로세스를 무차별 종료하지 않는다.
+
+11. 현재 Windows PC에 연결할 워커 패키지
+
+- 기본 역할 배치:
+  AWS Windows: API, operations.worker --role mail
+  현재 Windows PC: operations.worker --role prepare
+  현재 Windows PC: operations.worker --role studio
+  현재 Windows PC: operations.worker --role report
+  현재 Windows PC: operations.printer
+- prepare/studio/report 각각을 --role로 실행한다. 기존 --role 없는 전체 워커를 클라우드 DB에 붙여 mail 역할까지 실행하지 않는다. 현재 PC의 기존 Gmail 프로필은 AWS mail 프로필과 같은 것이 아니다.
+- 로컬의 UPSTAGE_API_KEY, UPSTAGE_AGENT_ID, UPSTAGE_CONFIG_ID는 현재 PC의 안전한 설정을 재사용할 수 있다. 값이 없으면 필요한 이름을 알려주고 판정 기능을 미설정으로 표시한다. 키를 인계 JSON에 복사하지 않는다. 실제 Agent/Config는 실행 시 확인하며 config 23을 최신 운영 설정이라고 고정하지 않는다.
+- 별도 AWARD_DATA_DIR를 사용한다. 예: 현재 프로젝트 var/aws-<DeploymentId>. 기존 로컬 제출 캐시, Gmail, 출력 설정과 섞지 않는다.
+- .venv의 기존 정상 환경을 먼저 확인하고 operations/requirements.txt의 의존성을 준비한다. Java 21과 backend/build/report-converter의 라이브러리, reporting/ConvertHwp.java, 실제 00 출력 양식 경로도 확인한다.
+- AWARDS_REPORT_TEMPLATE은 현재 PC의 기존 00 양식의 절대 경로로 지정한다. 원본을 덮어쓰지 않는다. 이 템플릿 파일은 기본 Git 패키지에서 제외되어 있을 수 있으므로 존재를 확인한다.
+- 같은 Windows 계정에서 operations/hancom/setup.ps1을 새 작업 데이터 폴더에 맞춰 실행한다. Hancom guard, PowerShell 7, OCR, 한글 실행과 원본 PDF 변환을 확인한다. 설치돼 있다는 가정만으로 통과시키지 않는다.
+- printer에는 외부 AWARDS_API_URL과 AWARDS_OUTPUT_WORKER_TOKEN만 필요하다. DB 비밀번호, Upstage 키, review 토큰, Gmail secret 등 불필요한 환경 변수를 자식 프로세스에 물려주지 않는다.
+- 출력 토큰은 기존 start-output-printer.ps1의 같은 계정 DPAPI 프로필을 활용하거나 이에 준하는 안전한 방법으로 저장한다. 전용 클라우드 연결 데이터 디렉터리를 명시한다.
+- 인계 ZIP에 connect-local.ps1, start-local-workers.ps1, stop-local-workers.ps1과 필요한 보조 파일을 포함한다. 현재 프로젝트에서 파일을 수동 편집하지 않아도 결과 JSON을 입력받아 연결되게 만든다.
+- connect-local.ps1은 AWS account ID와 태그를 확인하고 secret을 메모리로 읽어 필요한 자식 프로세스에만 전달한다. secret 조회 결과를 터미널이나 transcript에 출력하지 않는다. 현재 셸 전역·사용자 환경 변수를 영구 변경하지 않는다.
+- AWS 인증이 없는 다른 PC에서는 같은 계정의 프로필/역할 인증이 선행돼야 한다. 인계 파일만으로 인증을 우회할 수 있다고 설명하지 않는다. 필요한 최소 IAM 권한과 정확한 리소스 ARN을 적는다.
+- Start-Process로 숨김 백그라운드 작업을 시작할 때는 -WindowStyle Hidden을 사용하고, 시작한 PID·로그 경로를 자신의 상태 파일에 기록한다. 다른 업무 프로세스를 이름만으로 죽이지 않는다. 중지 스크립트는 자신이 시작한 PID만 확인 후 종료한다.
+- 실제 작업 PC를 제어할 수 없다면 스크립트 정적 검증과 클라우드 DB 연결까지만 완료로 표시한다. 한글 변환·실제 Studio·PDF 출력은 not_run 또는 pending_local_connection으로 남긴다.
+
+12. Gmail과 도메인 없는 HTTPS 주소
+
+- 최종 주소가 정해진 뒤 AWARDS_GMAIL_REDIRECT_URI를 정확히 https://<실제공개호스트>/api/settings/gmail/callback로 설정한다. /#/gmail은 화면 경로이고 OAuth callback이 아니다.
+- Google Cloud의 Web application OAuth client, Gmail API, 필요한 scope gmail.send/openid/userinfo.email, 발신 주소와 테스트 사용자 등록을 확인한다. 이미 있는 클라이언트가 적절하면 재사용하되 비밀을 출력하지 않는다.
+- AWS CLI로 Google 콘솔 설정이나 사용자 동의를 완료했다고 주장하지 않는다. 권한 있는 Google 설정 도구가 없는 단계는 정확한 화면 경로, 입력할 URI, 담당자와 예상 결과를 manual action으로 반환한다.
+- 도메인 없는 CloudFront 기본 주소로 웹 서비스 HTTPS를 제공할 수 있다. 이것이 Google OAuth의 도메인 정책·소유 확인·앱 검증을 모두 충족했다는 뜻은 아니다. 실제 client 등록과 승인 동작을 확인하고 거부되면 정확한 이유와 필요한 도메인/설정을 기록한다.
+- 기존 PC에서 만든 gmail.json/.dpapi를 AWS에 복사하지 않는다. AWS의 API 실행 계정에서 Gmail을 다시 연결해 같은 계정의 mail 워커가 복호화하도록 한다.
+- 연결·발송 준비가 안 된 경우 gmail_ready=false, mail worker alive와 별개인 mail_ready=false를 반환한다. local .eml 생성만으로 Gmail 송신 완료라고 하지 않는다.
+- 실제 학생·팀장에게 테스트 메일을 보내지 않는다. 외부 테스트 메일은 사용자가 명시한 시험 수신처와 발송 허용이 있을 때만 보낸다. 그렇지 않으면 별도 시험 DB/설정에서 로컬 발송 대역으로 검증하고 실제 전달은 미검증으로 남긴다.
+- 사용자가 승인하지 않은 초안을 자동 승인하지 않는다. 담당자 알림 메일 기능을 되살리지 않는다.
+
+13. 접속 계정과 인증 인계
+
+- 새 클라우드 DB에 담당자 계정을 안전하게 준비한다. 기존 staff-a/staff-b 이름을 쓴다면 계정별로 서로 다른 새 난수 비밀번호를 사용하고 결과에는 비밀번호 저장소 참조만 남긴다.
+- 로컬에서 사용자가 요청해 설정했던 9999 같은 시연용 비밀번호나 기존 password_hash를 공용 AWS 서비스에 복사하지 않는다. 계정 생성 시 StaffAdmin의 길이 제한과 bcrypt cost 12를 유지한다.
+- staff_account의 @workflow / password_hash='!'는 내부 기록용 비로그인 계정이다. 비밀번호를 초기화하거나 로그인 계정으로 만들지 않는다.
+- StaffAdmin은 로컬 관리 프로그램이며 원격 HTTP 비밀번호 초기화 API가 아니다. bootstrap 시 레포의 Gradle staffAdmin 또는 검증한 executable JAR의 PropertiesLauncher/classpath로 실행한다. bootJar에 단순 java -cp만 주면 중첩 의존성을 못 찾을 수 있으므로 실제 명령을 검증해 인계한다.
+- 계정명, 대회 접근 범위, 비밀번호 참조, 안전한 재설정 명령을 반환한다. 초기 DB가 비어 있는지, 생성한 시험 대회만 있는지 명확히 적는다.
+- 별도 계정으로 같은 원본 URL을 조회해 권한 경계와 캐시 분리를 확인한다. 비로그인 401, 권한 없는 담당자 404, 권한 있는 담당자 200 및 SHA-256 일치를 확인한다.
+
+14. 배포 검증과 성공 판정
+
+각 검증은 passed / failed / not_run / blocked와 실제 근거를 기록한다. 명령 생성만으로 passed를 넣지 않는다.
+
+A. 빌드/출처
+  실제 소스 스냅샷, dirty 파일 포함 여부, JUnit, 프런트 타입 검사/빌드, JAR 정적 자산, artifact SHA-256.
+B. 인프라/연결
+  실제 계정·리전·태그, SSM Online, RDS private/TLS, Flyway 적용, ALB healthy, CloudFront Deployed와 실제 TLS 인증서.
+C. 익명/세션
+  공개 /login, GET /api/auth/session, 정확한 CSRF 필드, Set-Cookie의 Secure/HttpOnly/SameSite=Lax.
+  같은 cookie jar로 POST /login에 username/password, X-CSRF-TOKEN, Accept: application/json을 보내 성공 204 확인.
+  새 토큰 재조회, 인증 API 확인, 잘못된 암호 401, CSRF 없는 상태 변경 거부, logout 및 세션 종료.
+D. 업무/업로드
+  시험 대회에서 mode=bundle, event, manifest와 files 및 유효한 Idempotency-Key로 접수 202 확인.
+  정상 파일 다운로드의 SHA-256, 같은 요청 재전송의 중복 방지, 40 MiB 초과 거부, 프록시 대용량 한도와 120 MiB PDF 반환 경로.
+  공식 자료를 쓰면 set01의 제출 원본을 그대로 사용한다. 인위적 용량 시험 데이터는 별도로 표시하고 원본을 수정하지 않는다.
+E. 권한/엣지
+  담당자 A/B의 원본 200/404, 익명 401, 다른 계정 쿠키가 캐시되지 않음.
+  review/output worker 경로의 bearer 누락 거부, 올바른 토큰의 실제 전달. 빈 큐 claim 204는 PDF 출력 성공과 구별한다.
+F. 프로세스
+  API와 mail의 실행 계정 일치, 자동 시작·재시작, managed worker-start의 잘못된 로컬 실행 방지.
+  Cloud API 재시작 후 저장된 파일 유지, 세션 만료에 따른 재로그인, Gmail 연결 상태의 처리.
+G. 현재 PC 연결
+  SSM 터널, libpq verify-full, prepare/studio/report advisory lock, printer heartbeat와 실제 HTTPS 다운로드/업로드.
+  실제 PC를 조작할 수 없다면 이 항목은 pending으로 남긴다.
+H. 실제 문서/외부 서비스
+  허용된 최소 시험에서만 한글 PDF 준비 -> Studio 결과 -> 담당자 검토 -> HWPX -> PDF를 확인한다.
+  실제 Studio API 호출 비용/설정과 입력이 허용되지 않거나 현재 PC 연결이 없으면 미검증으로 남긴다.
+  정답표를 본 뒤 결과를 맞추는 방식으로 검증하지 않는다. 실행하지 않은 20팀 판정을 구현/검증 완료라고 쓰지 않는다.
+I. Gmail
+  실제 Google 리디렉션·동의·동일 Windows 계정의 토큰 이용 여부를 구분하고 외부 발송은 명시 허용 시에만 수행한다.
+J. 비용
+  크레딧·플랜 상태, 가격 근거와 예상치, 발생 중인 리소스 목록, 정지 후에도 남는 과금 항목.
+
+- app이 떠 있다는 이유로 api_ready=true로 끝내지 말고 인증·DB·업로드·다운로드를 검증한다.
+- complete는 API, 현재 PC 워커와 문서 흐름, 필요한 Gmail 설정까지 요구된 범위가 실제로 연결된 경우에만 사용한다.
+- API가 배포됐고 현재 PC/Gmail 연결이 남았다면 status=api_deployed_integration_pending, readiness의 해당 값은 false로 남긴다. 이것은 인계 가능한 API 배포 결과이지 전체 시스템 동작 완료가 아니다.
+
+15. 재배포·롤백·정리
+
+- 배포/재배포/롤백/로그 확인/상태 확인 명령을 실제 ID·경로로 작성한다. 사용자 Windows PowerShell 7에서 실행 가능한 스크립트를 기본으로 제공한다.
+- DB 마이그레이션 전 스냅샷/백업을 확인한다. Flyway checksum 오류를 repair나 migration 파일 수정으로 무조건 우회하지 않는다.
+- 애플리케이션 롤백과 DB 복원을 구분한다. 비호환 마이그레이션이 있으면 JAR만 되돌려 안전하다고 보장하지 않는다. 구버전 아티팩트와 복구 조건을 명시한다.
+- CloudFront/ALB가 가리키는 대상, 릴리스 전환 방식, 데이터 디렉터리, 서비스 계정 SID를 기록한다.
+- cleanup은 생성 리소스와 태그를 검증하는 스크립트로 제공하고 기본은 dry-run이다. 이번 배포 도중 기존 리소스를 삭제하거나 종료하지 않는다. RDS 최종 스냅샷과 retained EBS/S3/secret의 남는 비용도 표시한다.
+- 과금 중단 방법은 단순 stop 명령, 데이터 보존한 철수, 완전 삭제를 구분한다. 완전 삭제는 명시적 실행 플래그와 대상 확인이 필요하다.
+
+16. 반드시 반환할 최종 결과물
+
+하나의 swax-deployment-handoff.zip으로 묶고 SHA-256을 계산하라. ZIP에는 비밀값을 넣지 않는다.
+
+  deployment-result.json                 아래 결과 계약을 실제 값으로 채운 단일 JSON
+  README-HANDOFF.txt                      배포된 범위와 남은 단계, 실행 순서
+  cost-estimate.json                      항목별 가격 근거, 가정, 24h/730h 비용, 크레딧 확인 상태
+  validation-results.json                 검증 ID, 실제 응답/근거, 시간, passed 여부
+  source-manifest.json                    배포 소스와 artifact 해시, 버전
+  deployment-changes.patch                현재 소스에 가한 변경, 변경 없으면 빈 파일과 설명
+  infrastructure/                        CloudFormation 및 비밀 없는 입력 예시
+  scripts/deploy.ps1
+  scripts/redeploy.ps1
+  scripts/rollback.ps1
+  scripts/status.ps1
+  scripts/logs.ps1
+  scripts/cleanup.ps1                     기본 dry-run
+  scripts/connect-local.ps1
+  scripts/start-local-workers.ps1
+  scripts/stop-local-workers.ps1
+  config/aws-api.env.example              비밀 없는 실제 설정, 비밀 주입은 참조 설명
+  config/local-workers.env.example
+  config/ssm-rds-port-forward.json         실제 RDS endpoint/포트
+  config/required-iam-policy.json          인계받는 PC에 필요한 최소 접근 권한
+  config/rds-ca.pem                       공개 CA, 출처와 해시 동봉
+
+- 스크립트 안의 TODO, 예시 리소스 ID, 가짜 URL을 실제로 실행 가능한 부분에 남기지 않는다. 알려지지 않은 사용자 로컬 경로는 명시적 입력 파라미터로 받고 값 검증을 한다.
+- 인계 ZIP을 접근 제한된 S3에 보관했다면 bucket/key/version/region/SHA-256을 결과 JSON에 적는다. 사용자가 파일로 전달할 수 있는 로컬 ZIP 경로도 반환한다. 짧게 만료되는 presigned URL만 남기지 않는다.
+- 결과 JSON만 전달해도 같은 AWS 인증으로 연결 스크립트/패치/아티팩트를 찾을 수 있게 인계 객체 위치를 적는다. 다른 계정/PC에서 실행할 때 필요한 AWS 인증은 별도 선행 조건임을 밝힌다.
+- 최종 채팅에는 (1) status와 실제 공개 URL 또는 공개 접속 불가 사유, (2) 월 예상 비용과 크레딧 확인 상태, (3) ZIP 경로/SHA-256, (4) deployment-result.json 전문, (5) 남은 사용자 작업만 반환한다. 실행 기록 전체나 비밀을 붙이지 않는다.
+- PROJECT_PLAN.md에는 실제로 수행한 배포와 남은 연결만 기록한다. 계획을 완료 상태로 바꾸지 않는다.
+
+17. 결과 JSON 계약
+
+아래 JSON은 반환 형식의 틀이다. 실행 시 모든 값·상태·ID를 실제로 채우고 비용 항목, 검증 결과와 수동 작업 배열을 구체적으로 작성하라. null은 미확인 값이지 성공이 아니다. password/token/secret 원문을 새 필드로 추가하지 않는다. AWS secret의 ARN, JSON key와 비밀이 아닌 환경 변수는 반환 가능하다.
+
+[RESULT_JSON_BEGIN]
+{
+  "schema_version": "swax.aws-handoff.v1",
+  "deployment_id": null,
+  "status": "not_run",
+  "generated_at": null,
+  "source": {
+    "git_head": null,
+    "worktree_dirty": null,
+    "source_manifest_sha256": null,
+    "jar_sha256": null,
+    "worker_bundle_sha256": null,
+    "deployment_patch_path": "deployment-changes.patch",
+    "runtime_versions": {"java": null, "spring_boot": null, "python": null, "node_build": null}
+  },
+  "aws": {
+    "account_id": null,
+    "principal_arn": null,
+    "profile_name_used": null,
+    "region": "ap-northeast-2",
+    "stack_names": [],
+    "tags": {"Project": "SW-AX", "Environment": "demo"},
+    "free_tier": {
+      "verified": false,
+      "plan_type": null,
+      "credit_balance_usd": null,
+      "plan_expires_at": null,
+      "credit_expirations": [],
+      "unverified_reason": null
+    }
+  },
+  "architecture": {
+    "mode": "hybrid_windows",
+    "public_access": "cloudfront_vpc_origin_internal_alb",
+    "api_os": null,
+    "single_api_instance": true,
+    "rds_multi_az": false,
+    "worker_locations": {"prepare": "local_windows_pc", "studio": "local_windows_pc", "mail": "aws_api_windows_same_os_account", "report": "local_windows_pc", "printer": "local_windows_pc"}
+  },
+  "resources": {
+    "vpc_id": null,
+    "vpc_cidr": null,
+    "subnet_ids": {"ec2_public": [], "alb_private": [], "db_private": []},
+    "availability_zone_ids": [],
+    "security_group_ids": {"alb": null, "api": null, "database": null, "cloudfront_vpc_origin_service": null},
+    "ec2_instance_id": null,
+    "ec2_instance_type": null,
+    "ec2_ami_id": null,
+    "instance_profile_arn": null,
+    "alb_arn": null,
+    "alb_internal_dns": null,
+    "target_group_arn": null,
+    "cloudfront_distribution_id": null,
+    "cloudfront_vpc_origin_id": null,
+    "cloudfront_domain": null,
+    "rds_identifier": null,
+    "rds_resource_arn": null,
+    "cloudwatch_log_groups": []
+  },
+  "endpoints": {
+    "public_origin": null,
+    "ui_url": null,
+    "api_base_url": null,
+    "login_url": null,
+    "session_url": null,
+    "logout_url": null,
+    "health_url": null,
+    "review_worker_base_url": null,
+    "output_worker_base_url": null,
+    "gmail_callback_url": null
+  },
+  "auth": {
+    "type": "session_cookie_and_csrf",
+    "cookie_name": "JSESSIONID",
+    "cookie_secure_verified": false,
+    "cookie_http_only_verified": false,
+    "cookie_same_site": "Lax",
+    "csrf_header": "X-CSRF-TOKEN",
+    "csrf_response_field": null,
+    "login_content_type": "application/x-www-form-urlencoded",
+    "login_fields": ["username", "password"],
+    "json_accept_header": "application/json",
+    "login_success_status": 204,
+    "accounts": []
+  },
+  "database": {
+    "engine": "postgresql",
+    "engine_version": null,
+    "host": null,
+    "port": 5432,
+    "name": "swax_intake",
+    "publicly_accessible": false,
+    "backend_user": null,
+    "worker_user": null,
+    "backend_jdbc_url": null,
+    "tls_mode": "verify-full",
+    "tls_verified": false,
+    "ca_bundle_source_url": null,
+    "ca_bundle_sha256": null,
+    "flyway_version": null,
+    "data_mode": "new_cloud_database",
+    "imported_local_data": false
+  },
+  "runtime": {
+    "api_port": 18765,
+    "windows_account_sid": null,
+    "release_directory": null,
+    "data_directory": null,
+    "java_path": null,
+    "python_path": null,
+    "api_service_or_task_name": null,
+    "mail_service_or_task_name": null,
+    "health_path": null,
+    "worker_managed_property": "awards.worker.managed",
+    "worker_managed_verified": false,
+    "non_secret_environment": {},
+    "secret_environment_bindings": [],
+    "logs": [],
+    "restart_commands": []
+  },
+  "secrets": {
+    "backend_db_password": {"store": null, "region": "ap-northeast-2", "reference": null, "json_key": null},
+    "local_worker_db_password": {"store": null, "region": "ap-northeast-2", "reference": null, "json_key": null},
+    "review_worker_token": {"store": null, "region": "ap-northeast-2", "reference": null, "json_key": null},
+    "output_worker_token": {"store": null, "region": "ap-northeast-2", "reference": null, "json_key": null},
+    "staff_credentials": {"store": null, "region": "ap-northeast-2", "reference": null, "json_key": null},
+    "gmail_web_client": {"store": null, "region": "ap-northeast-2", "reference": null, "json_key": null},
+    "read_mode": "capture_in_memory_do_not_echo"
+  },
+  "frontend_connection": {
+    "strategy": "same_origin",
+    "api_path_prefix": "/api",
+    "vite_backend_selector": {"name": "VITE_API_TARGET", "value": "intake"},
+    "vite_api_base_url_variable_exists": false,
+    "reverse_proxy_paths_if_split_later": ["/api", "/login", "/logout"],
+    "allow_cross_site_credentials_by_default": false,
+    "rhwp_assets_verified": false,
+    "max_file_bytes": 41943040,
+    "max_files_total_bytes": 314572800,
+    "multipart_max_request_config": "302MB",
+    "max_pdf_upload_bytes": 125829120,
+    "edge_policy_ids": {"cache": null, "origin_request": null},
+    "forwarded_protocol_configuration": null
+  },
+  "local_connection": {
+    "aws_authentication_required": true,
+    "aws_account_id_must_match": null,
+    "ssm_target_instance_id": null,
+    "ssm_document": "AWS-StartPortForwardingSessionToRemoteHost",
+    "ssm_parameters": {"host": [], "portNumber": ["5432"], "localPortNumber": ["15432"]},
+    "worker_db_url_with_hostaddr": null,
+    "worker_api_origin": null,
+    "data_directory_template": "var/aws-<deployment_id>",
+    "required_inputs": ["authenticated_aws_profile", "local_project_path", "local_report_template_path", "existing_upstage_configuration"],
+    "start_roles": ["prepare", "studio", "report", "printer"],
+    "connect_script": "scripts/connect-local.ps1",
+    "start_script": "scripts/start-local-workers.ps1",
+    "stop_script": "scripts/stop-local-workers.ps1",
+    "iam_policy_file": "config/required-iam-policy.json",
+    "db_tls_through_tunnel_verified": false,
+    "actual_pc_connection_verified": false
+  },
+  "gmail": {
+    "sender_address": null,
+    "configured_redirect_uri": null,
+    "google_client_redirect_registration_verified": false,
+    "google_oauth_consent_verified": false,
+    "cloudfront_domain_policy_verified": false,
+    "api_mail_same_windows_identity_verified": false,
+    "refresh_token_available": false,
+    "real_delivery_verified": false,
+    "reconnect_after_host_replacement": true
+  },
+  "readiness": {
+    "api": false,
+    "authentication": false,
+    "database": false,
+    "upload_download": false,
+    "local_document_workers": false,
+    "studio": false,
+    "report_hwpx": false,
+    "report_pdf": false,
+    "gmail": false,
+    "complete_system": false
+  },
+  "validation_results": [],
+  "cost": {
+    "currency": "USD",
+    "price_checked_at": null,
+    "assumptions": [],
+    "line_items": [],
+    "estimated_24h_before_credits": null,
+    "estimated_730h_before_credits": null,
+    "estimated_24h_after_verified_credits": null,
+    "estimated_730h_after_verified_credits": null,
+    "guaranteed_free": false,
+    "stopped_resource_remaining_costs": [],
+    "excluded_costs": ["tax", "currency_conversion", "Upstage_usage"]
+  },
+  "manual_actions": [],
+  "blockers": [],
+  "handoff": {
+    "zip_local_path": null,
+    "zip_sha256": null,
+    "s3_bucket": null,
+    "s3_key": null,
+    "s3_version_id": null,
+    "s3_region": "ap-northeast-2",
+    "source_manifest_path": "source-manifest.json",
+    "validation_results_path": "validation-results.json",
+    "cost_estimate_path": "cost-estimate.json",
+    "no_secret_values_included": false
+  }
+}
+[RESULT_JSON_END]
+
+배열 필드도 비워 두는 것으로 끝내지 말고 실제 수행한 내용과 남은 작업을 원소별로 작성한다.
+
+보충 형식 규칙:
+- accounts 원소: login, event_access_summary, credential_secret_reference, credential_json_key.
+- secret_environment_bindings 원소: environment_name, store, reference, json_key. 원문 비밀값은 넣지 않는다.
+- validation_results 원소: id, status, observed_at, expected, actual_summary, evidence_file.
+- cost.line_items 원소: service, region, sku_or_dimension, unit, unit_price_usd, usage_24h, usage_730h, estimate_24h_usd, estimate_730h_usd, price_source, assumptions.
+- manual_actions 원소: id, owner, reason, exact_page_or_command, exact_non_secret_values, success_condition, blocks.
+- blockers 원소: stage, reason, required_input_or_permission, completed_safe_work.
+- 실제로 없는 스크립트·S3 객체·secret을 참조하지 않는다. 전달 가능한 ZIP과 실제 S3 객체의 해시를 검증한다.
+- status는 complete / api_deployed_integration_pending / blocked / failed 중 실제 상태로 바꾼다.
+- no_secret_values_included=true는 ZIP과 JSON을 실제로 점검한 뒤에만 설정한다.
+- ZIP 안의 result JSON이 자기 ZIP의 해시를 포함하는 순환 문제를 피한다. ZIP 내부 결과에는 zip_sha256=null로 두고, 최종 ZIP 해시는 ZIP 밖의 최종 deployment-result.json 및 .sha256에 기록한다. 외부 결과 JSON을 최종 인계 기준으로 삼는다.
+
+18. 판단에 사용할 공식 자료
+
+AWS Free Tier와 계정 상태:
+https://aws.amazon.com/free/free-tier-faqs/
+https://docs.aws.amazon.com/cli/latest/reference/freetier/get-account-plan-state.html
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html
+
+Windows AMI 조회와 플랫폼:
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/finding-an-ami-parameter-store.html
+https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html
+
+CloudFront VPC origins, HTTPS, 헤더:
+https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html
+https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-https-alternate-domain-names.html
+https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html
+
+RDS와 터널 TLS:
+https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Concepts.General.SSL.html
+https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html
+https://www.postgresql.org/docs/current/libpq-connect.html
+https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html
+
+Google OAuth:
+https://developers.google.com/identity/protocols/oauth2/web-server
+https://developers.google.com/identity/protocols/oauth2/policies
+
+문서의 서비스 지원·가격·제약은 실행 시 다시 확인하고, 코드와 충돌하면 최신 로컬 구현을 조사한 뒤 차이를 보고하라.
