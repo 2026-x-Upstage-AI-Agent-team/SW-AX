@@ -7,10 +7,9 @@ import { useAsync } from '../api/client';
 import { paths, receiptName } from '../api/intake';
 import { docLabels, when } from '../api/labels';
 import { assignFile, getBatch, isFileProcessed, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
-import { Page } from '../components/Layout';
+import IntakeLayout from '../components/IntakeLayout';
 import DocumentPreview from '../components/DocumentPreview';
-import IntakeTabs from '../components/IntakeTabs';
-import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
+import { Feedback, Notice, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
 type Item = { batch: BatchDetail; file: FileInfo };
@@ -19,13 +18,11 @@ type Action = 'assign' | 'outside' | 'hold';
 export default function Assign() {
   const { dashboard, dashboardError, events, eventsError, refresh } = useEvent();
   return (
-    <Page tone="gray" width="review">
-      <PageHeader title="파일 첨부" lead="자동 배정되지 않은 원본을 확인하고 배정할 팀과 근거를 기록하세요." />
-      <IntakeTabs />
+    <IntakeLayout>
       {dashboard ? <AssignmentQueue key={dashboard.event} dashboard={dashboard} /> : !eventsError && events?.length === 0 ? (
         <p className="surface p-6">등록된 대회가 없습니다. <Link to="/manage" className={buttonStyles.text}>대회 등록</Link></p>
       ) : <Notice error={dashboardError || eventsError} onRetry={refresh} />}
-    </Page>
+    </IntakeLayout>
   );
 }
 

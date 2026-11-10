@@ -127,7 +127,7 @@
 }
 
 @layer base {
-  html { -webkit-text-size-adjust: 100%; font-optical-sizing: auto; }
+  html { -webkit-text-size-adjust: 100%; font-optical-sizing: auto; scrollbar-gutter: stable; }
   body { @apply bg-canvas text-ink font-sans antialiased; word-break: keep-all; overflow-wrap: anywhere; }
   h1, h2, h3 { text-wrap: balance; }
   h2, h3 { letter-spacing: -.035em; }

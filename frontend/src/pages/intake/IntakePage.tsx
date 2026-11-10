@@ -6,12 +6,11 @@ import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
 import { docLabels, when } from '../../api/labels';
 import { filePreviewUrl, getBatch, getSubmission, isFileProcessed, reviewBatchConflict } from '../../api/service';
-import { Page } from '../../components/Layout';
+import IntakeLayout from '../../components/IntakeLayout';
 import DeleteIntake from '../../components/DeleteIntake';
-import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx } from '../../components/ui';
+import { Feedback, Notice, StateBadge, buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
 import Upload from './Upload';
-import IntakeTabs from '../../components/IntakeTabs';
 
 const card = 'flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]';
 
@@ -22,17 +21,7 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
   const baseId = search.get('base');
 
   return (
-    <Page tone="gray" width="normal">
-      <PageHeader
-        title={baseId ? '보완 서류 첨부' : '파일 첨부'}
-        lead={
-          baseId
-            ? '교체할 원본에 저장한 수정본을 적용하거나 새로 받은 파일을 추가하세요. 첨부하면 같은 팀의 새 제출 버전으로 검토합니다.'
-            : backend === 'intake' ? '한 팀에서 받은 신청서(01), 동의서(02), 대표 증빙(03)을 한 묶음으로 올리세요. 다음 팀 서류는 새로 첨부하세요.'
-            : '여러 팀의 신청서(01), 동의서(02), 대표 증빙(03)을 한 번에 첨부할 수 있습니다.'
-        }
-      />
-      {!baseId && <IntakeTabs />}
+    <IntakeLayout replacement={!!baseId}>
       {!events ? (
         <Notice error={eventsError && `${eventsError} (API 서버가 실행 중인지 확인해 주세요.)`} onRetry={refresh} />
       ) : !event ? (
@@ -54,7 +43,7 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
       ) : (
         <Detail eventId={event.id} />
       )}
-    </Page>
+    </IntakeLayout>
   );
 }
 
