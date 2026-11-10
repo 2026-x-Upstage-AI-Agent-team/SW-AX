@@ -53,11 +53,17 @@ export function WorkspaceTourProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const root = workspacePath(workspaceId, '/', categoryId);
   const storageKey = `swax.workspace-tour.v1.${backend}.${workspaceId}`;
+  const observedPath = useRef(pathname);
   const [step, setStep] = useState<number | null>(() => {
     try {
       const stored = localStorage.getItem(storageKey);
       if (stored === 'done') return null;
-      if (stored !== null && /^\d+$/.test(stored) && Number(stored) < steps.length) return Number(stored);
+      if (stored !== null && /^\d+$/.test(stored) && Number(stored) < steps.length) {
+        const index = Number(stored);
+        const expected = workspacePath(workspaceId, steps[index].path, categoryId);
+        if (pathname.replace(/\/$/, '') === expected.replace(/\/$/, '')
+          || (index === 3 && pathname.startsWith(expected + '/'))) return index;
+      }
     } catch { /* A tour can also run without browser storage. */ }
     return pathname.replace(/\/$/, '') === root.replace(/\/$/, '') ? 0 : null;
   });
@@ -90,9 +96,14 @@ export function WorkspaceTourProvider({ children }: { children: ReactNode }) {
     }
   }, [step, storageKey]);
   useEffect(() => {
+    // Step controls can render before React Router commits the destination.
+    // Only actual route changes should advance the tour after a target click.
+    if (observedPath.current === pathname) return;
+    observedPath.current = pathname;
     if (step === 0 && pathname === workspacePath(workspaceId, '/intake', categoryId)) setStep(1);
     if ((step === 1 || step === 2) && pathname.startsWith(workspacePath(workspaceId, '/intake/batches/', categoryId))) setStep(3);
-  }, [step, pathname, workspaceId, categoryId]);
+    if ((step === 1 || step === 2) && pathname.replace(/\/$/, '') === root.replace(/\/$/, '')) setStep(0);
+  }, [step, pathname, workspaceId, categoryId, root]);
 
   function start() {
     const upload = document.querySelector<HTMLElement>('[data-tour="upload-form"]');

@@ -69,6 +69,15 @@ test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
   await page.reload();
   await guide.getByRole('heading', { name: '한 팀의 서류를 함께 선택하세요.' }).waitFor();
+  await guide.getByRole('button', { name: '이전', exact: true }).click();
+  await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
+  assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test');
+  await page.locator('.workspace-rail').getByRole('link', { name: '파일 첨부', exact: true }).click();
+  await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
+  await page.goBack();
+  await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
+  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
   await guide.getByRole('button', { name: '다음 단계' }).click();
   await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
   assert.ok(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isDisabled());

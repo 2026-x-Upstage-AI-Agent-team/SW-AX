@@ -72,6 +72,7 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     await page.getByRole('heading', { name: /어떤 서류 업무/ }).waitFor();
     assert.equal(await page.getByRole('navigation', { name: '주 메뉴' }).count(), 0);
     const disabledCards = page.locator('.category-card-disabled');
+    await disabledCards.first().waitFor();
     assert.equal(await disabledCards.count(), preparing.length);
     assert.equal(await disabledCards.getByRole('link').count(), 0);
     assert.equal(await disabledCards.getByRole('button').count(), 0);
