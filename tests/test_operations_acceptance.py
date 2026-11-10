@@ -144,11 +144,14 @@ class OperationalAcceptance(unittest.TestCase):
         for s,award in (("set01","대상"),("set02","최우수상")):
             d=details[s]
             self.assertEqual(len(d["fields"]["members"]),3 if s=="set01" else 4)
-            body=dict(d["fields"],revision=d["revision"],decision="승인",note="가상 제출 원본과 대조",
-                      award_type=award,support_amount="100000",issues=[])
-            body["recipient"] = dict(body["recipient"],gross_amount="100000",tax_amount="0",net_amount="100000")
-            if d["decision"]!="승인" or any(d["fields"].get(k)!=body[k] for k in ("recipient","award_type","support_amount")):
+            body=dict(members=d["fields"]["members"],recipient=d["fields"]["recipient"],revision=d["revision"],
+                      decision="승인",note="가상 제출 원본과 대조",issues=[])
+            if d["decision"]!="승인":
                 staff.put("/api/submissions/"+d["id"]+"/review",json=body).raise_for_status()
+            pay=dict(award_type=award,support_amount="100000",gross_amount="100000",tax_amount="0",net_amount="100000")
+            if any((d["fields"] | d["fields"]["recipient"]).get(k)!=v for k,v in pay.items()):
+                staff.put("/api/submissions/"+d["id"]+"/payment",
+                          json=dict(pay,revision=d["revision"]+int(d["decision"]!="승인"))).raise_for_status()
             selection.append(d["id"])
         def order(client):
             return client.post("/api/reports",json={"event":event,"submissions":selection}).raise_for_status().json()["id"]

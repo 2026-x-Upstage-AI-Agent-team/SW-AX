@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Download, FileText, FileType2 } from 'lucide-react';
-import { useAsync, usePolling } from '../api/client';
+import { ApiError, useAsync, usePolling } from '../api/client';
 import { when } from '../api/labels';
 import {
   confirmReport,
@@ -9,20 +9,19 @@ import {
   createReport,
   getDraft,
   getReport,
-  getSubmission,
   reportFileUrl,
-  reviewBody,
-  saveReview,
+  savePayment,
   uploadEditedReport,
   type DraftTeam,
+  type Payment,
   type ReportView,
 } from '../api/service';
 import { Page } from '../components/Layout';
 import { Feedback, Notice, PageHeader, PdfFrame, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
-type Pay = { award_type: string; support_amount: string; gross_amount: string; tax_amount: string; net_amount: string };
-const PAY_FIELDS: Array<[keyof Pay, string, boolean]> = [
+type PaymentEdit = { revision: number; values: Payment };
+const PAY_FIELDS: Array<[keyof Payment, string, boolean]> = [
   ['award_type', '시상구분', false],
   ['support_amount', '지원액(원)', true],
   ['gross_amount', '지급총액', true],
@@ -30,13 +29,14 @@ const PAY_FIELDS: Array<[keyof Pay, string, boolean]> = [
   ['net_amount', '차인지급액', true],
 ];
 
-const payOf = (t: DraftTeam): Pay => ({
+const payOf = (t: DraftTeam): Payment => ({
   award_type: t.award_type ?? '',
   support_amount: String(t.support_amount ?? ''),
   gross_amount: String(t.recipient?.gross_amount ?? ''),
   tax_amount: String(t.recipient?.tax_amount ?? ''),
   net_amount: String(t.recipient?.net_amount ?? ''),
 });
+const samePay = (a: Payment, b: Payment) => PAY_FIELDS.every(([key]) => a[key] === b[key]);
 
 export default function Report() {
   const { dashboard, revision, refresh } = useEvent();
@@ -46,6 +46,7 @@ export default function Report() {
   const ready = teams.filter((t) => t.pending.length === 0);
   const [order, setOrder] = useState<string[]>([]);
   const [rid, setRid] = useState<string>();
+  const [edits, setEdits] = useState<Record<string, PaymentEdit>>({});
   const previousReady = useRef<string[]>([]);
 
   // 처음에는 준비된 팀을 모두 현황 순서로 넣는다. 새로 준비된 팀은 뒤에 붙인다.
@@ -61,6 +62,29 @@ export default function Report() {
   const activeRid = dashboard?.reports.some((item) => item.id === rid) ? rid : latest?.id;
   const chosen = order.map((id) => teams.find((t) => t.submission === id)).filter((t): t is DraftTeam => !!t);
   const held = teams.filter((t) => t.pending.length > 0);
+  function editFor(t: DraftTeam) {
+    const edit = edits[t.submission!];
+    return edit && !samePay(edit.values, payOf(t)) ? edit : undefined;
+  }
+  function editPayment(t: DraftTeam, values: Payment) {
+    const revision = editFor(t)?.revision ?? t.revision;
+    setEdits((prev) => {
+      const next = { ...prev };
+      if (samePay(values, payOf(t))) delete next[t.submission!];
+      else next[t.submission!] = { revision, values };
+      return next;
+    });
+  }
+  useEffect(() => {
+    setEdits((prev) => {
+      const saved = teams.filter((t) => prev[t.submission!] && samePay(prev[t.submission!].values, payOf(t)));
+      if (!saved.length) return prev;
+      const next = { ...prev };
+      for (const t of saved) delete next[t.submission!];
+      return next;
+    });
+  }, [teams]);
+  const unpaid = chosen.filter((t) => t.missing_payouts.length > 0 || editFor(t));
 
   const move = (index: number, delta: number) =>
     setOrder((list) => {
@@ -75,7 +99,7 @@ export default function Report() {
     <Page tone="gray">
       <PageHeader
         title="보고서 확정"
-        lead="승인한 팀의 지급 정보와 편철 순서를 확인한 뒤 같은 버전의 HWPX와 PDF를 내려받습니다."
+        lead="서류를 승인한 팀의 지급 정보를 저장하고, 편철할 팀과 순서를 선택하세요."
       />
 
       {!draft.data ? (
@@ -86,7 +110,7 @@ export default function Report() {
             <h2 id="teams-h" className="text-xl font-extrabold">
               팀 순서와 지급 정보
             </h2>
-            {teams.length === 0 && <p className="rounded-[20px] bg-white px-5 py-6 text-sm text-muted">판정이 끝난 팀이 없습니다.</p>}
+            {ready.length === 0 && <p className="rounded-[20px] bg-white px-5 py-6 text-sm text-muted">서류를 승인하면 이곳에서 지급 정보를 입력할 수 있습니다.</p>}
             {ready.map((t) => {
               const index = order.indexOf(t.submission!);
               return (
@@ -97,15 +121,16 @@ export default function Report() {
                   count={order.length}
                   onToggle={(on) => toggle(t.submission!, on)}
                   onMove={(d) => move(index, d)}
-                  onSaved={refresh}
-                />
+                >
+                  <PayForm t={t} edit={editFor(t)} onChange={(values) => editPayment(t, values)} onSaved={refresh} />
+                </TeamCard>
               );
             })}
             {held.length > 0 && (
               <div className="flex flex-col gap-2.5 rounded-[20px] border border-dashed border-[#cdcfcf] px-5 py-[18px]">
                 <strong className="text-sm">편철 전에 할 일 {held.length}팀</strong>
                 {held.map((t) => (
-                  <HeldTeam key={t.submission} t={t} onSaved={refresh} />
+                  <HeldTeam key={t.submission} t={t} />
                 ))}
               </div>
             )}
@@ -116,7 +141,7 @@ export default function Report() {
               미리보기와 생성
             </h2>
             <Tables teams={chosen} />
-            <Generate event={event} order={order} disabled={chosen.length === 0} onCreated={(id) => { setRid(id); refresh(); }} />
+            <Generate event={event} order={chosen.map((t) => t.submission!)} unpaid={unpaid.length} onCreated={(id) => { setRid(id); refresh(); }} />
             {activeRid && <ReportPanel key={activeRid} rid={activeRid} onChanged={(id) => { if (id) setRid(id); refresh(); }} />}
             {dashboard && dashboard.reports.length > 0 && (
               <div className="flex flex-col gap-2 rounded-[20px] bg-white p-5">
@@ -152,14 +177,14 @@ function TeamCard({
   count,
   onToggle,
   onMove,
-  onSaved,
+  children,
 }: {
   t: DraftTeam;
   index: number;
   count: number;
   onToggle: (on: boolean) => void;
   onMove: (delta: number) => void;
-  onSaved: () => void;
+  children: ReactNode;
 }) {
   const included = index >= 0;
   return (
@@ -178,64 +203,51 @@ function TeamCard({
         <MoveButton label={`${t.team} 위로`} disabled={!included || index === 0} onClick={() => onMove(-1)} dir="up" />
         <MoveButton label={`${t.team} 아래로`} disabled={!included || index === count - 1} onClick={() => onMove(1)} dir="down" />
       </div>
-      <PayForm t={t} onSaved={onSaved} />
+      {children}
     </div>
   );
 }
 
-function HeldTeam({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
-  const [open, setOpen] = useState(false);
-  const onlyPay = t.pending.every((p) => p === '시상구분·지원액 입력');
+function HeldTeam({ t }: { t: DraftTeam }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-white px-4 py-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <strong>{t.team}</strong>
         <span className="text-xs text-caution">{t.pending.join(' · ')}</span>
         <span className="flex-auto" />
-        {onlyPay || t.pending.includes('시상구분·지원액 입력') ? (
-          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="text-xs font-bold text-brand-strong">
-            {open ? '접기' : '지급 정보 입력'}
-          </button>
-        ) : null}
         {t.submission && (
           <Link to={`/teams/${t.submission}`} className="text-xs font-bold text-brand-strong">
             검토 화면 →
           </Link>
         )}
       </div>
-      {open && <PayForm t={t} onSaved={onSaved} />}
     </div>
   );
 }
 
-/** 팀별 시상구분·지원액·지급액 입력. 검토 저장 API에 기존 검토 내용과 함께 보낸다. */
-function PayForm({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
-  const [pay, setPay] = useState<Pay>(payOf(t));
+function PayForm({ t, edit, onChange, onSaved }: {
+  t: DraftTeam; edit?: PaymentEdit; onChange: (values: Payment) => void; onSaved: () => void;
+}) {
+  const pay = edit?.values ?? payOf(t);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const dirty = JSON.stringify(pay) !== JSON.stringify(payOf(t));
 
   async function save() {
-    if (!t.submission) return;
+    if (!t.submission || !edit) return;
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      const s = await getSubmission(t.submission);
-      const clean = (v: string) => v.replace(/\s/g, '');
-      await saveReview(
-        s.id,
-        reviewBody(s, {
-          award_type: pay.award_type.trim(),
-          support_amount: clean(pay.support_amount),
-          recipient: { ...s.fields.recipient, gross_amount: clean(pay.gross_amount), tax_amount: clean(pay.tax_amount), net_amount: clean(pay.net_amount) },
-        }),
-      );
+      const values = { ...pay };
+      for (const [key] of PAY_FIELDS) values[key] = values[key].trim();
+      await savePayment(t.submission, edit.revision, values);
+      onChange(values);
       setMessage('저장했습니다.');
       onSaved();
     } catch (err) {
       setError((err as Error).message);
+      if (err instanceof ApiError && err.status === 409) onSaved();
     } finally {
       setBusy(false);
     }
@@ -243,7 +255,7 @@ function PayForm({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
 
   return (
     <div className="flex flex-col gap-2.5">
-      {t.missing_payouts.length > 0 && <p className="text-xs text-caution">확정 전 입력할 항목 · {t.missing_payouts.join(', ')}</p>}
+      {t.missing_payouts.length > 0 && <p className="text-xs text-caution">지급 정보 입력 대기 · {t.missing_payouts.join(', ')}</p>}
       <div className="grid grid-cols-2 gap-2.5">
         {PAY_FIELDS.map(([key, label, numeric]) => (
           <label key={key} className={cx('flex flex-col gap-1.5 text-xs text-muted', key === 'award_type' && 'col-span-2')}>
@@ -251,19 +263,21 @@ function PayForm({ t, onSaved }: { t: DraftTeam; onSaved: () => void }) {
             <input
               type="text"
               inputMode={numeric ? 'numeric' : undefined}
+              maxLength={key === 'award_type' ? 60 : undefined}
               placeholder="미확인"
               value={pay[key]}
               disabled={busy}
-              onChange={(e) => setPay((p) => ({ ...p, [key]: e.target.value }))}
+              onChange={(e) => { setMessage(''); onChange({ ...pay, [key]: e.target.value }); }}
               className={cx(inputStyle, numeric && 'font-mono')}
             />
           </label>
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={save} disabled={busy || !dirty} className={cx(buttonStyles.secondary, 'min-h-10')}>
+        <button type="button" onClick={save} disabled={busy || !edit || edit.revision !== t.revision} className={cx(buttonStyles.secondary, 'min-h-10')}>
           지급 정보 저장
         </button>
+        {edit && edit.revision !== t.revision && <button type="button" className={buttonStyles.text} onClick={() => { onChange(payOf(t)); setError(''); }}>변경된 저장값 불러오기</button>}
         <span className="text-[11px] text-subtle">금액은 원 단위 정수. 세액은 자동 계산하지 않습니다.</span>
       </div>
       <Feedback error={error} message={message} />
@@ -379,7 +393,7 @@ function Tables({ teams }: { teams: DraftTeam[] }) {
   );
 }
 
-function Generate({ event, order, disabled, onCreated }: { event: string; order: string[]; disabled: boolean; onCreated: (rid: string) => void }) {
+function Generate({ event, order, unpaid, onCreated }: { event: string; order: string[]; unpaid: number; onCreated: (rid: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function run() {
@@ -399,9 +413,9 @@ function Generate({ event, order, disabled, onCreated }: { event: string; order:
       <div className="flex flex-wrap items-center gap-3.5">
         <div className="flex flex-[1_1_260px] flex-col gap-1">
           <strong className="text-[15px]">선택한 {order.length}팀으로 보고서 생성</strong>
-          <span className="text-[13px] text-muted">같은 내용이면 기존 버전을 다시 씁니다. 지급 정보나 제출본이 바뀌면 새 버전을 만듭니다.</span>
+          {unpaid > 0 && <span className="text-[13px] text-caution">선택한 {unpaid}팀의 지급 정보를 모두 입력하고 저장하세요.</span>}
         </div>
-        <button type="button" onClick={run} disabled={disabled || busy} className={buttonStyles.primary}>
+        <button type="button" onClick={run} disabled={!order.length || unpaid > 0 || busy} className={buttonStyles.primary}>
           미리보기 생성
         </button>
       </div>

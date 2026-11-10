@@ -203,11 +203,10 @@ def payment_draft(event: str):
             pending = []
             if not s or held(db,team["id"]):
                 pending.append("팀 배정 확인")
-            if not s or s["decision"] != "승인":
+            if not s or s["decision"] != "승인" or s["state"] != "done":
                 pending.append("현재 제출본 승인")
-            if not fields.get("award_type") or fields.get("support_amount") in ("",None):
-                pending.append("시상구분·지원액 입력")
             result.append(dict(team=team["name"],submission=team["current"],rep=team["rep"],
+                               revision=s["revision"] if s else None,
                                version=s["version"] if s else None,pending=pending,missing_payouts=missing_payouts(fields),**fields))
         return {"teams":result}
 
@@ -428,8 +427,6 @@ class Review(BaseModel):
     note: str = Field(default="",max_length=1000)
     members: list[Member] = Field(max_length=150)
     recipient: dict[str,str]
-    award_type: str = Field(default="",max_length=60)
-    support_amount: str = ""
     issues: list[str] = Field(default_factory=list)
 
 
@@ -437,14 +434,9 @@ class Review(BaseModel):
 def save_review(sid: str, body: Review):
     if body.decision not in ("승인","보완 필요","작성 중") or any(k not in ISSUES for k in body.issues):
         raise HTTPException(422,"검토 결론과 보완 항목을 확인하세요.")
-    recipient = {k:body.recipient.get(k,"").strip() for k in ("bank_name","account_number","account_holder","rrn_display","gross_amount","tax_amount","net_amount")}
+    recipient = {k:body.recipient.get(k,"").strip() for k in ("bank_name","account_number","account_holder","rrn_display")}
     if recipient["rrn_display"] and not re.fullmatch(r"\d{6}-(?:\*{7}|\d\*{6})",recipient["rrn_display"]):
         raise HTTPException(422,"주민번호는 원본에 표시된 마스킹 표기로 입력하세요.")
-    for value in [body.support_amount]+[recipient[k] for k in ("gross_amount","tax_amount","net_amount")]:
-        if value and not re.fullmatch(r"\d{1,13}|\d{1,3}(?:,\d{3}){1,4}",value):
-            raise HTTPException(422,"금액은 0 이상의 원 단위 정수로 입력하세요.")
-    fields = {"members":[m.model_dump() for m in body.members],"recipient":recipient,
-              "award_type":clean(body.award_type),"support_amount":body.support_amount}
     with database(True) as db:
         s,t = active(db,sid)
         changed(s,body.revision)
@@ -463,6 +455,10 @@ def save_review(sid: str, body: Review):
             raise HTTPException(409,"이미 안내한 검토 결론을 바꾸려면 새 보완본을 접수하세요.")
         if decision == "보완 필요" and not body.issues:
             raise HTTPException(422,"팀장에게 안내할 보완 항목을 선택하세요.")
+        saved = json.loads(s["fields"] or "{}")
+        recipient.update({k:saved.get("recipient",{}).get(k,"") for k in ("gross_amount","tax_amount","net_amount")})
+        fields = {"members":[m.model_dump() for m in body.members], "recipient":recipient,
+                  "award_type":saved.get("award_type",""), "support_amount":saved.get("support_amount","")}
         db.execute("UPDATE submissions SET fields=?,note=?,decision=?,updated=?,revision=revision+1 WHERE id=?",
                    (dump(fields),body.note,decision,now(),sid))
         audit(db,sid,"검토 저장",{"decision":decision,"issues":body.issues})
@@ -470,6 +466,33 @@ def save_review(sid: str, body: Review):
             enqueue_mail(db,sid,"검토 완료" if decision == "승인" else "보완 요청")
         elif decision == "보완 필요":
             enqueue_mail(db,sid,"보완 요청")
+    return {"saved":True}
+
+
+class Payment(BaseModel):
+    revision: int
+    award_type: str = Field(max_length=60)
+    support_amount: str
+    gross_amount: str
+    tax_amount: str
+    net_amount: str
+
+
+@app.put("/api/submissions/{sid}/payment")
+def save_payment(sid: str, body: Payment):
+    amounts = {k:getattr(body,k).strip() for k in ("support_amount","gross_amount","tax_amount","net_amount")}
+    if any(value and not re.fullmatch(r"[0-9]{1,13}|[0-9]{1,3}(?:,[0-9]{3}){1,4}",value) for value in amounts.values()):
+        raise HTTPException(422,"금액은 0 이상의 원 단위 정수로 입력하세요.")
+    with database(True) as db:
+        s,_ = active(db,sid)
+        changed(s,body.revision)
+        if s["decision"] != "승인" or s["state"] != "done":
+            raise HTTPException(409,"현재 제출본의 서류를 먼저 승인하세요.")
+        fields = effective_fields(s)
+        fields.update(award_type=body.award_type.strip(),support_amount=amounts.pop("support_amount"))
+        fields["recipient"].update(amounts)
+        db.execute("UPDATE submissions SET fields=?,updated=?,revision=revision+1 WHERE id=?",(dump(fields),now(),sid))
+        audit(db,sid,"지급 정보 저장",{})
     return {"saved":True}
 
 
@@ -580,6 +603,7 @@ def insert_report(db, event, selection, snapshot, parent=None):
 def new_report(body: ReportOrder):
     with database(True) as db:
         snap = report_snapshot(db,body.event,body.submissions)
+        require_payouts(snap)
         existing = row(db,"SELECT id,version FROM reports WHERE snapshot=? AND event=? AND parent IS NULL AND state!='failed' ORDER BY version DESC LIMIT 1",dump(snap),body.event)
         return existing or insert_report(db,body.event,body.submissions,snap)
 
@@ -623,6 +647,7 @@ def edited_report(rid: str, file: UploadFile):
     file.file.seek(0)
     with database(True) as db:
         r = require(db,"reports",rid)
+        require_payouts(json.loads(r["snapshot"]))
         check_report(db,r)
         if r["state"] != "confirmed":
             raise HTTPException(409,"확정한 보고서의 편집본을 선택하세요.")

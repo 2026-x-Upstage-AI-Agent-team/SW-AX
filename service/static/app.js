@@ -152,7 +152,7 @@ async function render(autopoll = false) {
               "/" +
               encodeURIComponent(id),
           )
-        : null,
+        : page === "report" ? api("/api/events/" + encodeURIComponent(selected) + "/draft") : null,
     ]);
     if (gen !== generation) return;
     $("#event").innerHTML = d.events
@@ -185,9 +185,9 @@ async function render(autopoll = false) {
         : d.teams.some((t) => t.submission && !t.submission.verdict);
       if (v?.error) delay = 15000;
     } else if (page === "report") {
-      view.innerHTML = id ? reportPage(v) : reportsPage(d);
+      view.innerHTML = id ? reportPage(v) : reportsPage(d, v.teams);
       if (id) bindReport(v, () => render());
-      else bindReports(d);
+      else bindReports(d, v.teams);
       polling = id
         ? ["queued", "building"].includes(v.state)
         : d.reports.some((r) => ["queued", "building"].includes(r.state));

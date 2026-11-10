@@ -14,8 +14,7 @@ import static kr.swax.intake.WorkflowData.Resource.*;
 @Transactional
 class ReviewDecisions {
     record Member(String role,String name,String studentId,String major,String school) {}
-    record Review(Integer revision,String decision,String note,List<Member> members,Map<String,String> recipient,
-                  String awardType,String supportAmount,List<String> issues) {}
+    record Review(Integer revision,String decision,String note,List<Member> members,Map<String,String> recipient,List<String> issues) {}
     record Address(String email,UUID submission) {}
     record Recovery(String job,Boolean confirmedAbsent) {}
     private final WorkflowData data;
@@ -65,9 +64,8 @@ class ReviewDecisions {
             throw ApiErrors.error(409,"현재 검토 완료된 제출본을 다시 열어 주세요.");
         String choice=Objects.toString(form.decision(),"");
         String note=Objects.toString(form.note(),"").strip();
-        String award=Objects.toString(form.awardType(),"").strip();
         List<String> issues=form.issues()==null?List.of():form.issues();
-        if (!Set.of("승인","보완 필요","작성 중").contains(choice) || note.length()>1000 || award.length()>60
+        if (!Set.of("승인","보완 필요","작성 중").contains(choice) || note.length()>1000
                 || issues.stream().anyMatch(k->k==null||!ISSUES.contains(k)) || (choice.equals("보완 필요")&&issues.isEmpty()))
             throw ApiErrors.error(422,"검토 결론·근거와 보완 항목을 확인하세요.");
         if (!sub.path("decision").isNull() && !choice.equals(sub.path("decision").asString("")))
@@ -84,14 +82,15 @@ class ReviewDecisions {
              !sub.path("output").path("program").asString("").equals(data.db.queryForObject("SELECT name FROM award_event WHERE id=?",String.class,event)))))
             throw ApiErrors.error(422,"원본과 대조한 근거를 기록하세요.");
         var recipient=new HashMap<String,String>();
-        for(String key:List.of("bank_name","account_number","account_holder","rrn_display","gross_amount","tax_amount","net_amount"))
+        for(String key:List.of("bank_name","account_number","account_holder","rrn_display"))
             recipient.put(key,form.recipient()==null?"":Objects.toString(form.recipient().get(key),"").strip());
         if (!recipient.get("rrn_display").isEmpty()&&!recipient.get("rrn_display").matches("\\d{6}-(?:\\*{7}|\\d\\*{6})"))
             throw ApiErrors.error(422,"원본에 표시된 마스킹 주민번호를 입력하세요.");
-        String amount=Objects.toString(form.supportAmount(),"").strip();
-        for(String value:List.of(amount,recipient.get("gross_amount"),recipient.get("tax_amount"),recipient.get("net_amount")))
-            if(!value.isEmpty()&&!value.matches("(?:[0-9]{1,13}|[0-9]{1,3}(?:,[0-9]{3}){1,4})")) throw ApiErrors.error(422,"원 단위 정수로 입력하세요.");
-        String fields=data.json.writeValueAsString(Map.of("members",members,"recipient",recipient,"award_type",award,"support_amount",amount));
+        var saved=form.revision()>0 ? sub.path("fields") : data.json.createObjectNode();
+        for(String key:List.of("gross_amount","tax_amount","net_amount"))
+            recipient.put(key,saved.path("recipient").path(key).asString(""));
+        String fields=data.json.writeValueAsString(Map.of("members",members,"recipient",recipient,
+                "award_type",saved.path("award_type").asString(""),"support_amount",saved.path("support_amount").asString("")));
         data.db.update("""
             INSERT INTO review_resolution(submission_id,revision,decision,note,fields,issues) VALUES(?,1,?,?,?::jsonb,?::jsonb)
             ON CONFLICT(submission_id) DO UPDATE SET revision=review_resolution.revision+1,decision=excluded.decision,

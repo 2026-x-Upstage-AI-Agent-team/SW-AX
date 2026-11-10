@@ -4,6 +4,7 @@ import {
   badge,
   empty,
   esc,
+  field,
   head,
   icon,
   modal,
@@ -13,17 +14,24 @@ import {
   when,
 } from "./common.js";
 
-export function reportsPage(d) {
+const paymentLabels = { award_type: "시상구분", support_amount: "지원액", gross_amount: "지급총액", tax_amount: "세액", net_amount: "차인지급액" };
+function paymentCell(team) {
+  if (!team || team.pending.length) return "서류 승인 대기";
+  return esc(team.missing_payouts.length ? "지급 정보 입력 대기 · " + team.missing_payouts.join(", ") : "지급 정보 저장 완료") +
+    ' <button class="sm" data-payment="' + esc(team.submission) + '">지급 정보 입력</button>';
+}
+export function reportsPage(d, teams) {
   return (
     head("지급내역서", "승인한 제출본의 팀 순서와 지급액을 확인하고 편집용 한글과 PDF를 생성합니다.") +
     '<section class="panel">' +
     section("편철할 팀 선택") +
     (d.teams.length
-      ? '<div class="table-scroll"><table><thead><tr><th>포함</th><th>팀 / 버전</th><th>명단</th><th>시상구분 / 팀 지원액</th><th>검토</th><th>순서</th></tr></thead><tbody id="report-order">' +
+      ? '<div class="table-scroll"><table><thead><tr><th>포함</th><th>팀 / 버전</th><th>명단</th><th>지급 정보</th><th>검토</th><th>순서</th></tr></thead><tbody id="report-order">' +
         d.teams
           .map((t) => {
             const s = t.submission,
-              eligible = s?.decision === "승인" && !t.held;
+              draft = teams.find((team) => s && team.submission === s.id),
+              eligible = draft && !draft.pending.length;
             return (
               '<tr><td><input type="checkbox" aria-label="' +
               esc(t.name) +
@@ -38,14 +46,8 @@ export function reportsPage(d) {
               "</small></td><td>" +
               (s ? s.students + "명" : "—") +
               "</td><td>" +
-              esc(s?.award_type || "미확인") +
-              "<small>" +
-              esc(
-                s?.support_amount
-                  ? Number(s.support_amount.replaceAll(",", "")).toLocaleString("ko-KR") + "원"
-                  : "미확인",
-              ) +
-              "</small></td><td>" +
+              paymentCell(draft) +
+              "</td><td>" +
               badge(t.held ? "unassigned" : s?.decision || s?.verdict || s?.state || "waiting") +
               '</td><td><button class="sm" data-up aria-label="팀 순서 올리기">↑</button> <button class="sm" data-down aria-label="팀 순서 내리기">↓</button></td></tr>'
             );
@@ -84,7 +86,7 @@ export function reportsPage(d) {
     "</section>"
   );
 }
-export function bindReports(d) {
+export function bindReports(d, teams) {
   $("#draft").ontoggle = async (e) => {
     if (!e.target.open) return;
     const { teams } = await api("/api/events/" + d.event + "/draft");
@@ -143,16 +145,43 @@ export function bindReports(d) {
   };
   const list = $("#report-order");
   if (!list) return;
+  const selected = () => [...list.querySelectorAll("input:checked")].map((input) => input.value);
+  function updateButton() {
+    const ids = selected();
+    $("#build-report").disabled = !ids.length || teams.some((t) => ids.includes(t.submission) && t.missing_payouts.length);
+  }
+  list.onchange = updateButton;
+  updateButton();
   list.onclick = (e) => {
     const tr = e.target.closest("tr");
     if (!tr) return;
+    if (e.target.matches("[data-payment]")) {
+      const team = teams.find((t) => t.submission === e.target.dataset.payment);
+      const cell = e.target.closest("td");
+      modal(team.team + " 지급 정보", '<form id="payment-form" class="stack">' +
+        Object.entries(paymentLabels).map(([k,label]) => field(label, "entry-" + k, team[k] ?? team.recipient[k] ?? "")).join("") +
+        '<button class="primary">지급 정보 저장</button></form>');
+      $("#payment-form").onsubmit = async (event) => {
+        event.preventDefault();
+        const values = Object.fromEntries(Object.keys(paymentLabels).map((k) => [k, $("#entry-" + k).value.trim()]));
+        await api("/api/submissions/" + team.submission + "/payment", "PUT", { revision: team.revision, ...values });
+        const draft = await api("/api/events/" + d.event + "/draft");
+        Object.assign(team, draft.teams.find((t) => t.submission === team.submission));
+        cell.innerHTML = paymentCell(team);
+        updateButton();
+        if ($("#draft").open) await $("#draft").ontoggle({ target: $("#draft") });
+        $("#dialog").close();
+        notice("지급 정보를 저장했습니다.");
+      };
+      return;
+    }
     if (e.target.matches("[data-up]") && tr.previousElementSibling)
       list.insertBefore(tr, tr.previousElementSibling);
     if (e.target.matches("[data-down]") && tr.nextElementSibling)
       list.insertBefore(tr.nextElementSibling, tr);
   };
   $("#build-report").onclick = async () => {
-    const ids = [...list.querySelectorAll("input:checked")].map((i) => i.value);
+    const ids = selected();
     const r = await api("/api/reports", "POST", { event: d.event, submissions: ids });
     location.hash = "report/" + r.id;
   };

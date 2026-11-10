@@ -67,8 +67,9 @@ class IntakeDeletionTest(unittest.TestCase):
                         json={"state": "done", "studio_job_id": "test-" + jid, "verdict": "담당자확인",
                               "reason": "시험 판정", "output": {"documents": docs}}).raise_for_status()
         self.staff.put(f"/api/submissions/{sid}/review", json={"revision": 0, "decision": "승인", "note": "원본 대조",
-            "members": [{"role": "대표", "name": "시험 대표"}], "recipient": {"gross_amount":"100","tax_amount":"0","net_amount":"100"},
-            "award_type": "대상", "support_amount": "100", "issues": []}).raise_for_status()
+            "members": [{"role": "대표", "name": "시험 대표"}], "recipient": {}, "issues": []}).raise_for_status()
+        self.staff.put(f"/api/submissions/{sid}/payment",json={"revision":1,"award_type":"대상","support_amount":"100",
+            "gross_amount":"100","tax_amount":"0","net_amount":"100"}).raise_for_status()
         return sid
 
     def report(self, *submissions):

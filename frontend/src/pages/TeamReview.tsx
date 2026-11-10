@@ -258,7 +258,7 @@ function StudioExplanation({ s }: { s: SubmissionDetail }) {
 function decidedMessage(s: SubmissionDetail, d: Decision) {
   if (s.verdict === '담당자확인') return `‘${d}’으로 기록했습니다. 이메일 발송에서 팀장에게 보낼 ${d === '승인' ? '검토 완료' : '보완 요청'} 초안을 확인하세요.`;
   if (d === '보완 필요') return '‘보완 필요’로 기록했습니다. 이메일 발송에서 선택한 항목이 담긴 초안을 확인하세요.';
-  return '승인했습니다. 시상구분·지원액을 넣으면 보고서에 편철할 수 있습니다.';
+  return '서류를 승인했습니다.';
 }
 
 
@@ -334,8 +334,6 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
   const [decision, setDecision] = useState<Decision | ''>(s.decision ?? '');
   const [note, setNote] = useState(s.note);
   const [issues, setIssues] = useState<string[]>(s.result?.issues ?? []);
-  const [award, setAward] = useState(s.fields.award_type ?? '');
-  const [support, setSupport] = useState(s.fields.support_amount ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -354,8 +352,6 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
           decision: final && decision ? decision : s.decision ?? '작성 중',
           note,
           issues: decision === '보완 필요' ? issues : s.result?.issues ?? [],
-          award_type: award,
-          support_amount: support.replace(/\s/g, ''),
         }),
       );
       setMessage(final && decision && !locked ? decidedMessage(s, decision) : '저장했습니다.');
@@ -419,27 +415,18 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
           확인 메모{needsNote && <span className="text-caution"> · 원본과 대조한 결과를 한 줄로 기록해 주세요</span>}
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000} className={cx(inputStyle, 'h-auto py-2.5 leading-relaxed')} />
         </label>
-        <div className="grid grid-cols-2 gap-2.5">
-          <label className="flex flex-col gap-1.5 text-xs text-muted">
-            시상구분
-            <input value={award} onChange={(e) => setAward(e.target.value)} placeholder="미확인" maxLength={60} className={inputStyle} />
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs text-muted">
-            지원액(원)
-            <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="미확인" inputMode="numeric" className={cx(inputStyle, 'font-mono')} />
-          </label>
-        </div>
         <div className="flex flex-wrap gap-2">
           {!locked && (
             <button type="button" disabled={!decision} onClick={() => save(true)} className={cx(buttonStyles.primary, 'min-h-11 text-sm')}>
               결론 기록
             </button>
           )}
-          <button type="button" onClick={() => save(false)} className={buttonStyles.secondary}>
-            {locked ? '지급 정보 저장' : '임시 저장'}
+          <button type="button" disabled={locked && note === s.note} onClick={() => save(false)} className={buttonStyles.secondary}>
+            {locked ? '메모 저장' : '임시 저장'}
           </button>
         </div>
       </fieldset>
+      {s.decision === '승인' && canSave && <Link to="/report" className={cx(buttonStyles.text, 'self-start')}>보고서에서 지급 정보 입력 →</Link>}
       {s.state !== 'done' && <p className="text-xs text-subtle">Studio 판정이 끝난 뒤 기록할 수 있습니다.</p>}
       <Feedback error={error} message={message} />
     </div>

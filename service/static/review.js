@@ -33,9 +33,6 @@ const payout = {
   bank_name: "은행명",
   account_number: "계좌번호",
   account_holder: "예금주",
-  gross_amount: "지급총액 (원)",
-  tax_amount: "세액 (원)",
-  net_amount: "차인지급액 (원)",
 };
 const person = { role: "구분", name: "성명", student_id: "학번", major: "전공", school: "학교" };
 function personRow(m) {
@@ -60,7 +57,7 @@ function reviewFields(s) {
   const f = s.fields;
   return (
     '<form class="panel stack" id="review-form">' +
-    section("담당자 검토·지급정보") +
+    section("담당자 서류 검토") +
     "<details " +
     (s.state === "done" ? "open" : "") +
     "><summary>학생 명단 " +
@@ -72,10 +69,7 @@ function reviewFields(s) {
     '<th></th></tr></thead><tbody id="people">' +
     f.members.map(personRow).join("") +
     '</tbody></table></div><button type="button" id="add-person" class="sm">학생 추가</button></details>' +
-    '<div class="fields">' +
-    field("시상구분", "award", f.award_type) +
-    field("팀 지원액 (원)", "support", f.support_amount) +
-    '</div><details><summary>대표 지급정보 대조</summary><div class="fields">' +
+    '<details><summary>대표 계좌·신원 대조</summary><div class="fields">' +
     Object.entries(payout)
       .map(([k, label]) => field(label, "pay-" + k, f.recipient[k]))
       .join("") +
@@ -345,12 +339,10 @@ export function bindReview(d, s, refresh) {
       decision: $("#decision").value,
       note: $("#review-note").value,
       members: people,
-      award_type: $("#award").value,
-      support_amount: $("#support").value,
       recipient: Object.fromEntries(Object.keys(payout).map((k) => [k, $("#pay-" + k).value])),
       issues: [...document.querySelectorAll("[name=issue]:checked")].map((i) => i.value),
     });
-    notice("검토 결과와 지급정보를 저장했습니다.");
+    notice("서류 검토 결과를 저장했습니다.");
     await refresh();
   };
 }

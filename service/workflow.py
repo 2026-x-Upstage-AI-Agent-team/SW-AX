@@ -145,8 +145,10 @@ def effective_fields(sub):
 
 def missing_payouts(fields):
     recipient = fields.get("recipient") or {}
-    return [label for key,label in (("gross_amount","지급총액"),("tax_amount","세액"),("net_amount","차인지급액"))
-            if recipient.get(key) is None or str(recipient[key]).strip() in ("", "미확인")]
+    values = (("시상구분", fields.get("award_type")), ("지원액", fields.get("support_amount")),
+              ("지급총액", recipient.get("gross_amount")), ("세액", recipient.get("tax_amount")),
+              ("차인지급액", recipient.get("net_amount")))
+    return [label for label,value in values if value is None or str(value).strip() in ("", "미확인")]
 
 
 def pending_payouts(snapshot):
@@ -170,8 +172,6 @@ def report_snapshot(db, event, selection):
         if t["event"] != event or t["current"] != sid or s["decision"] != "승인" or held(db, t["id"]):
             raise HTTPException(409, "팀 배정과 현재 제출본 승인을 먼저 완료하세요.")
         fields = effective_fields(s)
-        if not fields.get("award_type") or fields.get("support_amount") in (None, ""):
-            raise HTTPException(409, "팀별 시상구분과 지원액을 입력하세요.")
         result = json.loads(s["result"])
         groups = result["documents"]
         if any(len(groups[k]) != 1 for k in ("01","02","03")) or groups["?"]:

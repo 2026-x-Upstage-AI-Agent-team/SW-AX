@@ -152,6 +152,7 @@ export type DraftTeam = Fields & {
   submission: string | null;
   rep: string;
   version: number | null;
+  revision: number;
   pending: string[];
   missing_payouts: string[];
 };
@@ -181,10 +182,9 @@ export type ReviewInput = {
   note: string;
   members: Member[];
   recipient: Recipient;
-  award_type: string;
-  support_amount: string;
   issues: string[];
 };
+export type Payment = { award_type: string; support_amount: string; gross_amount: string; tax_amount: string; net_amount: string };
 
 const enc = encodeURIComponent;
 const submissions = backend === 'intake' ? '/api/operations/submissions' : '/api/submissions';
@@ -208,6 +208,8 @@ export const reportFileUrl = (rid: string, kind: 'preview' | 'hwpx' | 'pdf') => 
 
 export const saveReview = (sid: string, body: ReviewInput) =>
   sendJson<{ saved: boolean }>(`/api/submissions/${enc(sid)}/review`, body, 'PUT');
+export const savePayment = (sid: string, revision: number, payment: Payment) =>
+  sendJson<{ saved: boolean }>(`/api/submissions/${enc(sid)}/payment`, { revision, ...payment }, 'PUT');
 
 export const retrySubmission = (sid: string, body: { job?: string; confirmed_absent?: boolean }) =>
   sendJson<SubInfo>(`/api/submissions/${enc(sid)}/retry`, { job: '', confirmed_absent: false, ...body });
@@ -254,16 +256,15 @@ export const disconnectGmailOAuth = () =>
 
 /** 저장된 검토 내용을 바탕으로 일부만 바꿔 PUT 본문을 만든다. */
 export function reviewBody(s: SubmissionDetail, patch: Partial<ReviewInput>): ReviewInput {
+  const { bank_name, account_number, account_holder, rrn_display } = patch.recipient ?? s.fields.recipient;
   return {
     revision: s.revision,
     decision: s.decision ?? '작성 중',
     note: s.note,
     members: s.fields.members,
-    recipient: s.fields.recipient,
-    award_type: s.fields.award_type ?? '',
-    support_amount: s.fields.support_amount ?? '',
     issues: s.result?.issues ?? [],
     ...patch,
+    recipient: { bank_name, account_number, account_holder, rrn_display },
   };
 }
 

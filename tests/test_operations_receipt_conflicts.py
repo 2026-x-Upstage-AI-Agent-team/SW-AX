@@ -191,9 +191,10 @@ class ReceiptConflicts(unittest.TestCase):
         self.worker.put("review-jobs/"+job["review_job_id"]+"/result",headers={"X-Claim-Token":job["claim_token"]},
             json={"state":"done","studio_job_id":"job_print_"+sid,"verdict":"성공","reason":"원본 대조","output":result}).raise_for_status()
         fields = json.loads((ROOT/"test case"/"유잇_set01-set02_출력검증입력.json").read_text(encoding="utf-8-sig"))["teams"][1]
-        fields["recipient"].update(gross_amount="100000",tax_amount="0",net_amount="100000")
-        return sid, dict(fields,decision="승인",note="가상 원본 대조",revision=0,
-                         award_type="최우수상",support_amount="100000",issues=[])
+        self.staff.put(f"/api/submissions/{sid}/review",json=dict(members=fields["members"],recipient=fields["recipient"],
+                       decision="승인",note="가상 원본 대조",revision=0,issues=[])).raise_for_status()
+        return sid, dict(award_type="최우수상",support_amount="100000",gross_amount="100000",
+                         tax_amount="0",net_amount="100000",revision=1)
 
     def report_preview(self, sid):
         url = self.staff.post("/api/reports",json={"event":self.event,"submissions":[sid]}).raise_for_status().json()["status_url"]
@@ -204,39 +205,34 @@ class ReceiptConflicts(unittest.TestCase):
         self.assertEqual(self.detail(url)["state"],"preview")
         return url
 
-    def test_each_missing_payout_blocks_final_confirmation(self):
+    def test_each_missing_payment_blocks_report_creation(self):
         sid, fields = self.report_submission()
-        for rev,(key,label,blank) in enumerate((("gross_amount","지급총액",None),("tax_amount","세액"," "),
-                                                ("net_amount","차인지급액",""))):
+        order = dict(event=self.event,submissions=[sid])
+        def approved():
+            return next(t for t in self.detail(f"/api/events/{self.event}/draft")["teams"] if t["submission"]==sid)
+        self.assertEqual(approved()["pending"],[])
+        self.assertEqual(approved()["missing_payouts"],["시상구분","지원액","지급총액","세액","차인지급액"])
+        for rev,(key,label,blank) in enumerate((("award_type","시상구분","미확인"),("support_amount","지원액",""),
+                   ("gross_amount","지급총액",""),("tax_amount","세액"," "),("net_amount","차인지급액","")),1):
             with self.subTest(field=key):
-                recipient = dict(fields["recipient"])
-                if blank is None:
-                    del recipient[key]
-                else:
-                    recipient[key] = blank
-                self.staff.put(f"/api/submissions/{sid}/review",json=dict(fields,recipient=recipient,revision=rev)).raise_for_status()
-                draft = next(t for t in self.detail(f"/api/events/{self.event}/draft")["teams"] if t["submission"]==sid)
-                self.assertEqual(draft["missing_payouts"],[label])
-                url = self.report_preview(sid)
-                self.assertEqual(self.detail(url)["missing_payouts"],["가상검토팀02 · "+label])
-                self.assertEqual(self.staff.get(url+"/preview").status_code,200)
-                if rev==0:
-                    self.browser(INTAKE_TEST_PAYOUT_REPORT=url.rsplit("/",1)[1])
-                blocked = self.staff.post(url+"/confirm")
+                self.staff.put(f"/api/submissions/{sid}/payment",json=fields | {key:blank,"revision":rev}).raise_for_status()
+                self.assertEqual(approved()["missing_payouts"],[label])
+                blocked = self.staff.post("/api/reports",json=order)
                 self.assertEqual(blocked.status_code,409)
                 self.assertIn("가상검토팀02 · "+label,blocked.json()["detail"])
-                self.assertEqual(self.detail(url)["state"],"preview")
-                for ext in ("pdf","hwpx"):
-                    self.assertEqual(self.staff.get(url+"/"+ext).status_code,409)
-        # A pre-upgrade confirmation cannot publish a snapshot with missing amounts.
-        self.db.execute("UPDATE award_report SET state='confirmed' WHERE id=%s",(url.rsplit("/",1)[1],))
-        self.assertEqual(self.staff.get(url+"/preview").status_code,200)
-        for ext in ("pdf","hwpx"):
-            self.assertEqual(self.staff.get(url+"/"+ext).status_code,409)
+        self.assertEqual(self.detail("/api/dashboard?event="+self.event)["reports"],[])
+        self.assertEqual(self.staff.put(f"/api/submissions/{sid}/payment",json=fields).status_code,409)
+        self.browser(INTAKE_TEST_PAYOUT_SUBMISSION=sid,INTAKE_TEST_PAYOUT_EVENT=self.event)
+        self.staff.put(f"/api/submissions/{sid}/payment",json=dict(fields,revision=approved()["revision"])).raise_for_status()
+        self.assertEqual(approved()["missing_payouts"],[])
+        url = self.report_preview(sid)
+        self.staff.post(url+"/confirm").raise_for_status()
+        self.assertTrue(self.staff.get(url+"/pdf").raise_for_status().content.startswith(b"%PDF-"))
+        self.assertTrue(self.staff.get(url+"/hwpx").raise_for_status().content.startswith(b"PK"))
 
     def test_separate_unassigned_receipt_preserves_confirmed_pdf(self):
         sid, fields = self.report_submission()
-        self.staff.put(f"/api/submissions/{sid}/review",json=fields).raise_for_status()
+        self.staff.put(f"/api/submissions/{sid}/payment",json=fields).raise_for_status()
         url = self.report_preview(sid)
         self.assertEqual(self.detail(url)["missing_payouts"],[])
         self.staff.post(url+"/confirm").raise_for_status()
@@ -281,14 +277,13 @@ class ReceiptConflicts(unittest.TestCase):
         self.staff.put(conflict+"/files/"+suspect["item_id"]+"/assignment",
             json={"action":"hold","exclude":[self.teams[1]],"revision":batch["revision"],"reason":"원접수 대조"}).raise_for_status()
         self.assertEqual(self.staff.get(url+"/pdf").raise_for_status().content,pdf)
-        recipient = dict(fields["recipient"],tax_amount="10",net_amount="99990")
-        self.staff.put(f"/api/submissions/{sid}/review",json=dict(fields,revision=1,recipient=recipient)).raise_for_status()
+        self.staff.put(f"/api/submissions/{sid}/payment",json=dict(fields,revision=2,tax_amount="10",net_amount="99990")).raise_for_status()
         self.assertTrue(self.detail(url)["stale"])
         self.assertEqual(self.staff.get(url+"/pdf").status_code,409)
 
     def test_failed_pdf_can_reprint_identical_hwpx(self):
         sid, fields = self.report_submission()
-        self.staff.put(f"/api/submissions/{sid}/review",json=fields).raise_for_status()
+        self.staff.put(f"/api/submissions/{sid}/payment",json=fields).raise_for_status()
         rid = self.staff.post("/api/reports",json={"event":self.event,"submissions":[sid]}).raise_for_status().json()["id"]
         url = "/api/reports/"+rid
         self.assertTrue(report_tick(self.db,self.cfg))

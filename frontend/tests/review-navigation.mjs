@@ -22,7 +22,7 @@ after(async () => browser?.close());
 
 const conflictId = process.env.INTAKE_TEST_CONFLICT_BATCH;
 const printId = process.env.INTAKE_TEST_PRINT_REPORT;
-const payoutId = process.env.INTAKE_TEST_PAYOUT_REPORT;
+const payoutId = process.env.INTAKE_TEST_PAYOUT_SUBMISSION;
 const queueEvent = process.env.INTAKE_TEST_QUEUE_EVENT;
 const historyId = process.env.INTAKE_TEST_RETRY_SUBMISSION;
 const recipientId = process.env.INTAKE_TEST_RECIPIENT_SUBMISSION;
@@ -93,14 +93,25 @@ if (mailId) {
     await mail.getByText(/초안 생성 .* · 발송 /).waitFor();
   });
 } else if (payoutId) {
-  test('지급액 미입력 항목을 팀별로 표시하고 보고서 확정을 막는다', async () => {
-    const report = await (await request.get('/api/reports/' + payoutId)).json();
-    await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), report.event);
-    await page.goto('/#/report');
-    await page.getByText('확정 전 입력할 항목 · 지급총액', { exact: true }).waitFor();
-    await page.getByText('확정 전 지급 정보를 입력하세요. 가상검토팀02 · 지급총액', { exact: true }).waitFor();
-    assert.ok(await page.getByRole('button', { name: '이 버전으로 확정' }).isDisabled());
-    assert.equal(await page.getByRole('link', { name: /PDF 내려받기/ }).count(), 0);
+  test('승인한 팀의 지급액을 보고서 화면에서 저장해야 생성을 시작할 수 있다', async () => {
+    await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), process.env.INTAKE_TEST_PAYOUT_EVENT);
+    await page.goto('/#/teams/' + payoutId);
+    const reportLink = page.getByRole('link', { name: '보고서에서 지급 정보 입력' });
+    await reportLink.waitFor();
+    assert.equal(await page.getByRole('textbox', { name: /시상구분|지원액/ }).count(), 0);
+    await reportLink.click();
+    await page.getByText('지급 정보 입력 대기 · 차인지급액', { exact: true }).waitFor();
+    const generate = page.getByRole('button', { name: '미리보기 생성' });
+    assert.ok(await generate.isDisabled());
+    const net = page.getByRole('textbox', { name: '차인지급액', exact: true });
+    await net.fill('100000');
+    assert.ok(await generate.isDisabled());
+    await page.getByRole('button', { name: '지급 정보 저장' }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent.trim()==='미리보기 생성' && !b.disabled));
+    await net.fill('99000');
+    assert.ok(await generate.isDisabled());
+    await net.fill('100000');
+    assert.ok(await generate.isEnabled());
   });
 } else if (printId) {
   test('실패한 보고서에서 같은 HWPX로 재출력을 요청한다', async () => {

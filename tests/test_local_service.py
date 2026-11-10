@@ -192,24 +192,43 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(("polling","job_known",0),(sub()["state"],sub()["job"],sub()["attempts"]))
 
     def test_report_checks_only_included_teams_and_requires_all_payouts(self):
-        result = {"documents":{k:[{"id":k}] for k in ("01","02","03")}}
+        result = {"verdict":"성공","program":db.WAVE,"documents":{k:[{"id":k}] for k in ("01","02","03")}}
         result["documents"]["?"] = []
         fields = {"award_type":"대상","support_amount":"100","members":[],
                   "recipient":{"gross_amount":"100","tax_amount":0,"net_amount":"100"}}
         with db.database(True) as con:
             for team in ("A","B"):
                 con.execute("INSERT INTO teams(id,event,name,current) VALUES(?,'wave',?,?)",(team,team,team))
-                con.execute("""INSERT INTO submissions(id,team,version,files,digest,created,updated,decision,result,fields)
-                    VALUES(?,?,1,'[]','test',1,1,'승인',?,?)""",(team,team,db.dump(result),db.dump(fields)))
-            fields["recipient"]["tax_amount"] = " "
-            con.execute("UPDATE submissions SET fields=? WHERE id='B'",(db.dump(fields),))
-        for selection,missing in ((["A","B"],["B · 세액"]),(["A"],[])):
-            rid = self.client.post("/api/reports",json={"event":"wave","submissions":selection}).raise_for_status().json()["id"]
-            url = "/api/reports/"+rid
-            with db.database(True) as con:
-                con.execute("UPDATE reports SET state='preview' WHERE id=?",(rid,))
-            self.assertEqual(self.client.get(url).json()["missing_payouts"],missing)
-            self.assertEqual(self.client.post(url+"/confirm").status_code,409 if missing else 200)
+                con.execute("""INSERT INTO submissions(id,team,version,files,digest,created,updated,state,decision,result,fields)
+                    VALUES(?,?,1,'[]','test',1,1,'done',?,?,?)""",
+                    (team,team,"승인" if team=="A" else None,db.dump(dict(result,team_name=team)),db.dump(fields) if team=="A" else None))
+        order=lambda selection:self.client.post("/api/reports",json={"event":"wave","submissions":selection})
+        pay=dict(award_type="대상",support_amount="100",gross_amount="100",tax_amount="0",net_amount="100")
+        review=dict(revision=0,decision="승인",note="",members=[{"role":"대표","name":"대표"}],recipient={})
+        self.assertEqual(self.client.put("/api/submissions/B/payment",json=dict(pay,revision=0)).status_code,409)
+        self.client.put("/api/submissions/B/review",json=review).raise_for_status()
+        b=next(t for t in self.client.get("/api/events/wave/draft").json()["teams"] if t["submission"]=="B")
+        self.assertEqual((b["pending"],b["missing_payouts"]),([],["시상구분","지원액","지급총액","세액","차인지급액"]))
+        self.client.put("/api/submissions/B/payment",json=dict(pay,tax_amount="",revision=1)).raise_for_status()
+        blocked=order(["A","B"])
+        self.assertEqual(blocked.status_code,409)
+        self.assertIn("B · 세액",blocked.json()["detail"])
+        with db.database() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM reports").fetchone()[0],0)
+        rid=order(["A"]).raise_for_status().json()["id"]
+        url="/api/reports/"+rid
+        with db.database(True) as con:
+            con.execute("UPDATE reports SET state='preview' WHERE id=?",(rid,))
+        self.assertEqual(self.client.post(url+"/confirm").status_code,200)
+        self.assertEqual(self.client.put("/api/submissions/B/payment",json=dict(pay,revision=1)).status_code,409)
+        self.client.put("/api/submissions/B/payment",json=dict(pay,revision=2)).raise_for_status()
+        self.client.put("/api/submissions/B/review",json=dict(review,revision=3,note="원본 확인")).raise_for_status()
+        combined=order(["A","B"]).raise_for_status().json()["id"]
+        self.assertEqual(self.client.get("/api/reports/"+combined).json()["missing_payouts"],[])
+        # An old preview with a missing tax may still exist when the service is upgraded.
+        with db.database(True) as con:
+            con.execute("UPDATE reports SET state='preview',snapshot=json_set(snapshot,'$.teams[1].recipient.tax_amount','') WHERE id=?",(combined,))
+        self.assertEqual(self.client.post("/api/reports/"+combined+"/confirm").status_code,409)
         self.upload([("미상.hwpx",official("set01")[0][1])],"other-receipt",target="B").raise_for_status()
         self.assertFalse(self.client.get(url).json()["stale"])
         self.assertEqual(self.client.post(url+"/confirm").status_code,200)

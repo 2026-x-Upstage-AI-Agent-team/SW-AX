@@ -17,19 +17,22 @@ import tools.jackson.databind.node.ObjectNode;
 @Transactional
 class AwardReports {
     record Order(UUID event,List<UUID> submissions) {}
+    record Payment(Integer revision,String awardType,String supportAmount,String grossAmount,String taxAmount,String netAmount) {}
     private final WorkflowData data;
     AwardReports(WorkflowData data) {this.data=data;}
 
-    private static boolean missingAmount(JsonNode amount) {
-        String value=amount.asString("").strip();
+    private static boolean missing(JsonNode field) {
+        String value=field.asString("").strip();
         return value.isEmpty() || value.equals("미확인");
     }
     private static List<String> missingPayouts(JsonNode fields) {
         var recipient=fields.path("recipient");
         var missing=new ArrayList<String>();
-        if(missingAmount(recipient.path("gross_amount"))) missing.add("지급총액");
-        if(missingAmount(recipient.path("tax_amount"))) missing.add("세액");
-        if(missingAmount(recipient.path("net_amount"))) missing.add("차인지급액");
+        if(missing(fields.path("award_type"))) missing.add("시상구분");
+        if(missing(fields.path("support_amount"))) missing.add("지원액");
+        if(missing(recipient.path("gross_amount"))) missing.add("지급총액");
+        if(missing(recipient.path("tax_amount"))) missing.add("세액");
+        if(missing(recipient.path("net_amount"))) missing.add("차인지급액");
         return missing;
     }
     private static List<String> pendingPayouts(JsonNode snapshot) {
@@ -50,15 +53,39 @@ class AwardReports {
         data.catalog.requireEvent(staff.getName(),event);
         var teams=data.list("""
             SELECT coalesce(s.fields,'{"members":[],"recipient":{},"award_type":"","support_amount":""}') ||
-                jsonb_build_object('team',t.name,'rep',t.representative,'submission',s.id,'version',s.version,'pending',
+                jsonb_build_object('team',t.name,'rep',t.representative,'submission',s.id,'version',s.version,'revision',s.revision,'pending',
                 array_remove(ARRAY[CASE WHEN s.id IS NULL OR ops_team_held(t.id) THEN '팀 배정 확인' END,
-                  CASE WHEN s.decision IS DISTINCT FROM '승인' THEN '현재 제출본 승인' END,
-                  CASE WHEN coalesce(s.fields->>'award_type','')='' OR coalesce(s.fields->>'support_amount','')='' THEN '시상구분·지원액 입력' END],NULL))
+                  CASE WHEN s.decision IS DISTINCT FROM '승인' OR s.state<>'done' THEN '현재 제출본 승인' END],NULL))
             FROM award_team t LEFT JOIN intake_team_confirmation c ON c.team_id=t.id AND c.state<>'superseded'
             LEFT JOIN ops_submission s ON s.id=c.submission_id WHERE t.event_id=? ORDER BY t.name,t.id
             """,event);
         for(var team:teams) ((ObjectNode)team).set("missing_payouts",data.json.valueToTree(missingPayouts(team)));
         return Map.of("teams",teams);
+    }
+    @PutMapping("/api/submissions/{id}/payment")
+    Object savePayment(Principal staff,@PathVariable UUID id,@RequestBody Payment form) {
+        data.scope(staff.getName(),WorkflowData.Resource.SUBMISSION,id);
+        data.lockCurrent(id);
+        var sub=data.one("SELECT jsonb_build_object('revision',revision,'decision',decision,'state',state,'fields',fields) FROM ops_submission WHERE id=?",id);
+        if(!"승인".equals(sub.path("decision").asString("")) || !"done".equals(sub.path("state").asString("")))
+            throw ApiErrors.error(409,"현재 제출본의 서류를 먼저 승인하세요.");
+        if(form.revision()==null || form.revision()!=sub.path("revision").asInt())
+            throw ApiErrors.error(409,"지급 정보가 변경됐습니다. 보고서 화면을 새로 열어 확인하세요.");
+        String award=Objects.toString(form.awardType(),"").strip();
+        if(award.length()>60) throw ApiErrors.error(422,"시상구분은 60자 이내로 입력하세요.");
+        var fields=(ObjectNode)sub.path("fields");
+        fields.put("award_type",award).put("support_amount",amount(form.supportAmount()));
+        fields.withObjectProperty("recipient").put("gross_amount",amount(form.grossAmount()))
+                .put("tax_amount",amount(form.taxAmount())).put("net_amount",amount(form.netAmount()));
+        data.db.update("UPDATE review_resolution SET fields=?::jsonb,revision=revision+1,updated_at=clock_timestamp() WHERE submission_id=?",fields.toString(),id);
+        data.audit(id,staff.getName(),"지급 정보 저장");
+        return Map.of("saved",true);
+    }
+    private static String amount(String input) {
+        String value=Objects.toString(input,"").strip();
+        if(!value.isEmpty()&&!value.matches("(?:[0-9]{1,13}|[0-9]{1,3}(?:,[0-9]{3}){1,4})"))
+            throw ApiErrors.error(422,"금액은 0 이상의 원 단위 정수로 입력하세요.");
+        return value;
     }
     private ObjectNode snapshot(UUID event,List<UUID> selection) {
         if(selection==null||selection.isEmpty()||selection.contains(null)||new HashSet<>(selection).size()!=selection.size())
@@ -78,8 +105,6 @@ class AwardReports {
                 WHERE s.id=? AND t.event_id=? AND c.state='confirmed' AND s.state='done' AND s.decision='승인' AND NOT ops_team_held(t.id)
                 """,sid,event);
             ObjectNode fields=(ObjectNode)s.path("fields").deepCopy();
-            if(fields.path("award_type").asString("").isBlank()||fields.path("support_amount").asString("").isBlank())
-                throw ApiErrors.error(409,"시상구분과 지원액을 입력하세요.");
             fields.put("team_name",s.path("name").asString()).put("submission",sid.toString()).put("revision",s.path("revision").asInt());
             var docs=s.path("documents");
             var ids=new ArrayList<UUID>();
@@ -101,6 +126,7 @@ class AwardReports {
         data.catalog.requireEvent(staff.getName(),order.event());
         lockEvent(order.event());
         var snap=snapshot(order.event(),order.submissions());
+        requirePayouts(snap);
         var existing=data.list("""
             SELECT jsonb_build_object('id',id,'version',version,'status_url','/api/reports/'||id) FROM award_report
             WHERE event_id=? AND created_by=? AND parent IS NULL AND state<>'failed' AND snapshot=?::jsonb ORDER BY version DESC LIMIT 1
@@ -155,6 +181,7 @@ class AwardReports {
     @ResponseStatus(HttpStatus.ACCEPTED)
     Object retryPrint(Principal staff,@PathVariable UUID id) {
         var r=report(staff.getName(),id);
+        requirePayouts(r.path("snapshot"));
         if (!current(r)) throw ApiErrors.error(409,"지급 정보나 증빙이 변경됐습니다. 새 보고서를 생성하세요.");
         int retried=data.db.update("""
             UPDATE award_report SET state='printing',error='',printer=NULL,print_token=NULL,print_until=NULL
@@ -169,6 +196,7 @@ class AwardReports {
     @ResponseStatus(HttpStatus.ACCEPTED)
     Object edited(Principal staff,@PathVariable UUID id,@RequestParam MultipartFile file) throws IOException {
         var r=report(staff.getName(),id);
+        requirePayouts(r.path("snapshot"));
         UUID event=UUID.fromString(r.path("event").asString()); lockEvent(event);
         if(!Set.of("preview","confirmed").contains(r.path("state").asString())||!current(r)) throw ApiErrors.error(409,"현재 출력된 보고서에서 편집본을 접수하세요.");
         if(file.isEmpty()||file.getSize()>40L*1024*1024) throw ApiErrors.error(413,"편집 HWPX는 40 MiB까지 접수합니다.");
