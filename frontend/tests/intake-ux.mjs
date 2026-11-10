@@ -56,6 +56,22 @@ async function newPage(t, width = 1440, tour = false) {
   return page;
 }
 
+async function assertGuideAttached(page, targetName) {
+  await page.waitForFunction(name => {
+    const target = document.querySelector(`[data-tour="${name}"]`)?.getBoundingClientRect();
+    const card = document.querySelector('.tour-card')?.getBoundingClientRect();
+    const arrow = document.querySelector('.tour-arrow')?.getBoundingClientRect();
+    if (!target || !card || !arrow) return false;
+    const dx = Math.max(target.left - card.right, card.left - target.right, 0);
+    const dy = Math.max(target.top - card.bottom, card.top - target.bottom, 0);
+    const horizontal = ['left', 'right'].includes(document.querySelector('.tour-card').dataset.side);
+    const pointer = horizontal ? arrow.y + arrow.height / 2 : arrow.x + arrow.width / 2;
+    return dx <= 24 && dy <= 24 && (dx > 0 || dy > 0)
+      && card.top >= 0 && card.bottom <= innerHeight && card.left >= 0 && card.right <= document.documentElement.clientWidth
+      && pointer >= (horizontal ? target.top : target.left) && pointer <= (horizontal ? target.bottom : target.right);
+  }, targetName);
+}
+
 test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화면 순서를 둘러본다', async t => {
   const page = await newPage(t, 1280, true);
   const writes = [];
@@ -81,6 +97,11 @@ test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화
   await guide.getByRole('button', { name: '다음 단계' }).click();
   await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
   assert.ok(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isDisabled());
+  for (const [width, height] of [[1280, 850], [1535, 722], [1024, 768]]) {
+    await page.setViewportSize({ width, height });
+    await assertGuideAttached(page, 'upload-submit');
+  }
+  await page.setViewportSize({ width: 1280, height: 850 });
   for (const target of ['upload-history', 'nav-dashboard', 'nav-mail', 'nav-report']) {
     await guide.getByRole('button', { name: '다음 단계' }).click();
     await page.locator(`.tour-spotlight[data-target="${target}"]`).waitFor();
@@ -112,8 +133,13 @@ test('320px 가이드는 메뉴를 열고 실제 파일 첨부 버튼을 누를 
   const target = await page.getByRole('button', { name: '첨부할 서류 파일 선택' }).boundingBox();
   assert.ok(card.x >= 0 && card.x + card.width <= 320 && card.y >= 0 && card.y + card.height <= 850);
   assert.ok(card.y + card.height <= target.y || card.y >= target.y + target.height, 'Tooltip must leave the highlighted button uncovered.');
+  await assertGuideAttached(page, 'file-picker');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
+  await assertGuideAttached(page, 'upload-submit');
   await page.setViewportSize({ width: 554, height: 706 });
+  await assertGuideAttached(page, 'upload-submit');
   await page.waitForFunction(() => {
     const card = document.querySelector('.tour-card')?.getBoundingClientRect();
     const next = document.querySelector('.tour-card footer button:last-child')?.getBoundingClientRect();

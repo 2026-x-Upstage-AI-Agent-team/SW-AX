@@ -127,7 +127,7 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
   const item = steps[step];
   const card = useRef<HTMLDivElement>(null);
   const [cardHeight, setCardHeight] = useState(290);
-  const [placement, setPlacement] = useState<Placement>({ rect: null, target: null, width: window.innerWidth, height: window.innerHeight, pending: false, busy: false });
+  const [placement, setPlacement] = useState<Placement>({ rect: null, target: null, width: document.documentElement.clientWidth, height: window.innerHeight, pending: false, busy: false });
   const mobileNav = item.target.startsWith('nav-') && !window.matchMedia('(min-width: 60rem)').matches;
   const needsMenu = mobileNav && !menuOpen;
   const targetName = needsMenu ? 'menu-open' : item.target;
@@ -138,13 +138,15 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
     const measure = () => {
       const target = visibleTarget(targetName);
       const upload = document.querySelector<HTMLElement>('[data-tour="upload-form"]');
-      if (target && scrolled !== target) {
+      let bounds = target?.getBoundingClientRect();
+      const outside = bounds && bounds.height <= window.innerHeight && (bounds.top < 0 || bounds.bottom > window.innerHeight);
+      if (target && (scrolled !== target || outside)) {
         scrolled = target;
         target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+        bounds = target.getBoundingClientRect();
       }
-      const bounds = target?.getBoundingClientRect();
       const rect = bounds ? { top: bounds.top, left: bounds.left, width: bounds.width, height: bounds.height } : null;
-      const next = { rect, target, width: window.innerWidth, height: window.innerHeight, pending: upload?.dataset.tourPending === 'true', busy: upload?.dataset.tourBusy === 'true' };
+      const next = { rect, target, width: document.documentElement.clientWidth, height: window.innerHeight, pending: upload?.dataset.tourPending === 'true', busy: upload?.dataset.tourBusy === 'true' };
       setPlacement(current => current.target === next.target && current.width === next.width && current.height === next.height
         && current.pending === next.pending && current.busy === next.busy && JSON.stringify(current.rect) === JSON.stringify(rect) ? current : next);
     };
@@ -200,8 +202,21 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
   let maxCardHeight = height - gap * 2;
   let side = 'center';
   if (hole) {
-    if (width - hole.right >= cardWidth + gap * 2) { left = hole.right + gap; top = hole.top; side = 'right'; }
+    const centerX = (hole.left + hole.right) / 2;
+    const centerY = (hole.top + hole.bottom) / 2;
+    if (width - hole.right >= cardWidth + gap * 2) {
+      left = hole.right + gap;
+      top = centerY - Math.min(cardHeight, maxCardHeight) / 2;
+      side = 'right';
+    }
+    else if (hole.left >= cardWidth + gap * 2) {
+      left = hole.left - cardWidth - gap;
+      top = centerY - Math.min(cardHeight, maxCardHeight) / 2;
+      side = 'left';
+    }
     else {
+      // Above/below bubbles follow the target horizontally, including right-aligned buttons.
+      left = centerX - cardWidth / 2;
       const above = hole.top - gap * 2;
       const below = height - hole.bottom - gap * 2;
       side = above >= cardHeight || (below < cardHeight && above > below) ? 'above' : 'below';
@@ -229,8 +244,8 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
       <div className="tour-shade" style={{ top: hole.top, height: hole.bottom - hole.top, left: hole.right, right: 0 }} />
       <div className="tour-spotlight" data-target={targetName} style={{ top: hole.top, left: hole.left, width: hole.right - hole.left, height: hole.bottom - hole.top }} />
     </> : <div className="tour-shade" style={{ inset: 0 }} />}
-    {hole && <div className="tour-arrow" aria-hidden="true" style={side === 'right'
-      ? { left: left - 6, top: Math.max(top + 24, Math.min(hole.top + (hole.bottom - hole.top) / 2 - 6, top + Math.min(cardHeight, maxCardHeight) - 24)) }
+    {hole && <div className="tour-arrow" aria-hidden="true" style={side === 'right' || side === 'left'
+      ? { left: side === 'right' ? left - 6 : left + cardWidth - 6, top: Math.max(top + 24, Math.min(hole.top + (hole.bottom - hole.top) / 2 - 6, top + Math.min(cardHeight, maxCardHeight) - 24)) }
       : { left: Math.max(left + 24, Math.min(hole.left + (hole.right - hole.left) / 2 - 6, left + cardWidth - 24)), top: side === 'above' ? top + Math.min(cardHeight, maxCardHeight) - 6 : top - 6 }} />}
     <div ref={card} className="tour-card" role="dialog" aria-label="워크스페이스 시작 가이드" aria-describedby="tour-description" tabIndex={-1}
       data-side={side} style={{ top, left, width: cardWidth, maxHeight: maxCardHeight }}>
