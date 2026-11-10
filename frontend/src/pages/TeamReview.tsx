@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useAsync, usePolling } from '../api/client';
 import { receiptName } from '../api/intake';
@@ -10,7 +10,6 @@ import {
   retrySubmission,
   reviewBody,
   saveReview,
-  setTeamEmail,
   type Decision,
   type Check,
   type DocKey,
@@ -21,7 +20,6 @@ import {
 } from '../api/service';
 import { Page } from '../components/Layout';
 import DocumentPreview from '../components/DocumentPreview';
-import MailItem from '../components/MailItem';
 import {
   CheckIcon,
   Feedback,
@@ -223,7 +221,6 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
             </>}
           </div>
           <DecisionCard key={s.revision} s={s} onSaved={onSaved} />
-          <LeaderCard s={s} onSaved={onSaved} />
         </aside>
       </div>
 
@@ -429,65 +426,6 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
       {s.decision === '승인' && canSave && <Link to="/report" className={cx(buttonStyles.text, 'self-start')}>보고서에서 지급 정보 입력 →</Link>}
       {s.state !== 'done' && <p className="text-xs text-subtle">Studio 판정이 끝난 뒤 기록할 수 있습니다.</p>}
       <Feedback error={error} message={message} />
-    </div>
-  );
-}
-
-/** 팀장 이메일과 안내 메일 */
-function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
-  const [email, setEmail] = useState(s.email);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const current = s.id === s.current;
-  const canConfirm = current && !s.held && s.state === 'done' && s.email_needs_confirmation !== undefined;
-  const confirmAddress = canConfirm && s.email_needs_confirmation;
-  useEffect(() => setEmail(s.email), [s.email]);
-
-  async function saveEmail() {
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      await setTeamEmail(s.team, email.trim(), confirmAddress && email.trim() ? s.id : undefined);
-      setMessage(email.trim() ? '팀장 수신 주소를 저장했습니다.' : '팀장 안내는 수신 주소 확인을 기다립니다.');
-      onSaved();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3 rounded-[22px] border border-line bg-white p-[22px]">
-      <h2 className="text-[17px] font-extrabold">팀장 안내</h2>
-      {s.state === 'done' && s.application_emails && (
-        <p className="break-all text-sm text-ink-2">신청서 대표 이메일 · {s.application_emails.join(', ') || '미확인'}</p>
-      )}
-      {confirmAddress && (
-        <p className="text-sm text-caution">원접수와 신청서를 대조해 수신 주소를 확인한 뒤, 이메일 발송에서 초안을 승인해 주세요.</p>
-      )}
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-xs text-muted">
-          팀장 이메일 (원접수에서 확인한 주소 한 개)
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy || !current} className={inputStyle} />
-        </label>
-        <button type="button" onClick={saveEmail} disabled={busy || !current || (email.trim() === s.email && !(confirmAddress && email.trim()))} className={buttonStyles.secondary}>
-          {confirmAddress ? '이 제출본의 수신 주소 확인' : '저장'}
-        </button>
-      </div>
-      <Feedback error={error} message={message} />
-      {s.mail.length === 0 ? (
-        <p className="text-sm text-muted">{s.verdict === '성공' && s.version === 1 ? '최초 정상 제출이라 보낼 안내가 없습니다.' : '아직 만들어진 안내가 없습니다.'}</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {s.mail.map((m) => (
-            <MailItem key={m.id} m={m} onSaved={onSaved} />
-          ))}
-        </ul>
-      )}
-      <p className="text-xs text-subtle">원본 첨부, 주민번호·계좌번호·학번, 다른 팀 정보는 메일에 넣지 않습니다.</p>
     </div>
   );
 }

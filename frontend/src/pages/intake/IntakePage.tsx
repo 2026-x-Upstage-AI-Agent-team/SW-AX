@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, NavLink, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { backend } from '../../api/backend';
 import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
@@ -10,6 +10,7 @@ import DeleteIntake from '../../components/DeleteIntake';
 import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
 import Upload from './Upload';
+import IntakeTabs from '../../components/IntakeTabs';
 
 const card = 'flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]';
 
@@ -22,7 +23,7 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
   return (
     <Page tone="gray" width="normal">
       <PageHeader
-        title={baseId ? '보완본 접수' : '원본 접수'}
+        title={baseId ? '보완본 접수' : '문서 업로드'}
         lead={
           baseId
             ? '교체할 원본에 저장한 수정본을 적용하거나 새로 받은 파일을 추가하세요. 접수하면 같은 팀의 새 제출 버전으로 검토합니다.'
@@ -30,28 +31,14 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
             : '여러 팀의 신청서(01), 동의서(02), 대표 증빙(03)을 한 번에 접수할 수 있습니다.'
         }
       />
-      <nav aria-label="원본 접수" className="segments self-start">
-        {[
-          ['/intake', '접수하기', true],
-          ['/intake/batches', '접수 내역', false],
-        ].map(([to, label, end]) => (
-          <NavLink
-            key={to as string}
-            to={to as string}
-            end={end as boolean}
-            className="segment"
-          >
-            {label}
-          </NavLink>
-        ))}
-      </nav>
+      {!baseId && <IntakeTabs />}
       {!events ? (
         <Notice error={eventsError && `${eventsError} (API 서버가 실행 중인지 확인해 주세요.)`} onRetry={refresh} />
       ) : !event ? (
         <p className="rounded-2xl bg-white px-5 py-4 text-sm">
           등록된 대회가 없습니다.{' '}
           <Link to="/manage" className="font-bold text-brand-strong underline underline-offset-2">
-            대회·팀 관리
+            대회 등록
           </Link>
           에서 먼저 대회를 등록해 주세요.
         </p>
@@ -98,7 +85,7 @@ function History({ eventId }: { eventId: string }) {
       </div>
       <Feedback message={message} />
       {result.data.length === 0 ? (
-        <p className="py-6 text-sm text-muted">아직 접수한 원본이 없습니다.</p>
+        <p className="py-6 text-sm text-muted">아직 업로드한 문서가 없습니다.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -265,7 +252,7 @@ function ServiceHistory() {
         </button>
       </div>
       {batches.length === 0 ? (
-        <p className="py-6 text-sm text-muted">아직 접수한 원본이 없습니다.</p>
+        <p className="py-6 text-sm text-muted">아직 업로드한 문서가 없습니다.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f4f6f3">
-  <title th:text="${leaving ? '로그아웃 | SW·AX 시상금 서류 검토실' : '담당자 로그인 | SW·AX 시상금 서류 검토실'}">담당자 로그인 | SW·AX 시상금 서류 검토실</title>
+  <meta name="theme-color" content="#f7f7f7">
+  <title th:text="${leaving ? '로그아웃 | SW·AX 문서 자동화' : '담당자 로그인 | SW·AX 문서 자동화'}">담당자 로그인 | SW·AX 문서 자동화</title>
   <link rel="stylesheet" th:href="@{/staff-access/login.css}">
   <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js}"></script>
 </head>
@@ -20,13 +20,13 @@
         </span>
         <strong>SW·AX</strong>
       </div>
-      <p class="product-name">시상금 서류 <span>검토실</span></p>
+      <p class="product-name">SW중심대학 <span>문서 자동화</span></p>
     </div>
 
     <div class="form-panel">
       <section class="form-content" aria-labelledby="page-title">
         <h1 id="page-title" th:text="${leaving ? '로그아웃할까요?' : '담당자 로그인'}">담당자 로그인</h1>
-        <p class="lead" th:text="${leaving ? '이 브라우저의 담당자 세션을 종료합니다.' : '발급받은 담당자 계정으로 검토실에 접속하세요.'}">발급받은 담당자 계정으로 검토실에 접속하세요.</p>
+        <p class="lead" th:text="${leaving ? '이 브라우저의 담당자 세션을 종료합니다.' : '발급받은 담당자 계정으로 접속하세요.'}">발급받은 담당자 계정으로 접속하세요.</p>
 
         <form th:unless="${leaving}" id="staff-login" th:action="@{/login}" method="post">
           <p th:if="${loginError}" id="login-error" class="notice error" role="alert">아이디 또는 비밀번호를 확인해 주세요.</p>
@@ -49,7 +49,7 @@
 
         <form th:if="${leaving}" th:action="@{/logout}" method="post">
           <button class="primary" type="submit">로그아웃</button>
-          <a class="back-link" th:href="@{/}">검토실로 돌아가기</a>
+          <a class="back-link" th:href="@{/} + '#/home'">문서 업무 홈으로 돌아가기</a>
         </form>
       </section>
     </div>

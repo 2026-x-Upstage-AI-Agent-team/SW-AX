@@ -41,22 +41,23 @@ if (mailId) {
     await page.addInitScript(id => localStorage.setItem('swax.event.intake', id), event);
     await page.goto('/#/mail');
     assert.equal(await page.getByRole('button', { name: /담당자 알림/ }).count(), 0);
-    const row = page.getByRole('listitem').filter({ hasText: draft.name }).filter({ hasText: draft.kind });
-    await row.getByRole('button', { name: '초안 검토' }).click();
-    assert.equal(await row.getByLabel('제목', { exact: true }).inputValue(), draft.subject);
-    assert.equal(await row.getByLabel('본문', { exact: true }).inputValue(), draft.body);
-    await row.getByText(draft.recipient, { exact: true }).waitFor();
+    const pick = () => page.getByRole('list', { name: '승인 대기 메일' }).getByRole('button').filter({ hasText: draft.name }).filter({ hasText: draft.kind }).click();
+    const panel = page.getByRole('region', { name: '초안 검토' });
+    await pick();
+    assert.equal(await panel.getByLabel('제목', { exact: true }).inputValue(), draft.subject);
+    assert.equal(await panel.getByLabel('본문', { exact: true }).inputValue(), draft.body);
+    await panel.getByText(draft.recipient, { exact: true }).waitFor();
     const body = draft.body + '\n브라우저 검토 완료';
-    await row.getByLabel('본문', { exact: true }).fill(body);
-    await row.getByRole('button', { name: '초안 저장' }).click();
-    await row.getByText('초안을 저장했습니다.').waitFor();
+    await panel.getByLabel('본문', { exact: true }).fill(body);
+    await panel.getByRole('button', { name: '초안 저장' }).click();
+    await panel.getByText('초안을 저장했습니다.').waitFor();
     await page.reload();
-    await row.getByRole('button', { name: '초안 검토' }).click();
-    assert.equal(await row.getByLabel('본문', { exact: true }).inputValue(), body);
+    await pick();
+    assert.equal(await panel.getByLabel('본문', { exact: true }).inputValue(), body);
     assert.equal((await (await request.get(path)).json()).state, 'draft');
     const [response] = await Promise.all([
       page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith(path + '/approve')),
-      row.getByRole('button', { name: '승인 후 발송' }).click(),
+      panel.getByRole('button', { name: '승인 후 발송' }).click(),
     ]);
     assert.equal(response.status(), 200);
     assert.equal((await response.json()).state, 'approved');
@@ -89,7 +90,9 @@ if (mailId) {
     await page.goto('/#/teams/' + process.env.INTAKE_TEST_REASON_SUBMISSION);
     const row = page.getByRole('listitem').filter({ hasText: '01 지급확인서 1쪽 첫째 행에 학번이 없습니다.' }).first();
     await row.getByRole('button', { name: '01 지급확인서 · 1쪽 · 1행' }).click();
-    const mail = page.getByRole('listitem').filter({ hasText: '보완 요청' }).filter({ hasText: 'leader@award.test' });
+    await page.goto('/#/mail');
+    await page.getByRole('button', { name: /^팀장 안내/ }).click();
+    const mail = page.getByRole('list', { name: '팀장 안내 메일' }).getByRole('listitem').filter({ hasText: '보완 요청' }).filter({ hasText: 'leader@award.test' });
     await mail.getByText(/초안 생성 .* · 발송 /).waitFor();
   });
 } else if (payoutId) {
@@ -167,7 +170,8 @@ if (mailId) {
     assert.equal(before.email_needs_confirmation, true);
     assert.ok(before.application_emails.length);
     assert.ok(before.mail.some((m) => m.state === 'recipient_check'));
-    await page.goto('/#/teams/' + recipientId);
+    const held = before.mail.find((m) => m.state === 'recipient_check');
+    await page.goto('/#/mail?mail=' + held.id);
     await page.getByText('신청서 대표 이메일 · ' + before.application_emails.join(', '), { exact: true }).waitFor();
     const confirm = page.getByRole('button', { name: '이 제출본의 수신 주소 확인' });
     const [saved] = await Promise.all([

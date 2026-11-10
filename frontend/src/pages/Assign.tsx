@@ -8,6 +8,7 @@ import { docLabels, when } from '../api/labels';
 import { assignFile, getBatch, isFileProcessed, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
 import { Page } from '../components/Layout';
 import DocumentPreview from '../components/DocumentPreview';
+import IntakeTabs from '../components/IntakeTabs';
 import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
@@ -18,9 +19,10 @@ export default function Assign() {
   const { dashboard, dashboardError, events, eventsError, refresh } = useEvent();
   return (
     <Page tone="gray" width="review">
-      <PageHeader title="팀 배정 확인" lead="자동 배정되지 않은 원본을 확인하고 배정할 팀과 근거를 기록하세요." />
+      <PageHeader title="문서 업로드" lead="자동 배정되지 않은 원본을 확인하고 배정할 팀과 근거를 기록하세요." />
+      <IntakeTabs />
       {dashboard ? <AssignmentQueue key={dashboard.event} dashboard={dashboard} /> : !eventsError && events?.length === 0 ? (
-        <p className="surface p-6">등록된 대회가 없습니다. <Link to="/manage" className={buttonStyles.text}>대회·팀 관리</Link></p>
+        <p className="surface p-6">등록된 대회가 없습니다. <Link to="/manage" className={buttonStyles.text}>대회 등록</Link></p>
       ) : <Notice error={dashboardError || eventsError} onRetry={refresh} />}
     </Page>
   );
@@ -108,7 +110,7 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
         <p className="rounded-[22px] bg-white px-6 py-10 text-center text-sm text-muted">
           접수된 원본이 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">
-            원본 접수
+            문서 업로드
           </Link>
         </p>
       ) : (

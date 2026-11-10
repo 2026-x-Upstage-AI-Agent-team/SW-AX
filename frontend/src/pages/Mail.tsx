@@ -1,9 +1,21 @@
-import { useState } from 'react';
-import { Link } from 'react-router';
-import { isLeaderMail, isMailDraft, setTeamEmail, type Dashboard } from '../api/service';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
+import { when } from '../api/labels';
+import {
+  getMail,
+  getSubmission,
+  isLeaderMail,
+  isMailDraft,
+  retryMail,
+  saveMailDraft,
+  setTeamEmail,
+  type Dashboard,
+  type MailRow,
+  type MailView,
+  type SubmissionDetail,
+} from '../api/service';
 import { Page } from '../components/Layout';
-import MailItem from '../components/MailItem';
-import { Feedback, Notice, PageHeader, buttonStyles, cx, inputStyle } from '../components/ui';
+import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 
 type Tab = 'drafts' | 'leader';
@@ -11,73 +23,265 @@ type Tab = 'drafts' | 'leader';
 export default function Mail() {
   const { dashboard, dashboardError, refresh } = useEvent();
   const [tab, setTab] = useState<Tab>('drafts');
+  const [search] = useSearchParams();
+  const [picked, setPicked] = useState(search.get('mail') ?? '');
   const [message, setMessage] = useState('');
   const mail = dashboard?.mail.filter(isLeaderMail) ?? [];
-  const list = tab === 'drafts' ? mail.filter(isMailDraft) : mail;
+  const drafts = mail.filter(isMailDraft);
+  const list = tab === 'drafts' ? drafts : mail;
+  const selected = list.find((m) => m.id === picked) ?? list[0];
   const noEmail = dashboard?.teams.filter((t) => !t.email && t.submission) ?? [];
 
   return (
-    <Page width="normal">
-      <PageHeader
-        title="이메일 발송"
-        lead="판정 결과로 작성된 초안을 확인하세요. 담당자가 수신자와 내용을 확인하고 승인한 메일만 발송됩니다."
-        side={<Link to="/gmail" className={buttonStyles.secondary}>Gmail 연결</Link>}
-      />
+    <Page width="review">
+      <PageHeader title="이메일 발송" lead="판정 결과로 작성된 초안을 확인하세요. 담당자가 수신자와 내용을 확인하고 승인한 메일만 발송됩니다." />
 
       {!dashboard ? (
         <Notice error={dashboardError} onRetry={refresh} />
       ) : (
         <>
           {dashboard.smtp && !dashboard.mail_ready && (
-            <p className="rounded-[14px] border border-caution-line bg-caution-bg px-4 py-3 text-sm text-ink-2">
-              발신 계정 연결을 기다리고 있습니다. 승인한 메일은 계정이 연결되면 발송됩니다.
-            </p>
+            <div role="status" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 rounded-xl border border-caution-line bg-caution-bg py-2.5 pl-[18px] pr-3 text-sm">
+              <span className="flex-[1_1_320px] font-medium">발신 계정 연결을 기다리고 있습니다. 승인한 메일은 계정이 연결되면 발송됩니다.</span>
+              <Link to="/gmail" className="action border border-caution-line bg-white text-brand-strong">Gmail 연결</Link>
+            </div>
           )}
-          {noEmail.length > 0 && <EmailList teams={noEmail} onSaved={refresh} />}
+          {message && <Feedback message={message} />}
 
-          <div role="group" aria-label="메일 목록" className="segments flex-wrap self-start">
-            {(
-              [
-                ['drafts', `승인 대기 ${mail.filter(isMailDraft).length}`],
-                ['leader', `팀장 안내 ${mail.length}`],
-              ] as Array<[Tab, string]>
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={tab === key}
-                onClick={() => { setTab(key); setMessage(''); }}
-                className="segment"
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-start gap-5">
+            <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-4">
+              <div role="group" aria-label="메일 목록" className="segments self-start">
+                {(
+                  [
+                    ['drafts', `승인 대기 ${drafts.length}`],
+                    ['leader', `팀장 안내 ${mail.length}`],
+                  ] as Array<[Tab, string]>
+                ).map(([key, label]) => (
+                  <button key={key} type="button" aria-pressed={tab === key} className="segment"
+                    onClick={() => { setTab(key); setMessage(''); }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {list.length === 0 ? (
+                <p className="surface px-6 py-8 text-center text-sm text-muted">
+                  {tab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}
+                </p>
+              ) : (
+                <ul aria-label={tab === 'drafts' ? '승인 대기 메일' : '팀장 안내 메일'} className="surface flex flex-col gap-1 p-2">
+                  {list.map((m) => (
+                    <li key={m.id}>
+                      <button type="button" aria-current={selected?.id === m.id ? 'true' : undefined}
+                        onClick={() => { setPicked(m.id); setMessage(''); }}
+                        className={cx('flex w-full flex-col items-start gap-1.5 rounded-[10px] border-[1.5px] p-3 text-left',
+                          selected?.id === m.id ? 'border-brand-strong bg-brand-tint' : 'border-transparent hover:bg-line-soft')}>
+                        <span className="flex flex-wrap items-center gap-2 text-sm">
+                          {m.name && <strong>{m.name}{m.version ? ` v${m.version}` : ''}</strong>}
+                          <span>{m.kind}</span>
+                          <StateBadge state={m.state} />
+                        </span>
+                        <span className="text-xs text-muted">
+                          {m.sent_to && m.sent_to + ' · '}초안 생성 {when(m.created)}
+                          {['sent', 'local'].includes(m.state) && (m.sent_at ? ' · 발송 ' + when(m.sent_at) : ' · 발송 시각 기록 없음')}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {noEmail.length > 0 && <EmailList teams={noEmail} onSaved={refresh} />}
+            </div>
+
+            <section aria-labelledby="draft-h" className="surface flex min-w-0 flex-[2_1_480px] flex-col gap-3.5 p-[clamp(18px,2vw,24px)]">
+              {selected ? (
+                <MailDetail key={selected.id + ':' + selected.state} m={selected} hasEmailForm={noEmail.some((t) => t.current === selected.submission)}
+                  onSaved={refresh} onApproved={setMessage} />
+              ) : (
+                <>
+                  <h2 id="draft-h" className="panel-title">초안 검토</h2>
+                  <p className="text-sm text-muted">왼쪽 목록에서 메일을 고르면 내용이 여기에 표시됩니다.</p>
+                </>
+              )}
+            </section>
           </div>
-          {message && <p role="status" className="text-sm font-semibold text-brand-strong">{message}</p>}
-          {list.length === 0 ? (
-            <p className="rounded-[18px] border border-line px-6 py-8 text-center text-sm text-muted">{tab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}</p>
+        </>
+      )}
+    </Page>
+  );
+}
+
+function MailDetail({ m, hasEmailForm, onSaved, onApproved }: {
+  m: MailRow; hasEmailForm: boolean; onSaved: () => void; onApproved: (message: string) => void;
+}) {
+  const [view, setView] = useState<MailView>();
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(true);
+  const editable = view && isMailDraft(m) && isMailDraft(view);
+
+  useEffect(() => {
+    let alive = true;
+    getMail(m.id).then(
+      (data) => alive && setView(data),
+      (err: Error) => alive && setError(err.message),
+    ).finally(() => alive && setBusy(false));
+    return () => { alive = false; };
+  }, [m.id]);
+
+  async function save(approve: boolean) {
+    if (!view || busy) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const saved = await saveMailDraft(view, approve);
+      setView(saved);
+      if (approve) onApproved(`${m.name ?? ''} ${m.kind} 메일의 발송을 승인했습니다. 수신자 · ${saved.recipient}`);
+      else setMessage('초안을 저장했습니다.');
+      onSaved();
+    } catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function retry() {
+    setError('');
+    setBusy(true);
+    try {
+      await retryMail(m.id, confirm);
+      setConfirm(false);
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="draft-h" className="panel-title">{isMailDraft(m) ? '초안 검토' : '메일 내용'}</h2>
+        <span className="text-[13px] text-muted">{m.name}{m.version ? ` v${m.version}` : ''} · {m.kind}</span>
+      </div>
+      {!view ? (
+        error ? <Feedback error={error} /> : <p role="status" className="text-sm text-muted">불러오는 중…</p>
+      ) : (
+        <>
+          <p className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+            받는 사람<strong className="break-all">{view.recipient || view.sent_to || '주소 확인 필요'}</strong>
+            {m.state === 'recipient_check' && hasEmailForm && <a href="#missing-h" className="font-medium text-brand-strong underline underline-offset-2">수신 주소 확인</a>}
+          </p>
+          {m.state === 'recipient_check' && !hasEmailForm && <RecipientCheck submission={m.submission} onSaved={onSaved} />}
+          {editable ? (
+            <>
+              <label className="flex flex-col gap-1.5 text-sm font-bold">제목
+                <input className={cx(inputStyle, 'font-normal')} value={view.subject} maxLength={255} disabled={busy}
+                  onChange={(e) => { setView({ ...view, subject: e.target.value }); setMessage(''); }} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm font-bold">본문
+                <textarea className={cx(inputStyle, 'h-auto py-2.5 font-normal leading-relaxed')} rows={10} value={view.body} maxLength={50000} disabled={busy}
+                  onChange={(e) => { setView({ ...view, body: e.target.value }); setMessage(''); }} />
+              </label>
+              <p className="text-xs text-muted">주민번호·계좌번호·학번과 다른 팀의 정보는 본문에서 제외해 주세요.</p>
+              {!view.can_approve && <p className="text-sm font-medium text-caution">발송하려면 현재 제출본과 수신 주소를 확인해 주세요.</p>}
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" className={buttonStyles.secondary} onClick={() => save(false)}
+                  disabled={busy || !view.subject.trim() || !view.body.trim()}>초안 저장</button>
+                <button type="button" className={buttonStyles.primary} onClick={() => save(true)}
+                  disabled={busy || !view.can_approve || !view.subject.trim() || !view.body.trim()}>승인 후 발송</button>
+              </div>
+            </>
           ) : (
-            <ul className="flex flex-col gap-2">
-              {list.map((m) => (
-                <MailItem key={m.id} m={m} onSaved={refresh} onApproved={setMessage} showTeam />
-              ))}
-            </ul>
+            <div className="rounded-xl bg-canvas p-4 text-sm leading-relaxed text-ink-2">
+              {view.subject && <strong className="mb-1 block text-ink">{view.subject}</strong>}
+              <p className="whitespace-pre-line">{view.body}</p>
+              {view.approved_by && <p className="mt-2 text-xs text-muted">발송 승인 · {view.approved_by} · {when(view.approved_at)}</p>}
+            </div>
           )}
         </>
       )}
+      {(m.state === 'failed' || m.state === 'uncertain') && (
+        <div className="flex flex-wrap items-center gap-3">
+          {m.state === 'uncertain' && (
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="size-4 accent-brand" />
+              받은편지함·발송함에서 미발송을 확인함
+            </label>
+          )}
+          <button type="button" onClick={retry} disabled={busy || (m.state === 'uncertain' && !confirm)} className={buttonStyles.text}>
+            초안으로 다시 열기
+          </button>
+        </div>
+      )}
+      {view && <Feedback error={error} message={message} />}
+    </>
+  );
+}
 
-    </Page>
+/** 등록 주소와 신청서 주소가 달라 보류된 안내: 원접수를 대조해 이 제출본의 수신 주소를 확인한다. */
+function RecipientCheck({ submission, onSaved }: { submission: string; onSaved: () => void }) {
+  const [detail, setDetail] = useState<SubmissionDetail>();
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    getSubmission(submission).then(
+      (s) => { if (alive) { setDetail(s); setEmail(s.email); } },
+      (err: Error) => alive && setError(err.message),
+    );
+    return () => { alive = false; };
+  }, [submission]);
+
+  async function save() {
+    if (!detail) return;
+    setBusy(true);
+    setError('');
+    try {
+      await setTeamEmail(detail.team, email.trim(), detail.id);
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!detail) return <Feedback error={error} />;
+  const current = detail.id === detail.current && !detail.held && detail.state === 'done';
+  return (
+    <div className="flex flex-col gap-2.5 rounded-xl border border-caution-line bg-caution-bg p-4">
+      {detail.application_emails && (
+        <p className="break-all text-sm text-ink-2">신청서 대표 이메일 · {detail.application_emails.join(', ') || '미확인'}</p>
+      )}
+      <p className="text-sm text-caution">원접수와 신청서를 대조해 수신 주소를 확인한 뒤 초안을 승인해 주세요.</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-xs text-muted">
+          팀장 이메일 (원접수에서 확인한 주소 한 개)
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy || !current} className={inputStyle} />
+        </label>
+        <button type="button" onClick={save} disabled={busy || !current || !email.trim()} className={buttonStyles.secondary}>
+          이 제출본의 수신 주소 확인
+        </button>
+      </div>
+      {!current && <p className="text-xs text-muted">현재 팀의 판정이 끝난 제출본에서만 주소를 확인할 수 있습니다.</p>}
+      <Feedback error={error} />
+    </div>
   );
 }
 
 function EmailList({ teams, onSaved }: { teams: Dashboard['teams']; onSaved: () => void }) {
   return (
-    <section aria-labelledby="email-h" className="flex flex-col gap-3 rounded-[18px] border border-caution-line bg-caution-bg p-5">
-      <h2 id="email-h" className="text-[15px] font-extrabold">
-        팀장 이메일이 없는 팀 {teams.length}
-      </h2>
-      <p className="text-[13px] text-ink-2">이 팀들의 안내는 주소를 확인할 때까지 발송을 기다립니다. 원접수에서 확인한 주소 한 개를 넣어 주세요.</p>
-      <ul className="flex flex-col gap-2">
+    <section aria-labelledby="missing-h" className="surface flex flex-col gap-3 p-[18px_20px_20px]">
+      <div className="flex flex-col gap-1">
+        <h2 id="missing-h" tabIndex={-1} className="panel-title">이메일이 없는 팀 {teams.length}</h2>
+        <p className="text-[13px] text-muted">이 팀들의 안내는 주소를 확인할 때까지 발송을 기다립니다. 원접수에서 확인한 주소 한 개를 넣어 주세요.</p>
+      </div>
+      <ul className="flex flex-col gap-3">
         {teams.map((t) => (
           <EmailRow key={t.id} id={t.id} name={t.name} onSaved={onSaved} />
         ))}
@@ -102,12 +306,13 @@ function EmailRow({ id, name, onSaved }: { id: string; name: string; onSaved: ()
       setBusy(false);
     }
   }
+  const field = 'team-email-' + id;
   return (
     <li className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="w-32 text-sm font-bold">{name}</span>
-        <input type="email" aria-label={`${name} 팀장 이메일`} value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} className={cx(inputStyle, 'max-w-xs flex-1 bg-white')} />
-        <button type="button" onClick={save} disabled={busy || !email.trim()} className={buttonStyles.secondary}>
+      <label htmlFor={field} className="text-sm font-bold">{name}</label>
+      <div className="flex gap-2">
+        <input id={field} type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} className={cx(inputStyle, 'min-w-0 flex-1')} />
+        <button type="button" onClick={save} disabled={busy || !email.trim()} aria-label={`${name} 팀장 이메일 저장`} className={buttonStyles.secondary}>
           저장
         </button>
       </div>

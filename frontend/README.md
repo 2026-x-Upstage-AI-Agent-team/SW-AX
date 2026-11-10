@@ -46,15 +46,16 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 
 | 경로 | 화면 | 검토 서비스 API |
 |---|---|---|
-| `/` | 업무 현황 (판정 요약, 확인할 일, 팀별 판정 표) | `GET /api/dashboard`, `GET /api/submissions/{id}` |
-| `/teams/:id` | 팀별 서류 검토 (원본 PDF, Upstage 판정·필드 설명, 검토 항목, 담당자 결론, 팀장 안내, 명단, 버전 기록) | `GET·PUT /api/submissions/{id}[/review]`, `POST .../retry`, `PUT /api/teams/{id}/email`, `GET /api/files/{id}/preview` |
-| `/intake` · `/intake?base=:id` | 원본 접수 · 보완본 접수 | `POST /api/intake-batches` (`base`, `removed`) |
-| `/intake/batches[/:id]` | 접수 내역 · 접수 상세 | `GET /api/intake-batches/{id}` |
-| `/assign` | 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
-| `/mail` | 팀장 안내 초안 검토, 제목·본문 수정, 승인 후 발송, 발송 이력 | `GET /api/mail/{id}`, `PUT /api/mail/{id}/draft`, `POST /api/mail/{id}/approve`, `POST /api/mail/{id}/retry` |
+| `/home` | 문서 업무 홈. 로그인 직후 열리며 시상금 서류 검토실로 들어간다. 사이드바 로고로 돌아온다. | `GET /api/auth/session` |
+| `/` | 업무 현황 (확인할 일, 판정 현황, 팀별 판정 표) | `GET /api/dashboard`, `GET /api/submissions/{id}` |
+| `/teams/:id` | 팀별 서류 검토 (원본 PDF, Upstage 판정·필드 설명, 검토 항목, 담당자 결론, 명단, 버전 기록) | `GET·PUT /api/submissions/{id}[/review]`, `POST .../retry`, `GET /api/files/{id}/preview` |
+| `/intake` · `/intake?base=:id` | 문서 업로드(접수하기) · 보완본 접수. 화면 어디에나 파일을 끌어다 놓을 수 있다. | `POST /api/intake-batches` (`base`, `removed`) |
+| `/intake/batches[/:id]` | 문서 업로드 › 접수 내역 · 접수 상세 | `GET /api/intake-batches/{id}` |
+| `/assign` | 문서 업로드 › 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
+| `/mail` | 메일 목록과 초안 검토(제목·본문 수정, 승인 후 발송), 발송 이력, 팀장 수신 주소 확인·입력 | `PUT /api/teams/{id}/email`, `GET /api/mail/{id}`, `PUT /api/mail/{id}/draft`, `POST /api/mail/{id}/approve`, `POST /api/mail/{id}/retry` |
 | `/gmail` | 담당자 Gmail 연결·해제·재인증 | Spring Boot 상태 `GET /api/settings/gmail`, Google 연결 해제 `POST /api/settings/gmail/oauth/disconnect`. 양쪽 서비스 `POST /api/settings/gmail/oauth/start`, `GET /api/settings/gmail/callback`, `POST /api/settings/gmail/connect` |
 | `/report` | 보고서 확정 (팀 순서, 지급 정보 입력, 두 표 미리보기, 생성·확정·다운로드) | `GET /api/events/{id}/draft`, `POST /api/reports`, `GET·POST /api/reports/{id}[/confirm|/edited|/preview|/hwpx|/pdf]` |
-| `/manage` | 대회·팀 관리 | `POST /api/events`, `POST /api/events/{id}/teams` |
+| `/manage` | 대회 등록, 지급내역서 행사 정보, 선택한 대회 삭제 | `POST /api/events`, `PUT /api/events/{id}/overview`, `DELETE /api/events/{id}` |
 
 판독·판정·문서 생성·메일 발송이 진행 중이면 현황을 몇 초마다 다시 읽는다.
 

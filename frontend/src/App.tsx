@@ -7,6 +7,7 @@ import Assign from './pages/Assign';
 import Dashboard from './pages/Dashboard';
 import DocumentEditor from './pages/DocumentEditor';
 import Gmail from './pages/Gmail';
+import Hub from './pages/Hub';
 import IntakePage from './pages/intake/IntakePage';
 import Mail from './pages/Mail';
 import Manage from './pages/Manage';
@@ -18,6 +19,7 @@ export default function App() {
     <Routes>
       <Route path="files/:id/edit" element={<DocumentEditor />} />
       <Route path="files/:id/preview" element={<EmbeddedDocumentPreview />} />
+      <Route path="home" element={<Hub />} />
       <Route element={<EventProvider><Layout /></EventProvider>}>
         <Route index element={<Dashboard />} />
         <Route path="teams/:id" element={<TeamReview />} />
