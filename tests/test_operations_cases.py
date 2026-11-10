@@ -20,6 +20,15 @@ from service.studio import parse_result
 from tests.test_intake_postgres import login
 
 
+def classified_job(job, files):
+    labels = {"01": "시상금지급확인서", "02": "동의서", "03": "신분증·통장"}
+    return {"output": [*job["output"],
+        {"model": "step_1_parse", "content": [{"text": {}, "additional_values": {"source_file_boundaries": [
+            {"file_id": f"source-{i}", "file_index": i} for i in range(len(files))]}}]},
+        {"model": "step_2_classify", "content": [{"text": labels[f["kind"]], "additional_values": {
+            "source_files": [{"file_id": f"source-{i}"}]}} for i, f in enumerate(files)]}]}
+
+
 class ReviewEvidence(unittest.TestCase):
     def test_agent_evidence_in_checks_and_safe_leader_mail(self):
         validate = "01 대표 성명과 03 신분증 성명이 일치하는가"
@@ -27,7 +36,7 @@ class ReviewEvidence(unittest.TestCase):
         job = {"output":[{"model":"Validate - 증빙검증","content":[{"additional_values":{"checks":[{"name":validate,"passed":False}]}}]},
                          {"model":"Instruct - 최종판정","content":[{"text":{"enum":"재제출요청","reason":reason}}]}]}
         files = [{"id":"doc"+k,"kind":k,"signals":"{}","pages":2} for k in ("01","02","03")]
-        result = parse_result(job,files)
+        result = parse_result(classified_job(job,files),files)
         self.assertEqual(result["reason"],reason)
         checks = {c["label"]:c for c in result["checks"]}
         self.assertEqual(checks[validate]["refs"],[{"id":"doc01","page":1},{"id":"doc03","page":1}])
@@ -58,8 +67,8 @@ class ReviewEvidence(unittest.TestCase):
                          {"model":"Instruct - 최종판정","content":[{"text":{"enum":"재제출요청","reason":"서류 누락"}}]}]}
         signals = {"apps":[{"representative_emails":["form@award.test"]}]}
         file = {"id":"f","kind":"01","signals":json.dumps(signals)}
-        self.assertEqual(parse_result(job,[file])["representative_emails"],["form@award.test","studio@award.test"])
-        self.assertEqual(parse_result(job,[dict(file,kind="03")])["representative_emails"],[])
+        self.assertEqual(parse_result(job,[file])["representative_emails"],["studio@award.test"])
+        self.assertEqual(parse_result(job,[dict(file,kind="03")])["representative_emails"],["studio@award.test"])
 
     def test_report_bank_name_uses_the_studio_extract(self):
         cases = [
@@ -132,7 +141,8 @@ class ReviewEvidence(unittest.TestCase):
             "Information Extract - 지급확인서":{"representative_name":"최가람","members":[{"name":"김한별"}]},
             "Information Extract - 개인정보동의":{"beneficiaries":[{"name":"최가람"},{"name":"김한별","signed":False}]},
         }
-        result = parse_result({"output":[{"model":name,"content":[{"text":value}]} for name,value in values.items()]}, files)
+        job = {"output":[{"model":name,"content":[{"text":value}]} for name,value in values.items()]}
+        result = parse_result(classified_job(job,files), files)
         row = next(c for c in result["checks"] if c["label"] == "김한별 · 동의 표시 또는 서명 확인")
         self.assertEqual(row["refs"], [{"id":"a","page":2,"row":2},{"id":"b","page":3,"row":1}])
 
@@ -146,7 +156,7 @@ class ReviewEvidence(unittest.TestCase):
         job = {"output":[{"model":"Validate - 증빙검증","content":[{"additional_values":{"checks":checks}}]},
                          {"model":"Instruct - 최종판정","content":[{"text":{"enum":"재제출요청","reason":"전화 길이를 확인하세요."}}]}]}
         files = [{"id":k,"kind":k,"signals":"{}"} for k in ("01","02","03")]
-        result = parse_result(job,files)
+        result = parse_result(classified_job(job,files),files)
         grouped = {c["label"]:c for c in result["checks"]}
         self.assertEqual(grouped["전화 길이"]["refs"],[{"id":"01","page":1}])
         self.assertEqual(grouped["코드 대조"]["refs"],[{"id":"01","page":1},{"id":"02","page":1}])
@@ -292,7 +302,8 @@ class OfficialCases(unittest.TestCase):
                                 "Instruct - 최종판정":{"enum":"재제출요청","reason":"통제된 오류 사례 판정"}}
                     if case!="set05":
                         structured["Information Extract - 신분증정보"]={"account_holder":app["rep"],"account_number":"00999" if case=="set03" else "00100"}
-                    result=parse_result({"output":[{"model":k,"content":[{"text":v}]} for k,v in structured.items()]},files)
+                    structured["Information Extract - 지급확인서"]["representative_email"] = "source-"+case+"@award.test"
+                    result=parse_result(classified_job({"output":[{"model":k,"content":[{"text":v}]} for k,v in structured.items()]},files),files)
                     expected={"set03":{"account"},"set04":{"consent"},"set05":{"duplicate","identity"},"set10":{"consent"}}[case]
                     self.assertTrue(expected<=set(result["issues"]))
                     if case == "set04":
@@ -305,9 +316,9 @@ class OfficialCases(unittest.TestCase):
                     self.assertEqual(job["submission_id"],detail()["teams"][0]["submission_id"])
                     self.assertEqual({x["item_id"] for x in job["files"]},{f["id"] for f in files})
                     if case=="set04":
-                        # A worker can return only its own address. Also check the confirmed original.
-                        result.pop("representative_emails")
-                        result["representative_email"]=case+"@award.test"
+                        # Candidate addresses must both come from the preserved API Extract records.
+                        result["extracted"]["Information Extract - 지급확인서"].append(
+                            dict(structured["Information Extract - 지급확인서"], representative_email=case+"@award.test"))
                     api.put("review-jobs/"+job["review_job_id"]+"/result",headers={"X-Claim-Token":job["claim_token"]},
                             json={"state":"done","studio_job_id":"job_mock_"+job["review_job_id"],"verdict":result["verdict"],"reason":result["reason"],"output":result}).raise_for_status()
                     self.assertFalse(deliver(db,cfg))

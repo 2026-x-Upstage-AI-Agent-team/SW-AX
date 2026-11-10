@@ -115,9 +115,9 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{receiptName(s.team_name, s.intake_number)}</h1>
+        <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{receiptName(s.result?.team_name?.trim() || '미확인', s.intake_number)}</h1>
         <span className="text-[13px] text-subtle">
-          {s.rep && `대표 ${s.rep} · `}
+          대표 {s.fields.members.find((m) => m.role === '대표')?.name.trim() || '미확인'} ·{' '}
           <span className="font-semibold tabular-nums">제출 v{s.version}</span> · 원본 {s.count}개
         </span>
         {s.state === 'done' && s.verdict ? <VerdictBadge verdict={s.verdict} size="md" /> : <StateBadge state={s.state} size="md" />}
@@ -463,7 +463,7 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
     <div className="flex flex-col gap-3 rounded-[22px] border border-line bg-white p-[22px]">
       <h2 className="text-[17px] font-extrabold">팀장 안내</h2>
       {s.state === 'done' && s.application_emails && (
-        <p className="break-all text-sm text-ink-2">신청서 대표 이메일 · {s.application_emails.join(', ') || '확인된 주소 없음'}</p>
+        <p className="break-all text-sm text-ink-2">신청서 대표 이메일 · {s.application_emails.join(', ') || '미확인'}</p>
       )}
       {confirmAddress && (
         <p className="text-sm text-caution">원접수와 신청서를 대조해 수신 주소를 확인한 뒤, 이메일 발송에서 초안을 승인해 주세요.</p>
@@ -495,9 +495,13 @@ function LeaderCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
 function MembersCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   const members = s.fields.members;
   const r = s.fields.recipient;
+  const value = (v?: string) => v?.trim() ? v : '미확인';
   return (
-    <details className="min-w-0 flex-[2_1_560px] rounded-[22px] border border-line bg-white p-[22px]">
+    <details open={Boolean(s.result?.extraction_warnings?.length)} className="min-w-0 flex-[2_1_560px] rounded-[22px] border border-line bg-white p-[22px]">
       <summary className="cursor-pointer text-[17px] font-extrabold">명단·지급 정보 대조</summary>
+      {s.result?.extraction_warnings?.map((warning) => (
+        <p key={warning} className="mt-3 text-sm text-caution">{warning}</p>
+      ))}
       {members.length === 0 ? (
         <p className="text-sm text-muted">추출된 명단이 없습니다.</p>
       ) : (
@@ -516,10 +520,10 @@ function MembersCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void 
               {members.map((m, i) => (
                 <tr key={i} className="border-b border-line-soft">
                   <td className="px-2 py-2">{m.role}</td>
-                  <td className="px-2 py-2">{m.name}</td>
-                  <td className={cx('px-2 py-2 font-mono', !m.student_id && 'text-alert-strong')}>{m.student_id || '비어 있음'}</td>
-                  <td className="px-2 py-2">{m.major}</td>
-                  <td className="px-2 py-2">{m.school}</td>
+                  <td className={cx('px-2 py-2', !m.name && 'text-alert-strong')}>{value(m.name)}</td>
+                  <td className={cx('px-2 py-2 font-mono', !m.student_id && 'text-alert-strong')}>{value(m.student_id)}</td>
+                  <td className="px-2 py-2">{value(m.major)}</td>
+                  <td className="px-2 py-2">{value(m.school)}</td>
                 </tr>
               ))}
             </tbody>
@@ -528,12 +532,18 @@ function MembersCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void 
       )}
       <dl className="mt-4 grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
         <dt className="text-muted">은행·계좌</dt>
-        <dd className="font-mono">{[r.bank_name, r.account_number].filter(Boolean).join(' ') || '—'}</dd>
+        <dd className="font-mono">{[value(r.bank_name), value(r.account_number)].join(' ')}</dd>
         <dt className="text-muted">예금주</dt>
-        <dd>{r.account_holder || '—'}</dd>
+        <dd>{value(r.account_holder)}</dd>
         <dt className="text-muted">주민번호 표기</dt>
-        <dd className="font-mono">{r.rrn_display || '—'}</dd>
+        <dd className="font-mono">{value(r.rrn_display)}</dd>
       </dl>
+      {s.result?.extracted && (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-sm font-bold">Upstage 추출 원본값</summary>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-canvas p-3 text-xs">{JSON.stringify({ values: s.result.extracted, sources: s.result.extraction_sources }, null, 2)}</pre>
+        </details>
+      )}
       {s.state === 'done' && s.id === s.current && !s.held && (
         <details className="mt-4">
           <summary className={buttonStyles.text}>원본 대조값 수정</summary>

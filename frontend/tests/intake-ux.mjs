@@ -215,7 +215,7 @@ test('미리보기 설명은 Upstage 응답만 사용하고 근거 없는 누락
   const page = await newPage(t);
   const reason = '개인정보동의서가 현재 입력에서 확인되지 않아 동의 표시와 서명을 확인할 수 없습니다.【†1】';
   const documents = { '01': [{ id: 'original', page: 1 }], '02': [], '03': [], '?': [] };
-  const result = { verdict: '재제출요청', reason, staff_report: '', documents, checks: [], issues: [], members: [], recipient: {},
+  const result = { team_name: 'API 근거팀', verdict: '재제출요청', reason, staff_report: '', documents, checks: [], issues: [], members: [], recipient: {},
     extracted: { 'Information Extract - 지급확인서': [{ representative_student_id: '', representative_signed: false, members: [] }] } };
   const base = { version: 3, state: 'done', team: 'team', team_name: 'API 근거팀', count: 1, files: [{ ...file, state: 'assigned' }],
     email: '', note: '', revision: 0, history: [], audit: [], mail: [], fields: { members: [], recipient: { account_number: '' } },
@@ -257,6 +257,61 @@ test('미리보기 설명은 Upstage 응답만 사용하고 근거 없는 누락
   assert.equal(await explanation.count(), 0);
 });
 
+test('추출값 충돌과 이름 없는 학생을 보존하고 담당자 수정 시 다른 값을 유지한다', async t => {
+  const page = await newPage(t);
+  const members = [{ role: '대표', name: '', student_id: '00202601', major: '가상학과', school: '가상대학교' }];
+  const recipient = { bank_name: '담당자 확인은행', account_number: '001-0002', account_holder: '가상대표', rrn_display: '020101 - XXXXXXX' };
+  const extracted = { 'Information Extract - 신분증정보': [
+    { bank_name: '가상은행A', account_number: '001-0002' }, { bank_name: '가상은행B', account_number: '003-0004' },
+  ] };
+  const warning = '신분증정보의 추출값이 응답마다 다릅니다. 초안과 추출 원본값을 대조해 주세요.';
+  const s = { id: 'transfer', current: 'transfer', team: 'team', team_name: team.name, state: 'done', version: 1,
+    verdict: '성공', decision: null, revision: 2, email: '', note: '', held: false, files: [], history: [], audit: [], mail: [],
+    fields: { members, recipient, award_type: '대상', support_amount: '1000' },
+    result: { verdict: '성공', reason: '가상 증빙 확인', documents: { '01': [], '02': [], '03': [], '?': [] }, checks: [], issues: [],
+      extracted, extraction_warnings: [warning], staff_report: '' } };
+  await page.route('**/api/operations/submissions/transfer', route => route.fulfill({ json: s }));
+  await page.route('**/api/submissions/transfer/review', route => route.fulfill({ json: { saved: true } }));
+  await page.goto('/#/teams/transfer');
+  await page.getByRole('heading', { name: '미확인', exact: true }).waitFor();
+  await page.getByText(warning, { exact: true }).waitFor();
+  const card = page.locator('details').filter({ has: page.getByText('명단·지급 정보 대조', { exact: true }) });
+  const row = card.getByRole('row').filter({ hasText: '00202601' });
+  assert.match(await row.innerText(), /미확인.*00202601.*가상학과/);
+  assert.equal(await card.getByText('담당자 확인은행 001-0002', { exact: true }).isVisible(), true);
+  await card.getByText('Upstage 추출 원본값', { exact: true }).click();
+  assert.match(await card.locator('pre').innerText(), /가상은행B/);
+  assert.match(await card.locator('pre').innerText(), /003-0004/);
+  await card.getByText('원본 대조값 수정', { exact: true }).click();
+  await card.getByLabel('은행', { exact: true }).fill('수정은행');
+  const sent = page.waitForRequest('**/api/submissions/transfer/review');
+  await card.getByRole('button', { name: '대조값 저장', exact: true }).click();
+  const body = (await sent).postDataJSON();
+  assert.deepEqual(body.members, members);
+  assert.deepEqual(body.recipient, { ...recipient, bank_name: '수정은행' });
+  assert.equal('award_type' in body, false);
+  assert.equal('support_amount' in body, false);
+});
+
+test('보고서의 빈 추출값은 미확인으로 표시하고 등록 대표명으로 채우지 않는다', async t => {
+  const page = await newPage(t);
+  const draft = { team: 'API 팀명', rep: '등록 대표명', submission: 'api-team', version: 1, revision: 0,
+    pending: [], missing_payouts: [], award_type: '대상', support_amount: '100',
+    members: [{ role: '팀원', name: '추출 팀원', student_id: '', school: ' ', major: '' }],
+    recipient: { bank_name: '', account_number: '', account_holder: '', gross_amount: '100', tax_amount: '0', net_amount: '100' } };
+  await page.route('**/api/events/test/draft', route => route.fulfill({ json: { teams: [draft, { ...draft, team: '', submission: 'missing-team', members: [] }] } }));
+  await page.goto('/#/report');
+  const tables = page.getByRole('table');
+  await tables.nth(1).getByRole('row').nth(1).waitFor();
+  assert.match(await tables.nth(0).innerText(), /추출 팀원.*미확인.*미확인.*미확인.*API 팀명/s);
+  const repCells = await tables.nth(1).getByRole('row').nth(1).getByRole('cell').allTextContents();
+  assert.equal(repCells[1], '미확인');
+  assert.deepEqual(repCells.slice(2, 8), Array(6).fill('미확인'));
+  assert.equal(await page.getByText('등록 대표명', { exact: true }).count(), 0);
+  assert.equal(await page.getByRole('checkbox', { name: 'API 팀명 편철에 포함', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('checkbox', { name: '미확인 편철에 포함', exact: true }).count(), 1);
+});
+
 test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본 없는 팀에는 링크를 표시하지 않는다', async t => {
   const page = await newPage(t);
   const submission = { id: 'submission-v2', version: 2, state: 'done', verdict: '재제출요청', decision: null, count: 1 };
@@ -286,7 +341,7 @@ test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본
     if (width === 1440) { await open.focus(); await open.press('Enter'); }
     else await open.click();
     await page.waitForURL('**/#/teams/submission-v2');
-    await page.getByRole('heading', { name: '3팀', exact: true }).waitFor();
+    await page.getByRole('heading', { name: '미확인', exact: true }).waitFor();
     await page.getByRole('region', { name: '원문 미리보기' }).waitFor();
     await page.goBack();
   }

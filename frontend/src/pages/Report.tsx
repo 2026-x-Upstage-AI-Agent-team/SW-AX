@@ -187,21 +187,23 @@ function TeamCard({
   children: ReactNode;
 }) {
   const included = index >= 0;
+  const name = t.team.trim() || '미확인';
+  const rep = t.members.find((m) => m.role === '대표')?.name.trim() || '미확인';
   return (
     <div className={cx('flex flex-col gap-3.5 rounded-[20px] bg-white p-5', !included && 'opacity-60')}>
       <div className="flex items-center gap-3">
         <label className="flex items-center">
-          <input type="checkbox" checked={included} onChange={(e) => onToggle(e.target.checked)} className="size-5 accent-brand" aria-label={`${t.team} 편철에 포함`} />
+          <input type="checkbox" checked={included} onChange={(e) => onToggle(e.target.checked)} className="size-5 accent-brand" aria-label={`${name} 편철에 포함`} />
         </label>
         <span className="w-7 text-2xl font-extrabold text-brand-strong">{included ? index + 1 : '–'}</span>
         <div className="flex flex-1 flex-col">
-          <strong className="text-base">{t.team}</strong>
+          <strong className="text-base">{name}</strong>
           <span className="text-xs text-subtle">
-            {t.rep && `대표 ${t.rep} · `}v{t.version} · 학생 {t.members.length}명
+            대표 {rep} · v{t.version} · 학생 {t.members.length}명
           </span>
         </div>
-        <MoveButton label={`${t.team} 위로`} disabled={!included || index === 0} onClick={() => onMove(-1)} dir="up" />
-        <MoveButton label={`${t.team} 아래로`} disabled={!included || index === count - 1} onClick={() => onMove(1)} dir="down" />
+        <MoveButton label={`${name} 위로`} disabled={!included || index === 0} onClick={() => onMove(-1)} dir="up" />
+        <MoveButton label={`${name} 아래로`} disabled={!included || index === count - 1} onClick={() => onMove(1)} dir="down" />
       </div>
       {children}
     </div>
@@ -212,7 +214,7 @@ function HeldTeam({ t }: { t: DraftTeam }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-white px-4 py-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <strong>{t.team}</strong>
+        <strong>{t.team.trim() || '미확인'}</strong>
         <span className="text-xs text-caution">{t.pending.join(' · ')}</span>
         <span className="flex-auto" />
         {t.submission && (
@@ -292,14 +294,14 @@ function Tables({ teams }: { teams: DraftTeam[] }) {
   );
   const head = 'border-b border-line px-2 py-2.5 font-medium';
   const cell = 'px-2 py-2.5';
-  const unknown = (v?: string | number) => (v == null || v === '' ? <span className="text-caution">미확인</span> : v);
+  const unknown = (v?: string | number) => (v == null || typeof v === 'string' && !v.trim() ? <span className="text-caution">미확인</span> : v);
   return (
     <>
       <div className="flex flex-col gap-3 rounded-[20px] bg-white p-5">
         <span className="text-[13px] text-muted">편철 순서 · 00 → 팀별 01 → 02 → 03</span>
         <ol aria-label="편철 순서" className="flex flex-wrap gap-2.5">
           <PageThumb code="00" label="지급내역서" accent />
-          {teams.flatMap((t) => (['01', '02', '03'] as const).map((c) => <PageThumb key={t.submission + c} code={c} label={t.team} />))}
+          {teams.flatMap((t) => (['01', '02', '03'] as const).map((c) => <PageThumb key={t.submission + c} code={c} label={t.team.trim() || '미확인'} />))}
         </ol>
       </div>
 
@@ -333,15 +335,15 @@ function Tables({ teams }: { teams: DraftTeam[] }) {
                 <tr key={n} className="border-b border-line-soft">
                   <td className={cx(cell, 'font-mono')}>{n}</td>
                   <td className={cell}>
-                    {m.name}
+                    {unknown(m.name)}
                     {m.role === '대표' && <span className="text-muted"> (대표)</span>}
                   </td>
                   <td className={cell}>
-                    <span className="font-mono">{m.student_id || '—'}</span>
-                    {m.school && <span className="text-muted"> ({m.school})</span>}
+                    <span className="font-mono">{unknown(m.student_id)}</span>
+                    <span className="text-muted"> ({unknown(m.school)})</span>
                   </td>
-                  <td className={cell}>{m.major}</td>
-                  <td className={cell}>{t.team}</td>
+                  <td className={cell}>{unknown(m.major)}</td>
+                  <td className={cell}>{unknown(t.team)}</td>
                   <td className={cell}>{first ? unknown(t.award_type) : ''}</td>
                   <td className={cx(cell, 'font-mono')}>{first ? unknown(t.support_amount) : ''}</td>
                 </tr>
@@ -371,7 +373,7 @@ function Tables({ teams }: { teams: DraftTeam[] }) {
                 return (
                   <tr key={t.submission} className="border-b border-line-soft">
                     <td className={cx(cell, 'font-mono')}>{i + 1}</td>
-                    <td className={cell}>{rep?.name ?? t.rep}</td>
+                    <td className={cell}>{unknown(rep?.name)}</td>
                     <td className={cx(cell, 'font-mono')}>{unknown(rep?.student_id)}</td>
                     <td className={cell}>{unknown(rep?.major)}</td>
                     <td className={cx(cell, 'font-mono')}>{unknown(r.rrn_display)}</td>
@@ -460,12 +462,12 @@ function ReportPanel({ rid, onChanged }: { rid: string; onChanged: (newRid?: str
         <strong className="text-base">보고서 v{r.version}</strong>
         <StateBadge state={r.state} />
         {r.parent && <span className="text-xs text-muted">편집본 반영</span>}
-        <span className="text-xs text-subtle">{r.teams.join(' → ')}</span>
+        <span className="text-xs text-subtle">{r.teams.map((name) => name.trim() || '미확인').join(' → ')}</span>
       </div>
       {r.stale && <Feedback error="생성 뒤 지급 정보나 제출본이 바뀌었습니다. 새 보고서를 생성해 주세요." />}
       {!r.stale && r.missing_payouts.length > 0 && <Feedback error={`확정 전 지급 정보를 입력하세요. ${r.missing_payouts.join(' / ')}`} />}
       {r.error && <Feedback error={r.error} />}
-      {r.can_retry_print && !r.stale && (
+      {r.can_retry_print && !r.stale && !r.missing_payouts.length && (
         <button type="button" disabled={busy} onClick={() => act(() => retryReportPrint(r.id).then(() => undefined))} className={cx(buttonStyles.outline, 'self-start')}>
           같은 HWPX로 PDF 다시 출력
         </button>

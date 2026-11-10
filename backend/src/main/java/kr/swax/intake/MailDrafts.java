@@ -27,7 +27,7 @@ class MailDrafts {
         var row = data.one("""
             SELECT jsonb_build_object('info',o.info||jsonb_build_object('subject',m.subject,'body',m.body,'revision',m.revision,
                     'approved_by',m.approved_by,'approved_at',extract(epoch FROM m.approved_at)),
-                'source',jsonb_build_object('name',t.name,'kind',m.kind,'version',s.version,'verdict',s.verdict,
+                'source',jsonb_build_object('name',coalesce(s.output->>'team_name',''),'kind',m.kind,'version',s.version,'verdict',s.verdict,
                     'decision',s.decision,'issues',s.issues,'output',s.output),
                 'recipient',t.email,
                 'eligible',s.state='done' AND NOT ops_team_held(t.id) AND EXISTS(SELECT FROM intake_team_confirmation c

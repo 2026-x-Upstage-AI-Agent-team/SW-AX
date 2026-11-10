@@ -9,7 +9,7 @@ import httpx
 from .documents import preview
 
 API = "https://api.upstage.ai/v2"
-CONFIG = "23"
+CONFIG = "51"
 VERDICTS = ("성공", "담당자확인", "재제출요청")
 ISSUES = {"application": "팀의 지급확인서를 확인해 제출해 주세요.",
           "consent": "전체 팀원의 개인정보 동의서와 작성자 명단을 확인해 주세요.",
@@ -130,8 +130,36 @@ def unpack(value):
     return value
 
 
+def is_masked_rrn(value):
+    return bool(re.fullmatch(r"\s*\d{6}\s*[-‐‑–—]\s*\d?[\s*＊xX●•#■_]+", value)
+                and re.search(r"[*＊xX●•#■_]", value))
+
+
 def parse_result(job, files):
-    nodes = {n.get("model", ""): n.get("content", []) for n in job.get("output", [])}
+    nodes = {}
+    for node in job.get("output", []):
+        nodes.setdefault(node.get("model", ""), []).extend(node.get("content", []))
+
+    extracted = {name: [unpack(item.get("text", {})) for item in content]
+                 for name, content in nodes.items() if name.startswith("Information Extract - ")}
+    extraction_sources = {name: [unpack(item.get("additional_values", {})) for item in nodes[name]] for name in extracted}
+    warnings = []
+
+    def text(value):
+        return "" if value is None else str(value)
+
+    def present(value):
+        return value is not None and (bool(value.strip()) if isinstance(value, str) else value is not False)
+
+    def extract(name):
+        records = extracted.get(name, [])
+        for record in records:
+            if not isinstance(record, dict):
+                raise ValueError("추출 노드의 JSON 객체를 확인하세요.")
+        if len(records) > 1:
+            warnings.append(name.removeprefix("Information Extract - ")
+                            + " 추출 결과가 여러 건입니다. 초안에는 첫 응답을 표시합니다. 추출 원본값과 제출 서류를 대조해 유효본을 확인해 주세요.")
+        return records[0] if records else {}
 
     def first(name):
         return next(iter(nodes.get(name, [])), {})
@@ -142,9 +170,9 @@ def parse_result(job, files):
     final = field("Instruct - 최종판정")
     if not isinstance(final, dict) or final.get("enum") not in VERDICTS or not isinstance(final.get("reason"), str) or not final["reason"].strip():
         raise ValueError("최종판정 노드의 enum·reason을 확인하세요.")
-    app = field("Information Extract - 지급확인서") or {}
-    consent = (field("Information Extract - 개인정보동의") or {}).get("beneficiaries") or []
-    identity = field("Information Extract - 신분증정보") or {}
+    app = extract("Information Extract - 지급확인서")
+    consent = extract("Information Extract - 개인정보동의").get("beneficiaries") or []
+    identity = extract("Information Extract - 신분증정보")
     parse = first("step_1_parse")
     boundaries = unpack(parse.get("additional_values", {})).get("source_file_boundaries", [])
     source_ids = {b["file_id"]: files[b["file_index"]]["id"] for b in boundaries
@@ -166,7 +194,7 @@ def parse_result(job, files):
     emails = set()
     member_locations = {"01": {}, "02": {}}
     for f in files:
-        k = classes.get(f["id"], f["kind"])
+        k = classes.get(f["id"], "?")
         signals = json.loads(f["signals"])
         ref = {"id": f["id"], "page": signals.get("page", 1)}
         if "pages" in f.keys():
@@ -174,7 +202,6 @@ def parse_result(job, files):
         docs[k if k in docs else "?"].append(ref)
         if k == "01":
             for form in signals.get("apps", []):
-                emails.update(form.get("representative_emails", []))
                 for row, person in enumerate(form.get("roster", []), 1):
                     member_locations[k].setdefault(person["name"], []).append(dict(ref, page=form.get("page", ref["page"]), row=row))
         if k == "02":
@@ -184,11 +211,10 @@ def parse_result(job, files):
                 rows[page] += 1
                 member_locations[k].setdefault(person["name"], []).append(dict(ref, page=page, row=rows[page]))
 
-    if docs["01"]:
-        for node in nodes.get("Information Extract - 지급확인서", []):
-            form = unpack(node.get("text"))
-            if isinstance(form, dict) and isinstance(form.get("representative_email"), str):
-                emails.add(form["representative_email"].strip())
+    for node in nodes.get("Information Extract - 지급확인서", []):
+        form = unpack(node.get("text"))
+        if isinstance(form, dict) and isinstance(form.get("representative_email"), str):
+            emails.add(form["representative_email"].strip())
 
     def member_refs(kind, name, row):
         located = member_locations[kind].get(name)
@@ -200,15 +226,26 @@ def parse_result(job, files):
     elements = (unpack(parse.get("text", {})) or {}).get("elements", [])
     id_lines = [e.get("content", {}).get("text", "") for e in elements if e.get("page") in id_pages]
     rrns = set(re.findall(r"(?<!\d)\d{6}\s*-\s*(?:\d\*{6}|\*{7})(?![\d*])", "\n".join(id_lines)))
-    recipient = {"rrn_display": re.sub(r"\s+", "", rrns.pop()) if len(rrns) == 1 else "",
-                 "bank_name": str(identity.get("bank_name") or ""),
-                 "account_number": str(identity.get("account_number") or ""), "account_holder": identity.get("account_holder") or ""}
+    # Config 23 has no id_number_display. Keep its Parse fallback for older jobs;
+    # an explicit Extract value, including an empty value, takes precedence.
+    rrn = identity.get("id_number_display")
+    if "id_number_display" not in identity:
+        rrn = re.sub(r"\s+", "", rrns.pop()) if len(rrns) == 1 else ""
+    if rrn and not is_masked_rrn(str(rrn)):
+        warnings.append("신분증의 번호 표기가 마스킹되어 있는지 원본을 확인해 주세요.")
+        rrn = ""
+    recipient = {"rrn_display": text(rrn), "bank_name": text(identity.get("bank_name")),
+                 "account_number": text(identity.get("account_number")), "account_holder": text(identity.get("account_holder"))}
     members = []
-    if app.get("representative_name"):
-        members.append(dict(role="대표", name=app["representative_name"], school=app.get("representative_affiliation") or "",
-                            student_id=str(app.get("representative_student_id") or ""), major=app.get("representative_department") or ""))
-    members.extend(dict(role="팀원", name=m["name"], school=m.get("affiliation") or "", student_id=str(m.get("student_id") or ""),
-                        major=m.get("department") or "") for m in (app.get("members") or []) if m.get("name"))
+    if any(present(value) and not isinstance(value, bool)
+           for key, value in app.items() if key.startswith("representative_")):
+        members.append(dict(role="대표", name=text(app.get("representative_name")), school=text(app.get("representative_affiliation")),
+                            student_id=text(app.get("representative_student_id")), major=text(app.get("representative_department"))))
+    members.extend(dict(role="팀원", name=text(m.get("name")), school=text(m.get("affiliation")), student_id=text(m.get("student_id")),
+                        major=text(m.get("department"))) for m in (app.get("members") or []))
+    for index, member in enumerate(members, 1):
+        if not member["name"].strip():
+            warnings.append(f"명단 {index}행의 성명이 비어 있습니다. 학번·전공과 원본을 대조해 주세요.")
     checks, issues = [], []
 
     def check(label, passed, kinds, issue=None):
@@ -224,6 +261,8 @@ def parse_result(job, files):
         check("신청서·동의서 소속 표기 일치", all(m["major"] == majors.get(m["name"]) for m in members), ["01","02"], "affiliation")
         for i, member in enumerate(members, 1):
             name = member["name"]
+            if not name.strip():
+                continue
             found = [(j,b) for j,b in enumerate(consent,1) if b.get("name") == name]
             refs = member_refs("01", name, i)
             if not found:
@@ -265,4 +304,5 @@ def parse_result(job, files):
             "representative_emails": sorted(emails - {""}),
             "team_name": app.get("team_name") or "", "rep": app.get("representative_name") or "",
             "members": members, "recipient": recipient, "documents": docs, "checks": checks, "issues": issues or ["other"],
+            "extracted": extracted, "extraction_sources": extraction_sources, "extraction_warnings": warnings,
             "consent_names": [b.get("name") for b in consent], "staff_report": field("Instruct - 검토보고서") or ""}

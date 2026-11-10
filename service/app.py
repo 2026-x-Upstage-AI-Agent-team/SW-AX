@@ -24,7 +24,7 @@ from .db import DATA, ROOT, database, dump, initialize, now, row, rows, settings
 from .documents import preview
 from .mailing import connect_gmail, mail_settings, mailbox_address
 from .mail_drafts import detail as mail_detail
-from .studio import CONFIG, ISSUES
+from .studio import CONFIG, ISSUES, is_masked_rrn
 from .worker import REPORT_NAME, Worker
 from .workflow import (audit, check_report, effective_fields, enqueue_mail, files_for, held, missing_payouts,
                        pending_payouts, report_snapshot, require, require_payouts, synchronize)
@@ -200,12 +200,13 @@ def payment_draft(event: str):
         for team in rows(db,"SELECT * FROM teams WHERE event=? ORDER BY rowid",event):
             s = row(db,"SELECT * FROM submissions WHERE id=?",team["current"])
             fields = effective_fields(s) if s else {"members":[],"recipient":{}}
+            extracted = json.loads(s["result"] or "{}") if s else {}
             pending = []
             if not s or held(db,team["id"]):
                 pending.append("팀 배정 확인")
             if not s or s["decision"] != "승인" or s["state"] != "done":
                 pending.append("현재 제출본 승인")
-            result.append(dict(team=team["name"],submission=team["current"],rep=team["rep"],
+            result.append(dict(team=extracted.get("team_name") or "",submission=team["current"],rep=extracted.get("rep") or "",
                                revision=s["revision"] if s else None,
                                version=s["version"] if s else None,pending=pending,missing_payouts=missing_payouts(fields),**fields))
         return {"teams":result}
@@ -415,7 +416,7 @@ def retry(sid: str, body: Recovery):
 
 class Member(BaseModel):
     role: str
-    name: str = Field(min_length=1,max_length=80)
+    name: str = Field(max_length=80)
     student_id: str = Field(default="",max_length=60)
     major: str = Field(default="",max_length=150)
     school: str = Field(default="",max_length=100)
@@ -435,7 +436,7 @@ def save_review(sid: str, body: Review):
     if body.decision not in ("승인","보완 필요","작성 중") or any(k not in ISSUES for k in body.issues):
         raise HTTPException(422,"검토 결론과 보완 항목을 확인하세요.")
     recipient = {k:body.recipient.get(k,"").strip() for k in ("bank_name","account_number","account_holder","rrn_display")}
-    if recipient["rrn_display"] and not re.fullmatch(r"\d{6}-(?:\*{7}|\d\*{6})",recipient["rrn_display"]):
+    if recipient["rrn_display"] and not is_masked_rrn(recipient["rrn_display"]):
         raise HTTPException(422,"주민번호는 원본에 표시된 마스킹 표기로 입력하세요.")
     with database(True) as db:
         s,t = active(db,sid)
@@ -446,6 +447,7 @@ def save_review(sid: str, body: Review):
         if body.decision == "승인" and res.get("program") != require(db,"events",t["event"])["name"] and not clean(body.note):
             raise HTTPException(422,"신청서 프로그램명과 선택 대회명이 다릅니다. 확인 근거를 기록하세요.")
         if body.decision == "승인" and (res["verdict"] == "재제출요청" or
+              any(not m.name.strip() for m in body.members) or
               sum(m.role == "대표" for m in body.members) != 1 or any(m.role not in ("대표","팀원") for m in body.members)):
             raise HTTPException(409,"보완된 원본과 대표 한 명을 포함한 명단을 확인하세요.")
         if res["verdict"] == "담당자확인" and body.decision != "작성 중" and not clean(body.note):

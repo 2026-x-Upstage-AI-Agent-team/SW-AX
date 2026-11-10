@@ -53,7 +53,7 @@ class AwardReports {
         data.catalog.requireEvent(staff.getName(),event);
         var teams=data.list("""
             SELECT coalesce(s.fields,'{"members":[],"recipient":{},"award_type":"","support_amount":""}') ||
-                jsonb_build_object('team',t.name,'rep',t.representative,'submission',s.id,'version',s.version,'revision',s.revision,'pending',
+                jsonb_build_object('team',coalesce(s.output->>'team_name',''),'rep',coalesce(s.output->>'rep',''),'submission',s.id,'version',s.version,'revision',s.revision,'pending',
                 array_remove(ARRAY[CASE WHEN s.id IS NULL OR ops_team_held(t.id) THEN '팀 배정 확인' END,
                   CASE WHEN s.decision IS DISTINCT FROM '승인' OR s.state<>'done' THEN '현재 제출본 승인' END],NULL))
             FROM award_team t LEFT JOIN intake_team_confirmation c ON c.team_id=t.id AND c.state<>'superseded'
@@ -100,13 +100,13 @@ class AwardReports {
         var teams=report.putArray("teams");
         for(UUID sid:selection){
             var s=data.one("""
-                SELECT jsonb_build_object('name',t.name,'fields',s.fields,'revision',s.revision,'documents',s.output->'documents')
+                SELECT jsonb_build_object('output',s.output,'fields',s.fields,'revision',s.revision)
                 FROM ops_submission s JOIN award_team t ON t.id=s.team_id JOIN intake_team_confirmation c ON c.submission_id=s.id
                 WHERE s.id=? AND t.event_id=? AND c.state='confirmed' AND s.state='done' AND s.decision='승인' AND NOT ops_team_held(t.id)
                 """,sid,event);
             ObjectNode fields=(ObjectNode)s.path("fields").deepCopy();
-            fields.put("team_name",s.path("name").asString()).put("submission",sid.toString()).put("revision",s.path("revision").asInt());
-            var docs=s.path("documents");
+            fields.put("team_name",s.path("output").path("team_name").asString("")).put("submission",sid.toString()).put("revision",s.path("revision").asInt());
+            var docs=s.path("output").path("documents");
             var ids=new ArrayList<UUID>();
             if(docs.path("?").size()>0) throw ApiErrors.error(409,"분류되지 않은 증빙을 확인하세요.");
             for(String kind:List.of("01","02","03")){

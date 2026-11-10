@@ -119,7 +119,7 @@ class WorkflowOverview {
                 'current',c.submission_id,'note',coalesce(s.note,''),'fields',s.fields,'result',
                 CASE WHEN s.result IS NULL THEN NULL ELSE jsonb_build_object('documents','{"01":[],"02":[],"03":[],"?":[]}'::jsonb,
                  'checks','[]'::jsonb,'issues','[]'::jsonb,'members','[]'::jsonb,'recipient','{}'::jsonb,'consent_names','[]'::jsonb,
-                 'staff_report','','program','','team_name',t.name,'rep',t.representative)||coalesce(nullif(s.output,'null'),'{}')
+                 'staff_report','','program','','team_name','','rep','')||coalesce(nullif(s.output,'null'),'{}')
                  ||jsonb_build_object('verdict',s.verdict,'reason',s.result->>'reason') END)
             FROM ops_summary s JOIN award_team t ON t.id=s.team_id JOIN ops_leader_recipient r ON r.submission_id=s.id
             LEFT JOIN studio_execution e ON e.job_id=s.review_job_id

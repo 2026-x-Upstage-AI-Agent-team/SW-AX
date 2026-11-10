@@ -129,8 +129,8 @@ SELECT s.*,jsonb_build_object('id',id,'team',team_id,'version',version,'state',s
     'count',file_count,'award_type',fields->>'award_type','support_amount',fields->>'support_amount',
     'status_url','/api/operations/submissions/'||id) AS info FROM ops_submission s;
 
--- Compare the registered address to every representative address for this exact version.
--- Older results with a 01 but no saved address require a fresh staff confirmation.
+-- Only the original Studio Extract records can supply automatic address candidates.
+-- Legacy candidate arrays may contain local readings and are not used as a source.
 CREATE OR REPLACE VIEW ops_leader_recipient AS
 SELECT s.id AS submission_id, candidates.emails,
     t.email='' OR (t.email_confirmed_submission IS DISTINCT FROM s.id AND (
@@ -143,13 +143,10 @@ SELECT s.id AS submission_id, candidates.emails,
 FROM ops_submission s JOIN award_team t ON t.id=s.team_id
 CROSS JOIN LATERAL (SELECT ARRAY(
     SELECT DISTINCT btrim(raw) FROM (
-        SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(s.output->'representative_emails')='array'
-            THEN s.output->'representative_emails' ELSE '[]'::jsonb END) AS raw
-        UNION ALL SELECT s.output->>'representative_email'
-        UNION ALL
-        SELECT address #>> '{}' FROM team_submission_file sf JOIN original_analysis a ON a.file_id=sf.file_id
-        CROSS JOIN LATERAL jsonb_path_query(a.signals,'$.apps[*].representative_emails[*]') address
-        WHERE sf.submission_id=s.id AND a.kind='01'
+        SELECT record->>'representative_email' AS raw
+        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(s.output#>'{extracted,Information Extract - 지급확인서}')='array'
+            THEN s.output#>'{extracted,Information Extract - 지급확인서}' ELSE '[]'::jsonb END) AS extracted(record)
+        WHERE jsonb_typeof(record->'representative_email')='string'
     ) addresses WHERE btrim(raw)<>'' ORDER BY 1) AS emails) candidates;
 
 CREATE OR REPLACE VIEW ops_mail AS

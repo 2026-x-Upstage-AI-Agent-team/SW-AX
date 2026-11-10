@@ -176,7 +176,7 @@ def report_snapshot(db, event, selection):
         groups = result["documents"]
         if any(len(groups[k]) != 1 for k in ("01","02","03")) or groups["?"]:
             raise HTTPException(409, "팀별 01·02·03 원본을 한 부씩 확정하세요. 교체·추가는 보완 접수에서 할 수 있습니다.")
-        chosen.append({"team_name": t["name"], **fields, "submission": sid, "revision": s["revision"],
+        chosen.append({**fields, "team_name": result.get("team_name") or "", "submission": sid, "revision": s["revision"],
                        "file_ids": [groups[k][0]["id"] for k in ("01","02","03")]})
     return {"event": {"name": require(db, "events", event)["name"]}, "teams": chosen}
 

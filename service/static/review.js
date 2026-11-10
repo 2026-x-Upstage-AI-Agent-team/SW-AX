@@ -116,7 +116,7 @@ export function reviewPage(d, s) {
   return (
     '<a href="#review" class="back">← 팀별 서류 검토</a>' +
     head(
-      s.team_name,
+      r?.team_name?.trim() || "미확인",
       s.version + "차 제출 · 원본 " + s.count + "부 · " + when(s.updated) + " 갱신",
       '<button id="supplement" ' +
         (s.current !== s.id ? "disabled" : "") +

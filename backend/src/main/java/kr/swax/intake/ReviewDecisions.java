@@ -71,12 +71,13 @@ class ReviewDecisions {
         if (!sub.path("decision").isNull() && !choice.equals(sub.path("decision").asString("")))
             throw ApiErrors.error(409,"이미 저장한 결론을 바꾸려면 보완본을 접수하세요.");
         List<Member> members=form.members();
-        if(members==null||members.size()>150||members.stream().anyMatch(m->m==null || m.name()==null || m.name().isBlank()
+        if(members==null||members.size()>150||members.stream().anyMatch(m->m==null || m.name()==null
                 || m.name().length()>80 || !("대표".equals(m.role())||"팀원".equals(m.role()))
                 || Objects.toString(m.studentId(),"").length()>60||Objects.toString(m.major(),"").length()>150||Objects.toString(m.school(),"").length()>100))
             throw ApiErrors.error(422,"확정할 팀원 명단을 확인하세요.");
         String verdict=sub.path("verdict").asString("");
-        if(choice.equals("승인") && (verdict.equals("재제출요청") || members.stream().filter(m->m.role().equals("대표")).count()!=1))
+        if(choice.equals("승인") && (verdict.equals("재제출요청") || members.stream().anyMatch(m->m.name().isBlank())
+                || members.stream().filter(m->m.role().equals("대표")).count()!=1))
             throw ApiErrors.error(409,"보완된 원본과 대표 한 명을 포함한 명단을 확인하세요.");
         if (!choice.equals("작성 중") && note.isEmpty() && (verdict.equals("담당자확인") || (choice.equals("승인") &&
              !sub.path("output").path("program").asString("").equals(data.db.queryForObject("SELECT name FROM award_event WHERE id=?",String.class,event)))))
@@ -84,7 +85,7 @@ class ReviewDecisions {
         var recipient=new HashMap<String,String>();
         for(String key:List.of("bank_name","account_number","account_holder","rrn_display"))
             recipient.put(key,form.recipient()==null?"":Objects.toString(form.recipient().get(key),"").strip());
-        if (!recipient.get("rrn_display").isEmpty()&&!recipient.get("rrn_display").matches("\\d{6}-(?:\\*{7}|\\d\\*{6})"))
+        if (!recipient.get("rrn_display").isEmpty()&&!maskedRrn(recipient.get("rrn_display")))
             throw ApiErrors.error(422,"원본에 표시된 마스킹 주민번호를 입력하세요.");
         var saved=form.revision()>0 ? sub.path("fields") : data.json.createObjectNode();
         for(String key:List.of("gross_amount","tax_amount","net_amount"))
@@ -100,6 +101,11 @@ class ReviewDecisions {
         if(choice.equals("보완 필요")||(choice.equals("승인")&&verdict.equals("담당자확인")))
             data.db.update("INSERT INTO review_mail(submission_id,kind) VALUES(?,?) ON CONFLICT DO NOTHING",id,choice.equals("승인")?"검토 완료":"보완 요청");
         return Map.of("saved",true);
+    }
+
+    static boolean maskedRrn(String value) {
+        return value.matches("\\s*\\d{6}\\s*[-‐‑–—]\\s*\\d?[\\s*＊xX●•#■_]+")
+                && value.matches("(?s).*[*＊xX●•#■_].*");
     }
 
     @PostMapping("/api/submissions/{id}/retry")

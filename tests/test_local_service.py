@@ -191,6 +191,39 @@ class LocalServiceTests(unittest.TestCase):
         self.client.post("/api/submissions/s/retry",json={})
         self.assertEqual(("polling","job_known",0),(sub()["state"],sub()["job"],sub()["attempts"]))
 
+    def test_report_team_name_uses_the_agent_and_preserves_staff_corrections(self):
+        from reporting.fill_award_form import display
+        from service.mail_drafts import detail
+
+        fields = {"team_name": "이전 등록 팀명", "award_type": "대상", "support_amount": "100",
+                  "members": [{"role": "대표", "name": "담당자 수정 성명", "student_id": "00000001"}],
+                  "recipient": {"bank_name": "담당자 수정 은행", "gross_amount": "100", "tax_amount": "0", "net_amount": "100"}}
+        for i, name in enumerate(("API 팀명", "", None, "  ")):
+            sid = f"source-{i}"
+            result = {"rep": "", "members": [{"role": "대표", "name": "추출 성명"}],
+                      "documents": {**{k: [{"id": k}] for k in ("01", "02", "03")}, "?": []}}
+            if name is not None:
+                result["team_name"] = name
+            with db.database(True) as con:
+                con.execute("INSERT INTO teams(id,event,name,rep,current) VALUES(?,'wave',?,'등록 대표',?)",
+                            (sid, f"등록 팀명 {i}", sid))
+                con.execute("""INSERT INTO submissions(id,team,version,files,digest,created,updated,state,decision,result,fields)
+                    VALUES(?,?,1,'[]','test',1,1,'done','승인',?,?)""", (sid, sid, db.dump(result), db.dump(fields)))
+            draft = next(t for t in self.client.get("/api/events/wave/draft").raise_for_status().json()["teams"] if t["submission"] == sid)
+            self.assertEqual(draft["team"], name or "")
+            self.assertEqual(draft["rep"], "")
+            rid = self.client.post("/api/reports", json={"event": "wave", "submissions": [sid]}).raise_for_status().json()["id"]
+            with db.database() as con:
+                saved = json.loads(workflow.require(con, "reports", rid)["snapshot"])["teams"][0]
+                notice = detail(con, {"submission": sid, "kind": "검토 완료", "state": "draft", "subject": None, "body": None},
+                                {"MAIL_MODE": "local"})
+            self.assertEqual(saved["team_name"], name or "")
+            self.assertEqual(saved["members"], fields["members"])
+            self.assertEqual(saved["recipient"], fields["recipient"])
+            self.assertEqual(display(saved["team_name"]), "API 팀명" if name == "API 팀명" else "미확인")
+            self.assertTrue(notice["subject"].endswith("API 팀명" if name == "API 팀명" else "미확인"))
+            self.assertNotIn(f"등록 팀명 {i}", notice["body"])
+
     def test_report_checks_only_included_teams_and_requires_all_payouts(self):
         result = {"verdict":"성공","program":db.WAVE,"documents":{k:[{"id":k}] for k in ("01","02","03")}}
         result["documents"]["?"] = []
@@ -232,6 +265,29 @@ class LocalServiceTests(unittest.TestCase):
         self.upload([("미상.hwpx",official("set01")[0][1])],"other-receipt",target="B").raise_for_status()
         self.assertFalse(self.client.get(url).json()["stale"])
         self.assertEqual(self.client.post(url+"/confirm").status_code,200)
+
+    def test_partial_extraction_can_be_saved_and_corrected_before_approval(self):
+        source = {"verdict":"성공", "program":"가상 대회", "members":[
+            {"role":"대표", "name":"", "student_id":"00202601", "major":"가상학과", "school":"가상대학교"}],
+            "recipient":{"bank_name":"가상은행", "account_number":"001-0002", "rrn_display":"020101 - XXXXXXX"},
+            "extracted":{"Information Extract - 지급확인서":[{"representative_student_id":"00202601"}]}}
+        with db.database(True) as con:
+            con.execute("INSERT INTO teams(id,event,name,current) VALUES('transfer','wave','가상팀','transfer')")
+            con.execute("""INSERT INTO submissions(id,team,version,files,digest,created,updated,state,result)
+                VALUES('transfer','transfer',1,'[]','test',1,1,'done',?)""",(db.dump(source),))
+        body = {"revision":0, "decision":"작성 중", "note":"원본 대조", "members":source["members"], "recipient":source["recipient"]}
+        self.client.put('/api/submissions/transfer/review',json=body).raise_for_status()
+        detail = self.client.get('/api/submissions/transfer').raise_for_status().json()
+        self.assertEqual(detail["fields"]["members"],source["members"])
+        self.assertEqual(detail["fields"]["recipient"]["rrn_display"],source["recipient"]["rrn_display"])
+        self.assertEqual(detail["result"]["extracted"],source["extracted"])
+        body.update(revision=detail["revision"], decision="승인")
+        self.assertEqual(self.client.put('/api/submissions/transfer/review',json=body).status_code,409)
+        body["members"] = [dict(source["members"][0],name="가상대표")]
+        self.client.put('/api/submissions/transfer/review',json=body).raise_for_status()
+        detail = self.client.get('/api/submissions/transfer').raise_for_status().json()
+        self.assertEqual(detail["fields"]["members"][0]["name"],"가상대표")
+        self.assertEqual(detail["fields"]["recipient"]["account_number"],"001-0002")
 
     def test_explicit_same_origin_requests(self):
         self.assertEqual(403,self.client.post("/api/events",headers={"Origin":"https://outside.test"},json={"name":"x"}).status_code)

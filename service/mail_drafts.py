@@ -16,8 +16,8 @@ def detail(db, mail, cfg):
     editable = mail["state"] == "draft"
     subject, body = mail["subject"], mail["body"]
     if editable and (subject is None or body is None):
-        name = " ".join(team["name"].splitlines())
-        lines = [f"{team['name']} 팀장님, 제출 {sub['version']}차 서류의 검토 결과입니다.", ""]
+        name = " ".join((result.get("team_name") or "").splitlines()).strip() or "미확인"
+        lines = [f"{name} 팀장님, 제출 {sub['version']}차 서류의 검토 결과입니다.", ""]
         if kind == "보완 요청":
             last = row(db, "SELECT detail FROM audit WHERE subject=? AND action='검토 저장' ORDER BY id DESC LIMIT 1", sub["id"])
             review = json.loads(last["detail"]) if last else {}

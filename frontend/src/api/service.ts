@@ -111,6 +111,9 @@ export type StudioResult = {
   issues: string[];
   consent_names: string[];
   staff_report: string | Record<string, unknown>;
+  extracted?: Record<string, Record<string, unknown>[]>;
+  extraction_sources?: Record<string, unknown[]>;
+  extraction_warnings?: string[];
 };
 
 export type Fields = { members: Member[]; recipient: Recipient; award_type: string; support_amount: string };

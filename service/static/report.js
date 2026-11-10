@@ -34,13 +34,13 @@ export function reportsPage(d, teams) {
               eligible = draft && !draft.pending.length;
             return (
               '<tr><td><input type="checkbox" aria-label="' +
-              esc(t.name) +
+              esc(draft?.team?.trim() || "미확인") +
               ' 포함" value="' +
               esc(s?.id) +
               '" ' +
               (eligible ? "checked" : "disabled") +
               "></td><td><b>" +
-              esc(t.name) +
+              esc(draft?.team?.trim() || "미확인") +
               "</b><small>" +
               (s ? s.version + "차" : "배정 중") +
               "</small></td><td>" +
@@ -106,18 +106,18 @@ export function bindReports(d, teams) {
     }
     const people = teams.flatMap((t) =>
       t.members.map((m, i) => [
-        t.team,
-        m.name,
-        m.student_id || "미확인",
-        m.school || "미확인",
-        m.major || "미확인",
+        t.team?.trim() || "미확인",
+        m.name?.trim() || "미확인",
+        m.student_id?.trim() || "미확인",
+        m.school?.trim() || "미확인",
+        m.major?.trim() || "미확인",
         i ? "" : t.award_type || "미확인",
         i ? "" : t.support_amount || "미확인",
       ]),
     );
     const recipients = teams.map((t) => [
-      t.team,
-      t.rep,
+      t.team?.trim() || "미확인",
+      t.members.find((m) => m.role === "대표")?.name?.trim() || "미확인",
       t.recipient.rrn_display || "미확인",
       t.recipient.bank_name || "미확인",
       t.recipient.account_number || "미확인",
@@ -192,7 +192,7 @@ export function reportPage(r) {
   const missing = r.missing_payouts;
   return (
     '<a class="back" href="#report">← 지급내역서 목록</a>' +
-    head("시상금 지급내역서 · v" + r.version, r.teams.join(" → "), badge(r.state)) +
+    head("시상금 지급내역서 · v" + r.version, r.teams.map((name) => name.trim() || "미확인").join(" → "), badge(r.state)) +
     (r.stale
       ? '<div class="callout warn">제출본 또는 지급정보가 변경됐습니다. 목록에서 새 보고서를 생성하세요.</div>'
       : "") +

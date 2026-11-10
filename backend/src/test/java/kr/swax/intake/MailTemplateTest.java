@@ -6,6 +6,15 @@ import tools.jackson.databind.node.ObjectNode;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MailTemplateTest {
+    @Test void missingTeamNameIsShownAsUnknown() {
+        var source = new ObjectMapper().readTree("""
+            {"name":" ","kind":"검토 완료","version":1,"output":{}}
+            """);
+        var template = MailTemplate.from(source);
+        assertThat(template.subject()).endsWith("미확인");
+        assertThat(template.body()).startsWith("미확인 팀장님");
+    }
+
     @Test void draftKeepsLocationsAndFieldNamesWithoutCopyingPrivateValues() {
         var json=new ObjectMapper();
         var source=(ObjectNode)json.readTree("""

@@ -17,7 +17,9 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r service/requirements.txt
 ```
 
-서버의 환경 변수 또는 프로젝트의 `.env.local`에 `UPSTAGE_API_KEY`와 `UPSTAGE_AGENT_ID`를 지정한다. 공식 두 팀의 검증에는 Studio 설정 버전 `23`을 사용했다. 다른 버전은 `UPSTAGE_CONFIG_ID`로 지정한다.
+서버의 환경 변수 또는 프로젝트의 `.env.local`에 `UPSTAGE_API_KEY`와 `UPSTAGE_AGENT_ID`를 지정한다. 2026년 11월 10일 사용자가 최신화한 Studio 설정은 `51`이며 코드의 기본값과 현재 `UPSTAGE_CONFIG_ID`도 `51`이다. 이전 공식 두 팀의 실측은 설정 `23`으로 수행한 기록이다. 버전 변경은 `UPSTAGE_CONFIG_ID`로 지정한다.
+
+팀별 검토의 **명단·지급 정보 대조 → Upstage 추출 원본값**에서 모든 Extract 응답과 출처 메타데이터를 확인한다. Studio가 반환한 팀원 행은 성명이 비어 있어도 유지한다. 같은 유형의 응답이 여러 개이면 문서별로 보존하고 초안에 사용한 첫 응답과 함께 유효본 확인 안내를 표시한다. 서로 다른 제출본의 명단을 합산하거나 공란을 상호 보충하지 않는다. 담당자가 저장한 수정값은 계속 우선한다. 설정 51에는 마스킹 번호 문자열 속성이 없으므로 주민번호 표시는 기존 Parse 호환 경로를 사용한다. 향후 `id_number_display`가 제공되면 그 마스킹 표기를 우선 사용하고, 생년월일이나 가림 여부로 번호를 생성하지 않는다.
 
 ## 공식 자료를 접수하는 순서
 

@@ -18,6 +18,7 @@ record MailTemplate(String subject, String body) {
 
     static MailTemplate from(JsonNode mail) {
         String name = mail.path("name").asString("").replaceAll("\\R", " ");
+        if (name.isBlank()) name = "미확인";
         String kind = mail.path("kind").asString();
         int version = mail.path("version").asInt();
         var lines = new ArrayList<String>();

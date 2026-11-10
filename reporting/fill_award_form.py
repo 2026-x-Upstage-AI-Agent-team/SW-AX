@@ -16,7 +16,7 @@ MONEY_COLUMNS = ("gross_amount", "tax_amount", "net_amount")
 
 
 def display(value):
-    if value is None or value == "":
+    if value is None or (isinstance(value, str) and not value.strip()):
         return UNKNOWN
     if not isinstance(value, str):
         raise ValueError("학번·계좌 등 문서의 텍스트 값은 문자열이어야 합니다.")
