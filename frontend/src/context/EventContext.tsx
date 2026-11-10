@@ -9,7 +9,6 @@ type EventState = {
   events?: AwardEvent[];
   eventsError?: string;
   event?: AwardEvent;
-  selectEvent: (id: string) => void;
   teams?: AwardTeam[];
   teamsError?: string;
   /** 검토 서비스 현황 */
@@ -22,15 +21,6 @@ type EventState = {
 
 const EventContext = createContext<EventState | null>(null);
 const STORAGE_KEY = 'swax.event.' + backend;
-const SERVICE_DEFAULT_EVENT = 'wave';
-
-function readStored() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
 
 function isBusy(d?: Dashboard) {
   if (!d) return false;
@@ -42,29 +32,23 @@ function isBusy(d?: Dashboard) {
   );
 }
 
-export function EventProvider({ children }: { children: ReactNode }) {
+export function EventProvider({ children, workspaceId }: { children: ReactNode; workspaceId: string }) {
   const [revision, setRevision] = useState(0);
-  const [selected, setSelected] = useState(readStored);
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
 
   // Spring Boot 접수 API
-  const springEvents = useApi<AwardEvent[]>(backend === 'intake' ? paths.events : null, revision);
-  const springEvent = springEvents.data?.find((e) => e.id === selected) ?? springEvents.data?.[0];
+  const springEvents = useApi<AwardEvent[]>(paths.events, revision);
+  const springEvent = springEvents.data?.find((e) => e.id === workspaceId);
   const springTeams = useApi<AwardTeam[]>(backend === 'intake' && springEvent ? paths.teams(springEvent.id) : null, revision);
 
   // 검토 서비스 현황
-  const dashEvent = isDemoBackend ? selected || SERVICE_DEFAULT_EVENT : springEvent?.id;
+  const dashEvent = springEvent?.id;
   const dash = useApi<Dashboard>(dashEvent ? '/api/dashboard?event=' + encodeURIComponent(dashEvent) : null, revision);
-
-  useEffect(() => {
-    // 저장해 둔 대회가 사라졌으면 기본 대회로 돌아간다.
-    if (isDemoBackend && dash.error && !dash.data && selected && selected !== SERVICE_DEFAULT_EVENT) setSelected(SERVICE_DEFAULT_EVENT);
-  }, [dash.error, dash.data, selected]);
 
   usePolling(isBusy(dash.data), refresh, 3000);
 
-  const events = isDemoBackend ? dash.data?.events : springEvents.data;
-  const event = isDemoBackend ? dash.data?.events.find((e) => e.id === dash.data?.event) : springEvent;
+  const events = springEvents.data;
+  const event = springEvent;
   const serviceTeams = useMemo(() => dash.data?.teams.map(({ id, name, rep }) => ({ id, name, rep })), [dash.data]);
   const teams = isDemoBackend ? serviceTeams : springTeams.data;
 
@@ -80,9 +64,8 @@ export function EventProvider({ children }: { children: ReactNode }) {
   const value = useMemo<EventState>(
     () => ({
       events,
-      eventsError: isDemoBackend ? dash.error : springEvents.error,
+      eventsError: springEvents.error,
       event,
-      selectEvent: setSelected,
       teams,
       teamsError: isDemoBackend ? dash.error : springTeams.error,
       dashboard: dash.data,

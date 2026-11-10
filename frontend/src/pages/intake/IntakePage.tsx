@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useLocation, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate } from '../../components/workspaceNavigation';
 import { backend } from '../../api/backend';
 import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
@@ -14,7 +15,7 @@ import IntakeTabs from '../../components/IntakeTabs';
 
 const card = 'flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]';
 
-/** /intake (업로드·보완 접수), /intake/batches (접수 내역), /intake/batches/:id (접수 상세) */
+/** /intake (업로드·보완 서류 첨부), /intake/batches (첨부 내역), /intake/batches/:id (첨부 상세) */
 export default function IntakePage({ view }: { view: 'upload' | 'history' | 'detail' }) {
   const { event, events, eventsError, teams, teamsError, refresh } = useEvent();
   const [search] = useSearchParams();
@@ -23,12 +24,12 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
   return (
     <Page tone="gray" width="normal">
       <PageHeader
-        title={baseId ? '보완본 접수' : '문서 업로드'}
+        title={baseId ? '보완 서류 첨부' : '파일 첨부'}
         lead={
           baseId
-            ? '교체할 원본에 저장한 수정본을 적용하거나 새로 받은 파일을 추가하세요. 접수하면 같은 팀의 새 제출 버전으로 검토합니다.'
-            : backend === 'intake' ? '한 팀에서 받은 신청서(01), 동의서(02), 대표 증빙(03)을 한 묶음으로 올리세요. 다음 팀 서류는 새로 접수하세요.'
-            : '여러 팀의 신청서(01), 동의서(02), 대표 증빙(03)을 한 번에 접수할 수 있습니다.'
+            ? '교체할 원본에 저장한 수정본을 적용하거나 새로 받은 파일을 추가하세요. 첨부하면 같은 팀의 새 제출 버전으로 검토합니다.'
+            : backend === 'intake' ? '한 팀에서 받은 신청서(01), 동의서(02), 대표 증빙(03)을 한 묶음으로 올리세요. 다음 팀 서류는 새로 첨부하세요.'
+            : '여러 팀의 신청서(01), 동의서(02), 대표 증빙(03)을 한 번에 첨부할 수 있습니다.'
         }
       />
       {!baseId && <IntakeTabs />}
@@ -61,7 +62,7 @@ function BaseUpload({ sid }: { sid: string }) {
   const { event, teams } = useEvent();
   const base = useAsync(() => getSubmission(sid), [sid]);
   if (!base.data) return <Notice error={base.error} onRetry={base.reload} />;
-  if (base.data.current !== base.data.id) return <Feedback error="최신 제출 버전에서만 보완 접수할 수 있습니다." />;
+  if (base.data.current !== base.data.id) return <Feedback error="최신 제출 버전에서만 보완 서류 첨부할 수 있습니다." />;
   return <Upload key={sid} event={event!} teams={teams ?? []} base={base.data} />;
 }
 
@@ -77,7 +78,7 @@ function History({ eventId }: { eventId: string }) {
     <section className={card}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">
-          접수 목록 <em className="ml-1 text-base not-italic text-brand-strong">{result.data.length}</em>
+          첨부 목록 <em className="ml-1 text-base not-italic text-brand-strong">{result.data.length}</em>
         </h2>
         <button type="button" onClick={refresh} className={buttonStyles.text}>
           새로고침
@@ -91,7 +92,7 @@ function History({ eventId }: { eventId: string }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-canvas text-left text-[13px] text-muted">
-                {['접수번호', '접수 일시', '지정 팀', '원본', '상태', '관리'].map((h) => (
+                {['첨부번호', '첨부 일시', '지정 팀', '원본', '상태', '관리'].map((h) => (
                   <th key={h} scope="col" className="whitespace-nowrap px-2 py-3 font-medium">
                     {h}
                   </th>
@@ -113,8 +114,8 @@ function History({ eventId }: { eventId: string }) {
                     <StateBadge state={batch.status ?? 'received'} />
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">
-                    <DeleteIntake kind="묶음" name={'접수 ' + batch.batch_id.slice(0, 8)} path={paths.batch(batch.batch_id)}
-                      onDeleted={() => { setMessage('접수 ' + batch.batch_id.slice(0, 8) + ' 묶음을 삭제했습니다.'); refresh(); }} />
+                    <DeleteIntake kind="묶음" name={'첨부 ' + batch.batch_id.slice(0, 8)} path={paths.batch(batch.batch_id)}
+                      onDeleted={() => { setMessage('첨부 ' + batch.batch_id.slice(0, 8) + ' 묶음을 삭제했습니다.'); refresh(); }} />
                   </td>
                 </tr>
               ))}
@@ -143,22 +144,22 @@ function Detail({ eventId }: { eventId: string }) {
   if (result.error || !detail) return <Notice error={result.error} onRetry={result.reload} />;
   const { batch, files } = detail;
   const targetName = batch.team_name && teamLabel({ name: batch.team_name, rep: batch.team_rep, intake_number: batch.intake_number });
-  if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 접수번호가 아닙니다." />;
+  if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 첨부번호가 아닙니다." />;
   return (
     <div className="flex flex-col gap-4">
       <Feedback message={deleted?.batch === id ? deleted.name + ' 원본을 삭제했습니다.' : ''} />
       <section className={card}>
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-extrabold">접수 상세</h2>
+          <h2 className="text-xl font-extrabold">첨부 상세</h2>
           <StateBadge state={batch.status ?? 'received'} />
         </div>
         <dl className="grid grid-cols-[86px_minmax(0,1fr)] gap-3 text-sm">
-          <dt className="text-muted">접수번호</dt>
+          <dt className="text-muted">첨부번호</dt>
           <dd className="break-all font-mono">{batch.batch_id}</dd>
-          <dt className="text-muted">접수 일시</dt>
+          <dt className="text-muted">첨부 일시</dt>
           <dd>{formatDate(batch.created_at)}</dd>
           <dt className="text-muted">지정 팀</dt>
-          <dd>{targetName || '미지정 · 혼합 접수'}</dd>
+          <dd>{targetName || '미지정 · 여러 팀 서류 첨부'}</dd>
         </dl>
       </section>
       {batch.status === 'conflict' && <CorrectionNotice id={batch.batch_id} current={batch.current_submission} onSaved={result.reload} />}
@@ -176,7 +177,7 @@ function Detail({ eventId }: { eventId: string }) {
               const link = links.get(id);
               const job = link?.review_job;
               let submission = '제출본 확정 전';
-              if (link?.version != null) submission = `제출본 v${link.version}${link.state === 'superseded' ? ' · 이전 접수' : ''}`;
+              if (link?.version != null) submission = `제출본 v${link.version}${link.state === 'superseded' ? ' · 이전 첨부' : ''}`;
               if (link?.state === 'blocked') submission = '미배정 원본 확인 중';
               if (link?.state === 'empty') submission = '배정 원본 없음';
               return (
@@ -202,9 +203,9 @@ function Detail({ eventId }: { eventId: string }) {
       <section className={card}>
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold">
-            접수 원본 <em className="ml-1 text-base not-italic text-brand-strong">{files.length}</em>
+            첨부한 파일 <em className="ml-1 text-base not-italic text-brand-strong">{files.length}</em>
           </h2>
-          {!conflicted && <Link to="/assign" className={buttonStyles.text}>원본 배정 확인</Link>}
+          {!conflicted && <Link to="/assign" className={buttonStyles.text}>팀별 파일 정리</Link>}
           <span className="text-sm text-muted">{bytes(batch.total_bytes)}</span>
         </div>
         <ol>
@@ -217,7 +218,7 @@ function Detail({ eventId }: { eventId: string }) {
               </a>
               <DeleteIntake kind="원본" name={file.name} path={paths.batch(id) + '/files/' + file.item_id}
                 onDeleted={impact => {
-                  if (impact.batch_count) navigate('/intake/batches', { replace: true, state: { eventId, message: '마지막 원본과 접수 묶음을 삭제했습니다.' } });
+                  if (impact.batch_count) navigate('/intake/batches', { replace: true, state: { eventId, message: '마지막 원본과 첨부 묶음을 삭제했습니다.' } });
                   else setDeleted({ batch: id, name: file.name });
                   refresh();
                 }} />
@@ -226,9 +227,9 @@ function Detail({ eventId }: { eventId: string }) {
         </ol>
       </section>
       <div className="flex flex-wrap gap-3">
-        {batch.intake_number != null && <Link to="/intake" className={buttonStyles.primary}>다음 팀 서류 접수</Link>}
+        {batch.intake_number != null && <Link to="/intake" className={buttonStyles.primary}>다음 팀 서류 첨부</Link>}
         <Link to="/intake/batches" className={buttonStyles.secondary}>
-          접수 목록으로
+          첨부 목록으로
         </Link>
       </div>
     </div>
@@ -245,7 +246,7 @@ function ServiceHistory() {
     <section className={card}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">
-          접수 목록 <em className="ml-1 text-base not-italic text-brand-strong">{batches.length}</em>
+          첨부 목록 <em className="ml-1 text-base not-italic text-brand-strong">{batches.length}</em>
         </h2>
         <button type="button" onClick={refresh} className={buttonStyles.text}>
           새로고침
@@ -258,7 +259,7 @@ function ServiceHistory() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-canvas text-left text-[13px] text-muted">
-                {['접수번호', '접수 일시', '원본', '배정 확인', '상태'].map((h) => (
+                {['첨부번호', '첨부 일시', '원본', '배정 확인', '상태'].map((h) => (
                   <th key={h} scope="col" className="whitespace-nowrap px-2 py-3 font-medium">
                     {h}
                   </th>
@@ -305,9 +306,9 @@ function CorrectionNotice({ id, current, onSaved }: { id: string; current?: stri
   }
   return <div className={card}>
     <strong>보완 기준 제출본이 변경됐습니다.</strong>
-    <p>아래 접수 원본을 최신 확정본과 대조하고, 반영할 파일만 다시 접수해 주세요.</p>
-    {current && <Link to={'/intake?base=' + current} className={buttonStyles.text}>최신 제출본에서 보완 접수</Link>}
-    <button type="button" className={cx(buttonStyles.outline, 'self-start')} disabled={saving} onClick={finish}>이 접수의 대조 완료</button>
+    <p>아래 첨부한 파일을 최신 확정본과 대조하고, 반영할 파일만 다시 첨부해 주세요.</p>
+    {current && <Link to={'/intake?base=' + current} className={buttonStyles.text}>최신 제출본에서 보완 서류 첨부</Link>}
+    <button type="button" className={cx(buttonStyles.outline, 'self-start')} disabled={saving} onClick={finish}>이 첨부의 대조 완료</button>
     <Feedback error={error} />
   </div>;
 }
@@ -325,22 +326,22 @@ function ServiceDetail() {
     <div className="flex flex-col gap-4">
       <section className={card}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-xl font-extrabold">접수 상세</h2>
+          <h2 className="text-xl font-extrabold">첨부 상세</h2>
           <StateBadge state={b.state} />
         </div>
         <dl className="grid grid-cols-[86px_minmax(0,1fr)] gap-3 text-sm">
-          <dt className="text-muted">접수번호</dt>
+          <dt className="text-muted">첨부번호</dt>
           <dd className="break-all font-mono">{b.id}</dd>
-          <dt className="text-muted">접수 일시</dt>
+          <dt className="text-muted">첨부 일시</dt>
           <dd>{when(b.created)}</dd>
           <dt className="text-muted">지정 팀</dt>
-          <dd>{b.target ? teamName(b.target) : '미지정 · 혼합 접수'}{b.base && ' · 보완 접수'}</dd>
+          <dd>{b.target ? teamName(b.target) : '미지정 · 여러 팀 서류 첨부'}{b.base && ' · 보완 서류 첨부'}</dd>
         </dl>
         {b.state === 'preparing' && <p className="text-sm text-muted">원본을 PDF로 바꾸고 본문을 읽는 중입니다. 화면이 자동으로 새로고침됩니다.</p>}
         {b.state === 'conflict' && <CorrectionNotice id={b.id} current={dashboard?.teams.find((t) => t.id === b.target)?.current} onSaved={result.reload} />}
         {pending > 0 && b.state !== 'conflict' && b.state !== 'conflict_reviewed' && (
           <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>
-            팀 배정 확인 {pending}개
+            팀별 파일 정리 {pending}개
           </Link>
         )}
         {b.teams.length > 0 && (
@@ -355,7 +356,7 @@ function ServiceDetail() {
       </section>
       <section className={card}>
         <h2 className="text-xl font-extrabold">
-          접수 원본 <em className="ml-1 text-base not-italic text-brand-strong">{b.files.length}</em>
+          첨부한 파일 <em className="ml-1 text-base not-italic text-brand-strong">{b.files.length}</em>
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-sm">
@@ -398,7 +399,7 @@ function ServiceDetail() {
       </section>
       <div>
         <Link to="/intake/batches" className={buttonStyles.secondary} onClick={refresh}>
-          접수 목록으로
+          첨부 목록으로
         </Link>
       </div>
     </div>

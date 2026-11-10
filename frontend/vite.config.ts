@@ -15,6 +15,10 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '127.0.0.1',
       proxy: {
+        // Keep the existing local staff session and login flow available in the UI preview.
+        '/login': { target: INTAKE_API, changeOrigin: true, autoRewrite: true },
+        '/logout': { target: INTAKE_API, changeOrigin: true, autoRewrite: true },
+        '/staff-access': { target: INTAKE_API, changeOrigin: true },
         '/api': {
           target: service ? reviewOrigin : INTAKE_API,
           changeOrigin: true,

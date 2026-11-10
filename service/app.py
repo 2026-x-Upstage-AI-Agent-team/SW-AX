@@ -63,6 +63,7 @@ async def local_browser(request: Request, call_next):
 class TextValue(BaseModel):
     name: str = Field(min_length=1, max_length=170)
     rep: str = Field(default="",max_length=60)
+    category_id: str = "awards"
 
 
 def clean(value):
@@ -182,8 +183,35 @@ def gmail_connect(body: GmailConnection):
     return {"connected": True, "address": address}
 
 
+@app.get("/api/categories")
+def categories():
+    return [
+        {"id":"awards", "name":"시상금 서류 검토", "enabled":True,
+         "description":"신청서와 동의서, 대표 증빙을 함께 검토하고 지급내역서를 만듭니다."},
+        {"id":"result-reports", "name":"결과보고서 검토", "enabled":False,
+         "description":"프로그램 운영 실적과 결과보고서, 첨부 자료를 확인하는 업무입니다."},
+        {"id":"expense-evidence", "name":"사업비 집행 증빙 검토", "enabled":False,
+         "description":"사업비 사용 내역과 영수증, 지출 증빙을 확인하는 업무입니다."},
+        {"id":"scholarships", "name":"장학금 서류 검토", "enabled":False,
+         "description":"장학금 신청서와 제출 서류의 누락·불일치를 확인하는 업무입니다."},
+        {"id":"participation", "name":"참여·활동 증빙 검토", "enabled":False,
+         "description":"참여 명단과 활동 내역, 출석 증빙을 확인하는 업무입니다."},
+        {"id":"agreements", "name":"협약·계약 서류 검토", "enabled":False,
+         "description":"협약서와 계약서의 기재 항목, 서명과 첨부 서류를 확인하는 업무입니다."},
+    ]
+
+
+@app.get("/api/events")
+def events(category: str | None = None):
+    with database() as db:
+        return ([dict(event,category_id="awards") for event in rows(db,"SELECT * FROM events ORDER BY rowid DESC")]
+                if category in (None,"awards") else [])
+
+
 @app.post("/api/events")
 def create_event(body: TextValue):
+    if body.category_id != "awards":
+        raise HTTPException(422,"업무 카테고리를 다시 선택해 주세요.")
     name = clean(body.name)
     if not name or not name.isprintable():
         raise HTTPException(422,"대회명을 입력하세요.")

@@ -4,14 +4,14 @@ export const stateLabels: Record<string, string> = {
   preparing: '파일 판독 중',
   conflict: '보완본 담당자 확인',
   conflict_reviewed: '보완본 확인 완료',
-  review: '팀 배정 확인',
+  review: '팀별 파일 정리',
   assigned: '배정 완료',
   read: '파일 판독 완료',
   waiting: '대기',
   recipient_check: '수신자 확인 필요',
   draft: '승인 대기',
   approved: '승인됨 · 발송 대기',
-  unassigned: '팀 배정 확인',
+  unassigned: '팀별 파일 정리',
   outside: '대상 외',
   error: '파일 확인',
   queued: '처리 대기',
@@ -36,7 +36,7 @@ export const stateLabels: Record<string, string> = {
   local: '로컬 수신',
   sending: '발송 중',
   obsolete: '이전 버전',
-  received: '원본 접수 완료',
+  received: '파일 첨부 완료',
 };
 
 export const stateLabel = (state?: string | null) => (state ? stateLabels[state] ?? state : '—');

@@ -1,7 +1,7 @@
 // Spring Boot 접수 API (backend/src/main/java/kr/swax/intake)와 연결되는 실제 호출.
 import { ApiError, STAFF_HEADER, errorText, postJson } from './client';
 
-export type AwardEvent = { id: string; name: string };
+export type AwardEvent = { id: string; name: string; category_id?: string };
 export type AwardTeam = { id: string; name: string; rep: string; intake_number?: number | null };
 
 export type BatchSummary = {
@@ -58,16 +58,18 @@ export const paths = {
 
 export function receiptName(name: string, number?: number | null) {
   const provisional = `접수 ${number}팀`;
-  return number && name !== provisional ? `${provisional} · ${name}` : name;
+  if (!number) return name;
+  const label = `${number}번 팀`;
+  return name === provisional ? label : `${label} · ${name}`;
 }
 
 export const teamLabel = (team: { name: string; rep?: string | null; intake_number?: number | null }) =>
   receiptName(team.name, team.intake_number) + (team.rep ? ' · ' + team.rep : '');
 
-export const createEvent = (name: string) => postJson<AwardEvent>(paths.events, { name });
+export const createEvent = (name: string, categoryId = 'awards') => postJson<AwardEvent>(paths.events, { name, category_id: categoryId });
 
 /**
- * 원본 일괄 업로드. 같은 선택을 다시 보내면 같은 Idempotency-Key로 기존 접수번호를 받는다.
+ * 원본 일괄 업로드. 같은 선택을 다시 보내면 같은 Idempotency-Key로 기존 첨부번호를 받는다.
  * Spring Boot는 202, 검토 서비스는 202(새 접수) 또는 200(이미 배정까지 끝난 같은 접수)을 돌려준다.
  */
 export function uploadBatch(form: FormData, key: string, onProgress: (percent: number) => void): Promise<Receipt> {
@@ -87,10 +89,10 @@ export function uploadBatch(form: FormData, key: string, onProgress: (percent: n
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
     };
     xhr.onerror = xhr.onabort = () =>
-      reject(new ApiError('전송 결과를 받지 못했습니다. 같은 파일로 다시 접수해 주세요.', 0));
+      reject(new ApiError('전송 결과를 받지 못했습니다. 같은 파일로 다시 첨부해 주세요.', 0));
     xhr.onload = () => {
       if ((xhr.status === 202 || xhr.status === 200) && xhr.response?.batch_id) resolve(xhr.response as Receipt);
-      else reject(new ApiError(errorText(xhr.response, '원본을 접수하지 못했습니다. 파일 목록을 확인해 주세요.'), xhr.status));
+      else reject(new ApiError(errorText(xhr.response, '파일을 첨부하지 못했습니다. 파일 목록을 확인해 주세요.'), xhr.status));
     };
     xhr.onloadend = () => clearTimeout(timeout);
     armTimeout();

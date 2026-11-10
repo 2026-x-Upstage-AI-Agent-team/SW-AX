@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link } from '../components/workspaceNavigation';
 import { Download, FileText, FileType2 } from 'lucide-react';
 import { ApiError, useAsync, usePolling } from '../api/client';
 import { when } from '../api/labels';

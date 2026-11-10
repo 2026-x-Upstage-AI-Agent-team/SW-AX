@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
+import { Link } from '../components/workspaceNavigation';
 import { useAsync, usePolling } from '../api/client';
 import { receiptName } from '../api/intake';
 import { isDemoBackend } from '../api/backend';
@@ -127,12 +128,12 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
         <div className="flex-auto" />
         {!outdated && (
           <Link to={`/intake?base=${s.id}`} className={cx(buttonStyles.primary, 'min-h-11 px-5 text-sm')}>
-            보완본 접수
+            보완 서류 첨부
           </Link>
         )}
       </div>
       {evidence.summary && <p className="max-w-4xl text-[17px] leading-relaxed text-ink-2">{evidence.summary}</p>}
-      {s.held && <Feedback error="이 팀에 속할 수 있는 미배정 파일이 있어 검토 저장과 안내가 보류됩니다. 팀 배정 확인에서 먼저 정리해 주세요." />}
+      {s.held && <Feedback error="이 팀에 속할 수 있는 미배정 파일이 있어 검토 저장과 안내가 보류됩니다. 팀별 파일 정리에서 먼저 정리해 주세요." />}
       {s.state !== 'done' && <StatusCard s={s} onSaved={onSaved} />}
 
       <div className="mt-4 flex flex-wrap items-start gap-6">
@@ -299,7 +300,7 @@ function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
       )}
       {s.state === 'ownership' && (
         <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>
-          팀 배정 확인으로
+          팀별 파일 정리으로
         </Link>
       )}
       {recoverable && (
@@ -388,7 +389,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
           ))}
         </div>
         {s.verdict === '재제출요청' && !locked && <p className="text-xs text-muted">재제출요청 판정은 보완본을 받아 다시 검토한 뒤 승인할 수 있습니다.</p>}
-        {locked && <p className="text-xs text-muted">이미 안내한 결론은 바꿀 수 없습니다. 바꾸려면 보완본을 접수하세요.</p>}
+        {locked && <p className="text-xs text-muted">이미 안내한 결론은 바꿀 수 없습니다. 바꾸려면 보완 서류를 첨부하세요.</p>}
         {decision === '보완 필요' && (
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-xs text-muted">팀장에게 안내할 보완 항목</legend>

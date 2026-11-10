@@ -5,6 +5,7 @@ import { createEditor, type RhwpEditor } from '@rhwp/editor';
 import { ApiError } from '../api/client';
 import { exportEditedHwpx, getEditHistory, readVersion, saveVersion, versionName, versionUrl, type EditHistory } from '../api/documentVersions';
 import { buttonStyles, Feedback } from '../components/ui';
+import { workspacePath } from '../api/workspaces';
 
 export default function DocumentEditor() {
   const { id = '' } = useParams();
@@ -29,7 +30,9 @@ function Editor({ file }: { file: string }) {
   const latest = history?.versions[0]?.version ?? 0;
   const legacy = location.pathname === '/document-editor';
   const review = query.get('review');
-  const back = (review ? '/teams/' + encodeURIComponent(review) : '/assign') + '?file=' + encodeURIComponent(file);
+  const taskPath = (review ? '/teams/' + encodeURIComponent(review) : '/assign') + '?file=' + encodeURIComponent(file);
+  const workspace = query.get('workspace');
+  const back = workspace ? workspacePath(workspace, taskPath, query.get('category') ?? 'awards') : taskPath;
   const legacyRoute = query.get('from') ?? '';
   const returnUrl = legacy ? '/#' + (/^(intake|review)(\/[\w-]+)?$/.test(legacyRoute) ? legacyRoute : 'intake') : '#' + back;
 
@@ -162,7 +165,7 @@ function Editor({ file }: { file: string }) {
           if (locked.current || !(await canLeave())) return;
           if (legacy) window.location.assign(returnUrl);
           else navigate(back);
-        }}><ArrowLeft size={16} />{review || legacyRoute.startsWith('review') ? '팀별 검토' : '팀 배정 확인'}</a>
+        }}><ArrowLeft size={16} />{review || legacyRoute.startsWith('review') ? '팀별 검토' : '팀별 파일 정리'}</a>
         <div className="min-w-36 flex-1">
           <h1 className="font-bold text-ink">한글 문서 편집</h1>
           {history && <p className="break-all text-sm text-muted">{history.name}</p>}
@@ -171,7 +174,7 @@ function Editor({ file }: { file: string }) {
           <select aria-label="문서 버전" className="rounded-lg border border-line-2 bg-white p-2" value={version} disabled={busy || !ready}
             onChange={e => void switchVersion(Number(e.target.value))}>
             {history.versions.map(v => <option key={v.version} value={v.version}>수정본 v{v.version} · {v.editor} · {new Date(v.saved_at).toLocaleString('ko-KR')}</option>)}
-            <option value={0}>접수 원본</option>
+            <option value={0}>첨부한 파일</option>
           </select>
         </label>}
         {ready && history && <a href={versionUrl(file, version)} download={versionName(history.name, version)} className={buttonStyles.text}>저장본 내려받기</a>}

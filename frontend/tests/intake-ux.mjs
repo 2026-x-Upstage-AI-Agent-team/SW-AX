@@ -42,8 +42,9 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await server?.close(); });
 
-async function newPage(t, width = 1440) {
+async function newPage(t, width = 1440, tour = false) {
   const context = await browser.newContext({ baseURL, viewport: { width, height: 850 }, locale: 'ko-KR', reducedMotion: 'reduce' });
+  if (!tour) await context.addInitScript(() => localStorage.setItem('swax.workspace-tour.v1.intake.test', 'done'));
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   t.after(() => context.close());
@@ -55,9 +56,96 @@ async function newPage(t, width = 1440) {
   return page;
 }
 
+test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화면 순서를 둘러본다', async t => {
+  const page = await newPage(t, 1280, true);
+  const writes = [];
+  page.on('request', request => { if (request.method() !== 'GET') writes.push(request.url()); });
+  await page.goto('/#/categories/awards/workspaces/test/');
+  const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
+  await guide.getByRole('heading', { name: '먼저, 파일 첨부를 눌러 주세요.' }).waitFor();
+  await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
+  await page.locator('.workspace-rail').getByRole('link', { name: '파일 첨부', exact: true }).click();
+  await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
+  assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
+  await page.reload();
+  await guide.getByRole('heading', { name: '한 팀의 서류를 함께 선택하세요.' }).waitFor();
+  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
+  assert.ok(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isDisabled());
+  for (const target of ['upload-history', 'nav-dashboard', 'nav-mail', 'nav-report']) {
+    await guide.getByRole('button', { name: '다음 단계' }).click();
+    await page.locator(`.tour-spotlight[data-target="${target}"]`).waitFor();
+  }
+  await guide.getByRole('button', { name: '파일 첨부 시작하기' }).click();
+  await guide.waitFor({ state: 'hidden' });
+  assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
+  await page.goto('/#/categories/awards/workspaces/test/');
+  assert.equal(await guide.count(), 0);
+  await page.locator('.workspace-guide-entry').getByRole('button', { name: '시작 가이드' }).click();
+  await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
+  await page.keyboard.press('Tab');
+  assert.ok(await page.evaluate(() => document.activeElement?.matches('[data-tour="nav-upload"], .tour-card button')));
+  await page.keyboard.press('Escape');
+  await guide.waitFor({ state: 'hidden' });
+  assert.deepEqual(writes, [], 'The tour must never submit files, approve mail, or generate reports.');
+});
+
+test('320px 가이드는 메뉴를 열고 실제 파일 첨부 버튼을 누를 수 있으며 종료를 기억한다', async t => {
+  const page = await newPage(t, 320, true);
+  await page.goto('/#/categories/awards/workspaces/test/');
+  const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
+  await page.locator('.tour-spotlight[data-target="menu-open"]').waitFor();
+  await guide.getByRole('button', { name: '메뉴 열기', exact: true }).click();
+  await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
+  await page.getByRole('dialog', { name: '작업 메뉴', exact: true }).getByRole('link', { name: '파일 첨부', exact: true }).click();
+  await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
+  const card = await guide.boundingBox();
+  const target = await page.getByRole('button', { name: '첨부할 서류 파일 선택' }).boundingBox();
+  assert.ok(card.x >= 0 && card.x + card.width <= 320 && card.y >= 0 && card.y + card.height <= 850);
+  assert.ok(card.y + card.height <= target.y || card.y >= target.y + target.height, 'Tooltip must leave the highlighted button uncovered.');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.setViewportSize({ width: 554, height: 706 });
+  await page.waitForFunction(() => {
+    const card = document.querySelector('.tour-card')?.getBoundingClientRect();
+    const next = document.querySelector('.tour-card footer button:last-child')?.getBoundingClientRect();
+    return card && next && next.bottom <= card.bottom && next.top >= card.top && card.bottom <= innerHeight;
+  });
+  await guide.getByRole('button', { name: '가이드 종료' }).click();
+  await page.goto('/#/categories/awards/workspaces/test/');
+  await page.reload();
+  assert.equal(await guide.count(), 0);
+  await page.locator('.workspace-guide-entry').getByRole('button', { name: '시작 가이드' }).click();
+  await guide.getByRole('button', { name: '메뉴 열기', exact: true }).click();
+  await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
+  await page.keyboard.press('Escape');
+  await guide.waitFor({ state: 'hidden' });
+  assert.equal(await page.getByRole('dialog', { name: '작업 메뉴', exact: true }).count(), 0);
+});
+
+test('가이드는 선택한 서류를 버리고 이동하지 않으며 종료 후에도 선택을 유지한다', async t => {
+  const page = await newPage(t, 1280, true);
+  await page.goto('/#/categories/awards/workspaces/test/');
+  const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
+  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
+  await page.locator('input[type=file]').setInputFiles({ name: '01_가이드시험.hwpx', mimeType: 'application/octet-stream', buffer: Buffer.from('tour-selection-only') });
+  await page.waitForFunction(() => document.querySelector('[data-tour="upload-form"]')?.dataset.tourPending === 'true');
+  assert.ok(await guide.getByRole('button', { name: '이전', exact: true }).isDisabled());
+  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
+  assert.ok(await guide.getByRole('button', { name: '다음 단계' }).isDisabled());
+  await guide.getByRole('button', { name: '가이드 종료' }).click();
+  await page.getByText('01_가이드시험.hwpx', { exact: true }).waitFor();
+  assert.ok(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isEnabled());
+  await page.locator('.workspace-rail').getByRole('button', { name: '시작 가이드', exact: true }).click();
+  await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
+  await page.getByText('01_가이드시험.hwpx', { exact: true }).waitFor();
+  assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
+});
+
 test('좁은 화면에서 파일을 열고 목록으로 돌아오면 키보드 포커스도 돌아온다', async t => {
   const page = await newPage(t, 375);
-  await page.goto('/#/assign');
+  await page.goto('/#/categories/awards/workspaces/test/assign');
   const queue = page.getByRole('region', { name: '확인할 파일 1' });
   const row = queue.getByRole('button', { name: new RegExp('SW수혜학생신청') });
   await row.focus();
@@ -70,12 +158,12 @@ test('좁은 화면에서 파일을 열고 목록으로 돌아오면 키보드 �
   await page.goForward();
   await page.getByRole('button', { name: '파일 목록으로' }).click();
   await row.waitFor();
-  assert.equal(new URL(page.url()).hash, '#/assign');
-  await page.goto('/#/assign?file=original');
+  assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/assign');
+  await page.goto('/#/categories/awards/workspaces/test/assign?file=original');
   await page.getByRole('button', { name: '파일 목록으로' }).click();
   await row.waitFor();
-  await page.goto('/#/assign?file=missing');
-  await page.getByRole('alert').filter({ hasText: '현재 대회의 최근 접수 목록에 없습니다' }).waitFor();
+  await page.goto('/#/categories/awards/workspaces/test/assign?file=missing');
+  await page.getByRole('alert').filter({ hasText: '현재 워크스페이스의 최근 첨부 목록에 없습니다' }).waitFor();
   assert.equal(await page.locator('#detail-h').count(), 0);
 });
 
@@ -87,7 +175,7 @@ test('판독 대기 원본은 확인할 파일에 있고 배정되면 처리된 
   const preparing = { ...batch, state: 'preparing', count: files.length, pending: 4, files };
   await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, batches: [preparing] } }));
   await page.route('**' + batchPath, route => route.fulfill({ json: preparing }));
-  await page.goto('/#/assign');
+  await page.goto('/#/categories/awards/workspaces/test/assign');
   const queue = page.getByRole('region', { name: /^확인할 파일/ });
   await queue.getByRole('heading', { name: '확인할 파일 4', exact: true }).waitFor();
   const lists = queue.getByRole('list');
@@ -119,7 +207,7 @@ test('팀별 판정 필터는 대기·조치 필요·성공을 구분하고 새 
   ];
   await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
   await page.route('**/api/operations/submissions/*', route => route.fulfill({ json: { id: route.request().url().split('/').pop(), history: [] } }));
-  await page.goto('/#/');
+  await page.goto('/#/categories/awards/workspaces/test/');
   const filters = page.getByRole('group', { name: '판정 필터' });
   const table = page.getByRole('region', { name: '팀별 판정 표' });
   const names = () => table.locator('tbody .team-identity').evaluateAll(cells => cells.map(cell => cell.firstElementChild.textContent));
@@ -180,7 +268,7 @@ test('판정 사유는 문제만 요약하고 검토 상세에서 원본 근거�
   for (const s of submissions) {
     await page.route('**/api/operations/submissions/' + s.id, route => route.fulfill({ json: s }));
   }
-  await page.goto('/#/');
+  await page.goto('/#/categories/awards/workspaces/test/');
   const table = page.getByRole('region', { name: '팀별 판정 표' });
   const reason = name => table.getByRole('row').filter({ hasText: name }).locator('.team-reason');
   await reason('중복팀').filter({ hasText: /신분증 발급일/ }).waitFor();
@@ -234,7 +322,7 @@ test('미리보기 설명은 Upstage 응답만 사용하고 근거 없는 누락
     await page.route('**/api/operations/submissions/' + id, route => route.fulfill({ json: { ...detail, id, current: id } }));
   }
   const explanation = page.getByRole('region', { name: 'Upstage 검토 설명' });
-  await page.goto('/#/teams/source');
+  await page.goto('/#/categories/awards/workspaces/test/teams/source');
   await explanation.getByText(reason.replace('【†1】', ''), { exact: true }).waitFor();
   await explanation.getByText('Upstage 판정 근거 · 제출 v3', { exact: true }).waitFor();
   assert.doesNotMatch(await explanation.innerText(), /학번|계좌|미기재|API 추출값 없음/);
@@ -242,17 +330,17 @@ test('미리보기 설명은 Upstage 응답만 사용하고 근거 없는 누락
   assert.equal(await preview.getByRole('region', { name: 'Upstage 검토 설명' }).count(), 1);
   await page.getByRole('tab', { name: '확정 파일 목록', exact: true }).click();
   assert.equal(await explanation.count(), 1);
-  await page.goto('/#/teams/report');
+  await page.goto('/#/categories/awards/workspaces/test/teams/report');
   await explanation.getByText('신분증·통장 사본 · 신분증 발급일 — API 추출값 없음', { exact: true }).waitFor();
   await explanation.getByText('지급확인서 · 팀원 학번 — API 추출값 없음', { exact: true }).waitFor();
   assert.equal(await explanation.getByText(/대표 학번/).count(), 0);
   await page.setViewportSize({ width: 320, height: 740 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   if (process.env.INTAKE_EXPLANATION_SCREENSHOT) await page.screenshot({ path: process.env.INTAKE_EXPLANATION_SCREENSHOT, fullPage: true });
-  await page.goto('/#/teams/legacy');
+  await page.goto('/#/categories/awards/workspaces/test/teams/legacy');
   await explanation.getByText('이 제출본의 Upstage 응답에 상세 판정 설명이 없습니다.', { exact: true }).waitFor();
   assert.doesNotMatch(await explanation.innerText(), /미제출|미기재|추출값 없음/);
-  await page.goto('/#/teams/success');
+  await page.goto('/#/categories/awards/workspaces/test/teams/success');
   await page.getByRole('heading', { name: 'API 근거팀', exact: true }).waitFor();
   assert.equal(await explanation.count(), 0);
 });
@@ -272,7 +360,7 @@ test('추출값 충돌과 이름 없는 학생을 보존하고 담당자 수정 
       extracted, extraction_warnings: [warning], staff_report: '' } };
   await page.route('**/api/operations/submissions/transfer', route => route.fulfill({ json: s }));
   await page.route('**/api/submissions/transfer/review', route => route.fulfill({ json: { saved: true } }));
-  await page.goto('/#/teams/transfer');
+  await page.goto('/#/categories/awards/workspaces/test/teams/transfer');
   await page.getByRole('heading', { name: '미확인', exact: true }).waitFor();
   await page.getByText(warning, { exact: true }).waitFor();
   const card = page.locator('details').filter({ has: page.getByText('명단·지급 정보 대조', { exact: true }) });
@@ -300,7 +388,7 @@ test('보고서의 빈 추출값은 미확인으로 표시하고 등록 대표�
     members: [{ role: '팀원', name: '추출 팀원', student_id: '', school: ' ', major: '' }],
     recipient: { bank_name: '', account_number: '', account_holder: '', gross_amount: '100', tax_amount: '0', net_amount: '100' } };
   await page.route('**/api/events/test/draft', route => route.fulfill({ json: { teams: [draft, { ...draft, team: '', submission: 'missing-team', members: [] }] } }));
-  await page.goto('/#/report');
+  await page.goto('/#/categories/awards/workspaces/test/report');
   const tables = page.getByRole('table');
   await tables.nth(1).getByRole('row').nth(1).waitFor();
   assert.match(await tables.nth(0).innerText(), /추출 팀원.*미확인.*미확인.*미확인.*API 팀명/s);
@@ -323,7 +411,7 @@ test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본
     email: '', note: '', result: null, files: [file], history: [], mail: [], audit: [], fields: { members: [], recipient: {} } };
   await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
   await page.route('**/api/operations/submissions/' + submission.id, route => route.fulfill({ json: detail }));
-  await page.goto('/#/');
+  await page.goto('/#/categories/awards/workspaces/test/');
   const table = page.getByRole('region', { name: '팀별 판정 표' });
   const row = table.getByRole('row').filter({ hasText: '첫 대표' });
   const open = row.getByRole('link', { name: '3팀 (첫 대표) 검토 열기', exact: true });
@@ -332,7 +420,7 @@ test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본
     await page.setViewportSize({ width, height: 850 });
     await open.waitFor();
     const href = await open.getAttribute('href');
-    assert.equal(href, '#/teams/submission-v2');
+    assert.equal(href, '#/categories/awards/workspaces/test/teams/submission-v2');
     assert.equal(await row.getByRole('link', { name: '3팀', exact: true }).getAttribute('href'), href);
     assert.equal(await missing.getByRole('link').count(), 0);
     assert.equal(await missing.getByRole('cell').last().innerText(), '제출본 없음');
@@ -340,7 +428,7 @@ test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본
     assert.ok(link.x >= bounds.x && link.x + link.width <= bounds.x + bounds.width + 1);
     if (width === 1440) { await open.focus(); await open.press('Enter'); }
     else await open.click();
-    await page.waitForURL('**/#/teams/submission-v2');
+    await page.waitForURL('**/#/categories/awards/workspaces/test/teams/submission-v2');
     await page.getByRole('heading', { name: '미확인', exact: true }).waitFor();
     await page.getByRole('region', { name: '원문 미리보기' }).waitFor();
     await page.goBack();
@@ -366,7 +454,7 @@ test('사이드바 실행 버튼은 한 번만 요청하고 모바일 메뉴와 
     result = { state: 'running' };
     return route.fulfill({ json: result });
   });
-  await page.goto('/#/assign');
+  await page.goto('/#/categories/awards/workspaces/test/assign');
   const rail = page.getByRole('complementary', { name: '작업 공간' });
   const state = rail.getByRole('status');
   await state.filter({ hasText: '워커 실행 필요' }).waitFor();
@@ -405,7 +493,7 @@ test('워커 실행 실패 원인을 표시하고 같은 화면에서 다시 시
     return route.fulfill({ json: result });
   });
   await page.route('**/api/operations/worker-start', route => route.fulfill({ status: 503, json: { detail: '워커 설치 경로를 확인하세요.' } }), { times: 1 });
-  await page.goto('/#/');
+  await page.goto('/#/categories/awards/workspaces/test/');
   const rail = page.getByRole('complementary', { name: '작업 공간' });
   const start = rail.getByRole('button', { name: '실행하기' });
   await start.click();
@@ -415,7 +503,7 @@ test('워커 실행 실패 원인을 표시하고 같은 화면에서 다시 시
   assert.equal(await rail.getByRole('alert').count(), 0);
 });
 
-test('다른 탭에서 저장한 HWPX가 미리보기와 확대 화면에 반영되고 접수 원본으로 전환할 수 있다', async t => {
+test('다른 탭에서 저장한 HWPX가 미리보기와 확대 화면에 반영되고 첨부한 파일로 전환할 수 있다', async t => {
   const page = await newPage(t);
   const { default: init, HwpDocument } = await import('../dist/rhwp/rhwp.js');
   const assets = new URL('../dist/rhwp/assets/', import.meta.url);
@@ -423,17 +511,17 @@ test('다른 탭에서 저장한 HWPX가 미리보기와 확대 화면에 반영
   await init({ module_or_path: await readFile(new URL(wasm, assets)) });
   const doc = HwpDocument.createEmpty();
   doc.createBlankDocument();
-  doc.insertText(0, 0, 0, '접수 원본');
+  doc.insertText(0, 0, 0, '첨부한 파일');
   const source = Buffer.from(doc.exportHwpx());
   doc.free();
   let saved;
   const history = { name, versions: [] };
   await page.route('**' + versionsPath, route => route.fulfill({ json: history }));
   await page.route('**' + versionsPath + '/1/content', route => route.fulfill({ contentType: 'application/octet-stream', body: saved }));
-  await page.goto('/#/assign?file=original');
+  await page.goto('/#/categories/awards/workspaces/test/assign?file=original');
   const reason = page.getByRole('textbox', { name: /근거/ });
   await reason.fill('배정 확인 중');
-  await page.getByText('접수 원본', { exact: true }).waitFor();
+  await page.getByText('첨부한 파일', { exact: true }).waitFor();
   const editor = await page.context().newPage();
   await editor.route('**' + versionsPath + '/0/content', route => route.fulfill({ contentType: 'application/octet-stream', body: source }));
   await editor.route('**' + versionsPath, async route => {
@@ -485,7 +573,7 @@ test('다른 탭에서 저장한 HWPX가 미리보기와 확대 화면에 반영
       checks: [{ label: '제출 시점 확인', passed: null, refs: [ref] }] } };
   await page.route('**/api/operations/submissions/review', route => route.fulfill({ json: submission }));
   await page.route('**' + previewPath, route => route.fulfill({ contentType: 'text/html', body: '판정에 사용한 원본' }));
-  await page.goto('/#/teams/review?file=original');
+  await page.goto('/#/categories/awards/workspaces/test/teams/review?file=original');
   await sheet.waitFor();
   await page.getByRole('complementary', { name: '검토 체크리스트' }).getByRole('button', { name: /지급확인서.*2쪽/ }).click();
   assert.equal(await choice.inputValue(), '0');
@@ -498,7 +586,7 @@ test('큰 문서 미리보기를 닫으면 원래 파일과 작성 중인 배정
   await page.route('**' + batchPath, route => route.fulfill({ json: { ...batch, files: [{ ...file, url: previewPath, page: 2, pages: 3 }] } }));
   await page.route('**' + previewPath, route => route.fulfill({ contentType: 'text/html', body: '<p>시험 문서</p>' }));
   await page.setViewportSize({ width: 1920, height: 960 });
-  await page.goto('/#/assign?file=original');
+  await page.goto('/#/categories/awards/workspaces/test/assign?file=original');
   const inline = page.getByTitle(name, { exact: true });
   await inline.waitFor();
   const box = await inline.boundingBox();
@@ -525,7 +613,7 @@ test('큰 문서 미리보기를 닫으면 원래 파일과 작성 중인 배정
 
 test('작업 공간 너비에 맞춰 배정 목록과 원본을 배치하고 확대해도 가로로 넘치지 않는다', async t => {
   const page = await newPage(t);
-  await page.goto('/#/assign');
+  await page.goto('/#/categories/awards/workspaces/test/assign');
   await page.getByRole('heading', { name }).waitFor();
   for (const [width, height, split] of [[320, 740, false], [375, 812, false], [768, 1024, false], [844, 390, false], [1024, 768, false], [1440, 900, true]]) {
     await page.setViewportSize({ width, height });
@@ -545,9 +633,9 @@ test('작업 공간 너비에 맞춰 배정 목록과 원본을 배치하고 확
 test('조회 실패를 빈 접수로 표시하지 않고 다시 조회하며 배정 입력 오류를 해당 필드에 알린다', async t => {
   const page = await newPage(t);
   await page.route('**' + batchPath, route => route.fulfill({ status: 503, json: { detail: '파일 조회 실패' } }), { times: 1 });
-  await page.goto('/#/assign');
+  await page.goto('/#/categories/awards/workspaces/test/assign');
   await page.getByRole('alert').filter({ hasText: '파일 조회 실패' }).waitFor();
-  assert.equal(await page.getByText('접수된 원본이 없습니다.', { exact: false }).count(), 0);
+  assert.equal(await page.getByText('첨부된 원본이 없습니다.', { exact: false }).count(), 0);
   await page.getByRole('button', { name: '다시 조회' }).click();
   await page.getByRole('heading', { name }).waitFor();
   assert.equal(await page.getByRole('region', { name: '확인할 파일 1' }).isVisible(), true);
@@ -573,31 +661,31 @@ test('조회 실패를 빈 접수로 표시하지 않고 다시 조회하며 배
 
 test('업로드 오류를 파일 선택기에 연결하고 전송이 끝나면 서버 저장 대기를 표시한다', { timeout: 25000 }, async t => {
   const page = await newPage(t, 375);
-  await page.goto('/#/intake');
+  await page.goto('/#/categories/awards/workspaces/test/intake');
   const picker = page.locator('input[type=file]');
   const sample = { name, mimeType: 'application/octet-stream', buffer: Buffer.from('test-file') };
   await picker.setInputFiles(sample);
   await picker.setInputFiles({ ...sample, name: '잘못된형식.pdf' });
   const error = page.getByRole('alert');
   await error.waitFor();
-  const choose = page.getByRole('button', { name: '제출 원본 파일 선택' });
+  const choose = page.getByRole('button', { name: '첨부할 서류 파일 선택' });
   assert.ok((await choose.getAttribute('aria-describedby')).split(' ').includes(await error.getAttribute('id')));
   assert.equal(await page.getByText(name, { exact: true }).count(), 1);
   const received = new Promise(resolve => { receiveUpload = resolve; });
-  await page.getByRole('button', { name: '문서 업로드하기' }).click();
+  await page.getByRole('button', { name: '파일 첨부하기' }).click();
   const response = await received;
   try {
     await page.getByRole('progressbar', { name: '원본 저장 확인' }).waitFor();
-    assert.ok(await page.getByRole('button', { name: '업로드 중…' }).isDisabled());
+    assert.ok(await page.getByRole('button', { name: '첨부 중…' }).isDisabled());
   } finally {
     receiveUpload = undefined;
     response.writeHead(202, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify({ batch_id: 'batch' }));
   }
-  await page.waitForURL('**/#/intake/batches/batch');
+  await page.waitForURL('**/#/categories/awards/workspaces/test/intake/batches/batch');
 });
 
-test('새 팀 묶음이 기본이며 같은 접수 상세에 임시명과 판독된 팀명을 표시한다', async t => {
+test('새 팀 묶음이 기본이며 같은 첨부 상세에 임시명과 판독된 팀명을 표시한다', async t => {
   const page = await newPage(t);
   let realName = false;
   await page.route('**/api/intake-batches/numbered', route => route.fulfill({ json: {
@@ -606,8 +694,8 @@ test('새 팀 묶음이 기본이며 같은 접수 상세에 임시명과 판독
     files:[], teams:[{team:'team',state:'confirmed',version:1,submission_id:'submission',
       review_job:{review_job_id:'job',state:realName ? 'done' : 'running'}}],
   } }));
-  await page.goto('/#/intake');
-  assert.equal(await page.getByLabel('접수 출처').inputValue(), 'bundle');
+  await page.goto('/#/categories/awards/workspaces/test/intake');
+  assert.equal(await page.getByLabel('첨부할 팀').inputValue(), 'bundle');
   await page.locator('input[type=file]').setInputFiles({ name:'증빙.hwp', mimeType:'application/octet-stream', buffer:Buffer.from('test') });
   const posted = new Promise(resolve => {
     receiveUpload = (res, bytes) => {
@@ -618,14 +706,14 @@ test('새 팀 묶음이 기본이며 같은 접수 상세에 임시명과 판독
     };
   });
   t.after(() => { receiveUpload = undefined; });
-  await page.getByRole('button', {name:'문서 업로드하기'}).click();
+  await page.getByRole('button', {name:'파일 첨부하기'}).click();
   const body = await posted;
   assert.match(body, /name="mode"\r\n\r\nbundle/);
   assert.doesNotMatch(body, /name="target"/);
-  await page.waitForURL('**/#/intake/batches/numbered');
-  await page.locator('dd').filter({hasText:/^접수 1팀$/}).waitFor();
+  await page.waitForURL('**/#/categories/awards/workspaces/test/intake/batches/numbered');
+  await page.locator('dd').filter({hasText:/^1번 팀$/}).waitFor();
   realName = true;
-  await page.getByText('접수 1팀 · 가상검토팀01', {exact:true}).first().waitFor();
-  assert.equal(await page.getByText('접수 1팀 · 가상검토팀01', {exact:true}).count(), 2);
-  assert.equal(new URL(page.url()).hash, '#/intake/batches/numbered');
+  await page.getByText('1번 팀 · 가상검토팀01', {exact:true}).first().waitFor();
+  assert.equal(await page.getByText('1번 팀 · 가상검토팀01', {exact:true}).count(), 2);
+  assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake/batches/numbered');
 });

@@ -13,7 +13,9 @@ class CatalogController {
     CatalogController(AwardCatalog catalog) { this.catalog = catalog; }
 
     @GetMapping
-    List<AwardCatalog.Event> events(Principal staff) { return catalog.events(staff.getName()); }
+    List<AwardCatalog.Event> events(Principal staff, @RequestParam(required = false) String category) {
+        return catalog.events(staff.getName(), category);
+    }
 
     @PostMapping
     AwardCatalog.Event createEvent(Principal staff, @RequestBody AwardCatalog.NameInput body) {

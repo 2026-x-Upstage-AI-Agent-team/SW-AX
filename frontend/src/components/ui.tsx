@@ -36,7 +36,7 @@ export function StateBadge({ state, size = 'sm' }: { state: string; size?: 'sm' 
 export function DocChips({ documents }: { documents?: Partial<Record<DocKey, Ref[]>> }) {
   if (!documents) return <span className="text-xs text-subtle">—</span>;
   return (
-    <ul className="flex flex-wrap gap-1.5 text-[13px] font-semibold tabular-nums" aria-label="접수 서류">
+    <ul className="flex flex-wrap gap-1.5 text-[13px] font-semibold tabular-nums" aria-label="첨부 서류">
       {(['01', '02', '03'] as const).map((code) => {
         const n = documents[code]?.length ?? 0;
         if (n === 0)

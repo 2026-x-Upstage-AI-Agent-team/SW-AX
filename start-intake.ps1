@@ -1,6 +1,6 @@
 #Requires -Version 7.2
 [CmdletBinding()]
-param([switch]$DatabaseOnly, [switch]$ApiOnly, [switch]$RemotePrinter)
+param([switch]$DatabaseOnly, [switch]$ApiOnly, [switch]$RemotePrinter, [switch]$UseBuiltFrontend)
 
 $ErrorActionPreference = 'Stop'
 $children = @()
@@ -17,6 +17,9 @@ function Set-WorkerKey([string]$Name, [string]$File) {
 }
 Push-Location -LiteralPath $PSScriptRoot
 try {
+    if ($UseBuiltFrontend -and -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'frontend/dist/index.html'))) {
+        throw 'npm --prefix frontend run build로 담당자 화면을 먼저 빌드하세요.'
+    }
     if (-not $env:AWARD_DATA_DIR) { $env:AWARD_DATA_DIR = Join-Path $PSScriptRoot 'var' }
     $env:AWARDS_WORKER_DIR = $PSScriptRoot
     $env:AWARDS_REMOTE_PRINTER = $RemotePrinter.IsPresent.ToString()
@@ -65,7 +68,9 @@ try {
             $children += Start-Process -FilePath $python -ArgumentList '-m','operations.printer' -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
         }
     }
-    & ./gradlew.bat --console=plain bootRun
+    $runArguments = @('--console=plain', 'bootRun')
+    if ($UseBuiltFrontend) { $runArguments += @('-x', 'installFrontend', '-x', 'buildFrontend') }
+    & ./gradlew.bat @runArguments
     if ($LASTEXITCODE -ne 0) { throw '접수 서비스를 시작하지 못했습니다. 위 빌드·실행 메시지를 확인하세요.' }
 } finally {
     foreach ($child in $children) { if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() } }

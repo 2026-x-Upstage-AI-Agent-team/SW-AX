@@ -12,6 +12,7 @@
     "test:review": "node --test tests/review-navigation.mjs",
     "test:ux": "node --test tests/intake-ux.mjs",
     "test:editor": "node --test tests/document-editor.mjs",
+    "test:workspaces": "node --test tests/workspaces.mjs",
     "prebuild": "node -e \"require('node:fs/promises').rm('dist', { recursive: true, force: true })\" && node scripts/prepare-rhwp.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"

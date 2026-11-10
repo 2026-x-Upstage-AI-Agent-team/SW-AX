@@ -9,34 +9,48 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 class AwardCatalog {
-    record Event(UUID id, String name) {}
+    record Category(String id, String name, String description, boolean enabled) {}
+    record Event(UUID id, String name, String categoryId) {}
     record Team(UUID id, String name, String rep, Integer intakeNumber) {}
-    record NameInput(String name, String rep) {}
+    record NameInput(String name, String rep, String categoryId) {}
 
     private final JdbcTemplate db;
 
     AwardCatalog(JdbcTemplate db) { this.db = db; }
 
-    List<Event> events(String login) {
-        return db.query("""
-                SELECT e.id, e.name FROM award_event e JOIN event_staff a ON a.event_id = e.id
-                WHERE a.login = ? ORDER BY e.created_at DESC, e.id
-                """, (rs, n) -> new Event(rs.getObject("id", UUID.class), rs.getString("name")), login);
+    List<Category> categories() {
+        return db.query("SELECT id, name, description, enabled FROM work_category ORDER BY sort_order, id",
+                (rs, n) -> new Category(rs.getString("id"), rs.getString("name"), rs.getString("description"), rs.getBoolean("enabled")));
     }
+
+    List<Event> events(String login, String category) {
+        return db.query("""
+                SELECT e.id, e.name, e.category_id FROM award_event e JOIN event_staff a ON a.event_id = e.id
+                JOIN work_category c ON c.id = e.category_id
+                WHERE a.login = ? AND c.enabled AND (CAST(? AS text) IS NULL OR e.category_id = ?)
+                ORDER BY e.created_at DESC, e.id
+                """, (rs, n) -> new Event(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("category_id")), login, category, category);
+    }
+
+    List<Event> events(String login) { return events(login, null); }
 
     @Transactional
     Event createEvent(String login, NameInput input) {
         String name = label(input.name(), 160, true);
+        String category = input.categoryId() == null ? "awards" : input.categoryId();
+        if (db.queryForList("SELECT id FROM work_category WHERE id = ? AND enabled", String.class, category).isEmpty()) {
+            throw ApiErrors.error(422, "사용 가능한 업무 카테고리를 선택해 주세요. 준비 중인 업무는 아직 이용할 수 없습니다.");
+        }
         UUID id = UUID.randomUUID();
-        if (db.update("INSERT INTO award_event(id, name) VALUES (?, ?) ON CONFLICT (name) DO NOTHING", id, name) == 1) {
+        if (db.update("INSERT INTO award_event(id, name, category_id) VALUES (?, ?, ?) ON CONFLICT (category_id, name) DO NOTHING", id, name, category) == 1) {
             db.update("INSERT INTO event_staff(event_id, login) VALUES (?, ?)", id, login);
-            return new Event(id, name);
+            return new Event(id, name, category);
         }
         return db.query("""
                 SELECT e.id FROM award_event e JOIN event_staff a ON a.event_id = e.id
-                WHERE e.name = ? AND a.login = ?
-                """, (rs, n) -> new Event(rs.getObject("id", UUID.class), name), name, login).stream().findFirst()
-                .orElseThrow(() -> ApiErrors.error(409, "이 이름으로 대회를 등록할 수 없습니다."));
+                WHERE e.name = ? AND a.login = ? AND e.category_id = ?
+                """, (rs, n) -> new Event(rs.getObject("id", UUID.class), name, category), name, login, category).stream().findFirst()
+                .orElseThrow(() -> ApiErrors.error(409, "이 이름으로 워크스페이스를 만들 수 없습니다."));
     }
 
     @Transactional

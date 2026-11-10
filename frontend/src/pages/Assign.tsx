@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useSearchParams } from 'react-router';
+import { Link, useNavigate } from '../components/workspaceNavigation';
 import { isDemoBackend } from '../api/backend';
 import { useAsync } from '../api/client';
 import { paths, receiptName } from '../api/intake';
@@ -19,7 +20,7 @@ export default function Assign() {
   const { dashboard, dashboardError, events, eventsError, refresh } = useEvent();
   return (
     <Page tone="gray" width="review">
-      <PageHeader title="문서 업로드" lead="자동 배정되지 않은 원본을 확인하고 배정할 팀과 근거를 기록하세요." />
+      <PageHeader title="파일 첨부" lead="자동 배정되지 않은 원본을 확인하고 배정할 팀과 근거를 기록하세요." />
       <IntakeTabs />
       {dashboard ? <AssignmentQueue key={dashboard.event} dashboard={dashboard} /> : !eventsError && events?.length === 0 ? (
         <p className="surface p-6">등록된 대회가 없습니다. <Link to="/manage" className={buttonStyles.text}>대회 등록</Link></p>
@@ -99,18 +100,18 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
     <>
       <dl aria-label="배정 요약" className="surface grid grid-cols-3 divide-x divide-line py-3">
         <Stat label="확인 필요" value={pending.length} warn={pending.length > 0} />
-        <Stat label="최근 접수 파일" value={items.length} />
-        <Stat label="접수 묶음" value={dashboard.batches.length} />
+        <Stat label="최근 첨부 파일" value={items.length} />
+        <Stat label="첨부 묶음" value={dashboard.batches.length} />
       </dl>
       {preparing && <p className="text-sm text-muted">판독 결과가 도착하면 파일 목록을 자동으로 갱신합니다.</p>}
       <Feedback message={notice} />
-      {selected && !picked && <Feedback error="선택한 파일이 현재 대회의 최근 접수 목록에 없습니다. 목록에서 파일을 다시 선택하세요." />}
+      {selected && !picked && <Feedback error="선택한 파일이 현재 워크스페이스의 최근 첨부 목록에 없습니다. 목록에서 파일을 다시 선택하세요." />}
 
       {items.length === 0 ? (
         <p className="rounded-[22px] bg-white px-6 py-10 text-center text-sm text-muted">
-          접수된 원본이 없습니다.{' '}
+          첨부된 원본이 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">
-            문서 업로드
+            파일 첨부
           </Link>
         </p>
       ) : (
@@ -243,8 +244,8 @@ function Detail({ item, teamName, onBack, onSaved }: { item: Item; teamName: (id
           <StateBadge state={file.state} />
         </div>
         <p className="text-sm font-medium text-muted">
-          접수 {when(batch.created)} · {file.pages ? `${file.pages}쪽` : '판독 전'}
-          {batch.base && ' · 보완 접수'}
+          첨부 {when(batch.created)} · {file.pages ? `${file.pages}쪽` : '판독 전'}
+          {batch.base && ' · 보완 서류 첨부'}
         </p>
         {file.reason && <p className="text-[15px] leading-relaxed text-ink-2">{file.reason}</p>}
         {file.team && <p className="text-sm">현재 배정: <strong>{teamName(file.team)}</strong></p>}
@@ -265,7 +266,7 @@ function Detail({ item, teamName, onBack, onSaved }: { item: Item; teamName: (id
 
         {file.state === 'error' ? (
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm text-ink-2">손상된 파일이면 팀에서 다시 받아 접수해 주세요. 일시 오류라면 판독을 다시 시도할 수 있습니다.</span>
+            <span className="text-sm text-ink-2">손상된 파일이면 팀에서 다시 받아 첨부해 주세요. 일시 오류라면 판독을 다시 시도할 수 있습니다.</span>
             <button type="button" onClick={retry} disabled={busy} className={buttonStyles.outline}>
               {busy ? '다시 요청 중…' : '판독 다시 시도'}
             </button>
@@ -325,7 +326,7 @@ function Detail({ item, teamName, onBack, onSaved }: { item: Item; teamName: (id
                 </fieldset>
               )}
               <div className="flex flex-col gap-1.5 text-sm">
-                <label htmlFor="assignment-reason" className="font-semibold text-ink-2">근거 (원래 접수 경로 등, 2자 이상)</label>
+                <label htmlFor="assignment-reason" className="font-semibold text-ink-2">근거 (원래 첨부 경로 등, 2자 이상)</label>
                 <textarea id="assignment-reason" name="reason" value={reason} onChange={(e) => setReason(e.target.value)}
                   onBlur={() => setReasonTouched(true)} required minLength={2} maxLength={500} rows={2}
                   aria-invalid={reasonTouched && shortReason} aria-describedby={reasonTouched && shortReason ? 'reason-error' : undefined}

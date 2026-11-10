@@ -47,7 +47,7 @@ function reportedFields(report: StudioResult['staff_report']) {
 
 /** Use the saved Studio reason and report. Editable fields and receipt counts are not evidence here. */
 export function studioExplanation(result: StudioResult) {
-  const reason = result.reason
+  const reason = (result.reason ?? '')
     .replace(/【[^】]*】/g, '')
     .replace(/\bSub-doc\s+(\d+)\b/gi, '추출 문서 $1')
     .replace(/[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*/g, key => Object.hasOwn(reportFields, key) ? reportFields[key][1] : key)
@@ -105,10 +105,10 @@ export function reviewEvidence(result?: StudioResult | null, verdict?: Verdict |
     if (count === undefined) continue;
     if (count === 0) {
       missing.add(kind);
-      if (docs?.['?']?.length) add(name + ' 접수 여부 확인', null, docs['?']);
+      if (docs?.['?']?.length) add(name + ' 첨부 여부 확인', null, docs['?']);
       else add(name + ' 미제출', false, []);
     } else if (count > 1) add(name + ' 중복 제출 (' + count + '부)', false, counted?.refs ?? refs ?? []);
-    else add(name + ' 1부 접수', true, counted?.refs ?? refs ?? []);
+    else add(name + ' 1부 첨부', true, counted?.refs ?? refs ?? []);
   }
 
   if (result && decision !== '성공') {

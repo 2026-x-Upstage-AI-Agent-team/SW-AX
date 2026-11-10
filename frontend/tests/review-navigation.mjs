@@ -64,15 +64,16 @@ if (mailId) {
     await page.getByRole('status').filter({ hasText: '발송을 승인했습니다' }).waitFor();
   });
 } else if (queueEvent) {
-  test('처리 대기 중인 팀의 최초 원본 접수 시각을 표시한다', async () => {
+  test('처리 대기 중인 팀의 최초 파일 첨부 시각을 표시한다', async () => {
     const dashboard = await (await request.get('/api/dashboard?event=' + queueEvent)).json();
     const waiting = dashboard.teams.map((t) => t.submission).filter((s) => s?.state === 'queued');
     const first = Math.min(...waiting.map((s) => s.received));
     assert.ok(first < Math.min(...waiting.map((s) => s.created)) - 3500);
     await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), queueEvent);
-    await page.goto('/#/');
+    await page.addInitScript(id => localStorage.setItem('swax.workspace-tour.v1.intake.' + id, 'done'), queueEvent);
+    await page.goto('/#/categories/awards/workspaces/' + queueEvent);
     const value = await page.evaluate((t) => new Date(t * 1000).toLocaleString('ko-KR'), first);
-    await page.getByText('대기 ' + waiting.length + '팀 · 최초 접수 ' + value, { exact: true }).waitFor();
+    await page.getByText('대기 ' + waiting.length + '팀 · 최초 첨부 ' + value, { exact: true }).waitFor();
   });
 } else if (conflictId) {
   test('충돌 접수의 원본과 최신 보완 경로를 열고 담당자 대조를 마친다', async () => {
@@ -81,11 +82,11 @@ if (mailId) {
     await page.goto('/#/intake/batches/' + conflictId);
     await page.getByText('보완본 담당자 확인', { exact: true }).waitFor();
     assert.ok(await page.locator('a[download]').count());
-    await page.getByRole('link', { name: '최신 제출본에서 보완 접수' }).click();
+    await page.getByRole('link', { name: '최신 제출본에서 보완 서류 첨부' }).click();
     await page.getByRole('heading', { name: /가상검토팀01 보완본 \(v2/ }).waitFor();
     assert.ok(page.url().endsWith('base=' + batch.current_submission));
     await page.goBack();
-    await page.getByRole('button', { name: '이 접수의 대조 완료' }).click();
+    await page.getByRole('button', { name: '이 첨부의 대조 완료' }).click();
     await page.getByText('보완본 확인 완료', { exact: true }).waitFor();
     await page.goto('/#/teams/' + process.env.INTAKE_TEST_REASON_SUBMISSION);
     const row = page.getByRole('listitem').filter({ hasText: '01 지급확인서 1쪽 첫째 행에 학번이 없습니다.' }).first();

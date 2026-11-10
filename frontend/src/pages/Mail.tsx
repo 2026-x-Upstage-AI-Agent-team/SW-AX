@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
+import { Link } from '../components/workspaceNavigation';
 import { when } from '../api/labels';
 import {
   getMail,
@@ -221,7 +222,7 @@ function MailDetail({ m, hasEmailForm, onSaved, onApproved }: {
   );
 }
 
-/** 등록 주소와 신청서 주소가 달라 보류된 안내: 원접수를 대조해 이 제출본의 수신 주소를 확인한다. */
+/** 등록 주소와 신청서 주소가 달라 보류된 안내: 처음 첨부한 파일를 대조해 이 제출본의 수신 주소를 확인한다. */
 function RecipientCheck({ submission, onSaved }: { submission: string; onSaved: () => void }) {
   const [detail, setDetail] = useState<SubmissionDetail>();
   const [email, setEmail] = useState('');
@@ -258,10 +259,10 @@ function RecipientCheck({ submission, onSaved }: { submission: string; onSaved: 
       {detail.application_emails && (
         <p className="break-all text-sm text-ink-2">신청서 대표 이메일 · {detail.application_emails.join(', ') || '미확인'}</p>
       )}
-      <p className="text-sm text-caution">원접수와 신청서를 대조해 수신 주소를 확인한 뒤 초안을 승인해 주세요.</p>
+      <p className="text-sm text-caution">처음 첨부한 파일와 신청서를 대조해 수신 주소를 확인한 뒤 초안을 승인해 주세요.</p>
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-xs text-muted">
-          팀장 이메일 (원접수에서 확인한 주소 한 개)
+          팀장 이메일 (처음 첨부한 파일에서 확인한 주소 한 개)
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy || !current} className={inputStyle} />
         </label>
         <button type="button" onClick={save} disabled={busy || !current || !email.trim()} className={buttonStyles.secondary}>
@@ -279,7 +280,7 @@ function EmailList({ teams, onSaved }: { teams: Dashboard['teams']; onSaved: () 
     <section aria-labelledby="missing-h" className="surface flex flex-col gap-3 p-[18px_20px_20px]">
       <div className="flex flex-col gap-1">
         <h2 id="missing-h" tabIndex={-1} className="panel-title">이메일이 없는 팀 {teams.length}</h2>
-        <p className="text-[13px] text-muted">이 팀들의 안내는 주소를 확인할 때까지 발송을 기다립니다. 원접수에서 확인한 주소 한 개를 넣어 주세요.</p>
+        <p className="text-[13px] text-muted">이 팀들의 안내는 주소를 확인할 때까지 발송을 기다립니다. 처음 첨부한 파일에서 확인한 주소 한 개를 넣어 주세요.</p>
       </div>
       <ul className="flex flex-col gap-3">
         {teams.map((t) => (

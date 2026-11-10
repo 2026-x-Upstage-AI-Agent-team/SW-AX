@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link } from '../components/workspaceNavigation';
 import { ArrowRight, Check, ChevronDown, CircleAlert, FileUp } from 'lucide-react';
 import { busyStates, recoverableStates, stateLabel } from '../api/labels';
 import type { Verdict } from '../api/service';
@@ -7,6 +7,7 @@ import { Page } from '../components/Layout';
 import { DocChips, Notice, PageHeader, StateBadge, VerdictBadge, buttonStyles, cx } from '../components/ui';
 import { useEvent } from '../context/EventContext';
 import { useOverview, type TeamRow } from '../hooks/useOverview';
+import WorkspaceGuideStart from '../components/WorkspaceTour';
 
 type VerdictGroup = 'pending' | 'action' | 'ok';
 type Filter = 'all' | VerdictGroup;
@@ -29,17 +30,18 @@ export default function Dashboard() {
   const { events } = useEvent();
   const { dashboard, rows, error, refresh } = useOverview();
   const list = rows ?? [];
+  const hasFiles = !!dashboard && (dashboard.batches.length > 0 || list.some(row => !!row.submission) || dashboard.reports.length > 0);
   const processing = list.filter((r) => r.submission && busyStates.has(r.submission.state)).length;
   const queued = list.flatMap((r) => r.submission?.state === 'queued' ? [r.submission.received ?? r.submission.created] : []);
 
   const alerts: Alert[] = [];
   for (const b of dashboard?.batches ?? []) {
     if (b.state === 'conflict')
-      alerts.push({ key: b.id, text: '같은 제출본에 보완 접수가 겹쳤습니다.', sub: '접수 원본과 최신 제출본을 대조해 주세요.', to: '/intake/batches/' + b.id, action: '보완본 확인' });
+      alerts.push({ key: b.id, text: '같은 제출본에 보완 서류 첨부가 겹쳤습니다.', sub: '첨부한 파일과 최신 제출본을 대조해 주세요.', to: '/intake/batches/' + b.id, action: '보완본 확인' });
   }
-  const pendingFiles = dashboard?.batches.reduce((n, b) => n + (b.pending ?? 0), 0) ?? 0;
+  const pendingFiles = dashboard?.batches.filter(b => b.state !== 'preparing' && b.state !== 'conflict').reduce((n, b) => n + (b.pending ?? 0), 0) ?? 0;
   if (pendingFiles > 0)
-    alerts.push({ key: 'assign', text: `팀 배정을 확인할 파일이 ${pendingFiles}개 있습니다.`, sub: '배정이 끝나야 해당 팀의 판정과 누락 안내가 진행됩니다.', to: '/assign', action: '팀 배정 확인' });
+    alerts.push({ key: 'assign', text: `팀 배정을 확인할 파일이 ${pendingFiles}개 있습니다.`, sub: '배정이 끝나야 해당 팀의 판정과 누락 안내가 진행됩니다.', to: '/assign', action: '팀별 파일 정리' });
   for (const r of list) {
     const s = r.submission;
     if (!s) continue;
@@ -51,7 +53,7 @@ export default function Dashboard() {
     else if (s.verdict === '담당자확인' && !s.decision)
       alerts.push({ key: r.id + 'check', text: `${r.name} · 원본 대조가 필요합니다.`, sub: r.reviewSummary ?? '검토할 서류를 확인해 주세요.', to: `/teams/${s.id}`, action: '원본 대조하기' });
     else if (r.leaderMail?.state === 'recipient_check')
-      alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내가 보류 중입니다. 신청서와 원접수의 주소를 대조해 주세요.', to: '/mail?mail=' + encodeURIComponent(r.leaderMail.id), action: '주소 확인' });
+      alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내가 보류 중입니다. 신청서와 처음 첨부한 파일의 주소를 대조해 주세요.', to: '/mail?mail=' + encodeURIComponent(r.leaderMail.id), action: '주소 확인' });
     else if (s.verdict === '재제출요청' && !r.email)
       alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 이메일이 없습니다.`, sub: '보완 요청 메일이 수신자 확인을 기다립니다.', to: '/mail', action: '이메일 입력' });
     else if (verdictGroup(r) === 'ok' && !s.decision)
@@ -61,17 +63,19 @@ export default function Dashboard() {
   return (
     <Page tone="gray">
       <PageHeader title="업무 현황" side={
-        <Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />문서 업로드하기</Link>
+        <Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />파일 첨부하기</Link>
       } />
-      {events?.length === 0 ? <Link to="/manage" className={buttonStyles.text}>대회를 등록해 문서 업로드를 시작하세요.</Link> : !dashboard ? (
+      {events?.length === 0 ? <Link to="/manage" className={buttonStyles.text}>대회를 등록해 파일 첨부를 시작하세요.</Link> : !dashboard ? (
         <Notice error={error && `${error} (검토 서비스가 실행 중인지 확인해 주세요.)`} onRetry={refresh} />
       ) : (
         <>
-          <div className="overview-panels">
+          <div className="workspace-guide-entry"><div><h2>처음 사용하는 공간인가요?</h2><p>눌러야 할 버튼을 하나씩 안내해 드려요.</p></div><WorkspaceGuideStart /></div>
+          {hasFiles && <><div className="overview-panels">
             <ActionQueue alerts={alerts} />
             <VerdictSummary rows={list} />
           </div>
           <TeamTable rows={list} />
+          </>}
           <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-subtle">
               <span>Studio {dashboard.connected ? `연결됨 · 설정 ${dashboard.config}` : '연결 대기'}</span>
               {dashboard.gmail_account ? (
@@ -79,7 +83,7 @@ export default function Dashboard() {
                   담당자 Gmail {dashboard.mail_ready ? '연결됨' : '인증 대기'}
                 </Link>
               ) : <span>메일 {dashboard.smtp ? 'SMTP' : '로컬 메일함'}</span>}
-              {queued.length > 0 && <span>대기 {queued.length}팀 · 최초 접수 {new Date(Math.min(...queued) * 1000).toLocaleString('ko-KR')}</span>}
+              {queued.length > 0 && <span>대기 {queued.length}팀 · 최초 첨부 {new Date(Math.min(...queued) * 1000).toLocaleString('ko-KR')}</span>}
               {processing > 0 && <span>처리 중 {processing}팀 · 자동 새로고침</span>}
           </p>
         </>
@@ -105,7 +109,7 @@ function VerdictSummary({ rows }: { rows: TeamRow[] }) {
       <h2 id="summary-heading" className="panel-title">판정 현황</h2>
       <div className="summary-body">
         <div className="verdict-ring" style={stops.length ? { background: `conic-gradient(${stops.join(', ')})` } : undefined}>
-          <div className="ring-center"><strong>{rows.length}</strong><span>접수 팀</span></div>
+          <div className="ring-center"><strong>{rows.length}</strong><span>첨부한 팀</span></div>
         </div>
         <dl className="verdict-legend">
           {groups.map(({ label, color, count }) => (
@@ -179,7 +183,7 @@ function TeamTable({ rows }: { rows: TeamRow[] }) {
 
       {rows.length === 0 ? (
         <p className="px-6 py-10 text-center text-sm text-muted">
-          아직 접수된 팀이 없습니다.{' '}
+          아직 첨부된 팀이 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">
             문서를 업로드
           </Link>
@@ -191,7 +195,7 @@ function TeamTable({ rows }: { rows: TeamRow[] }) {
             <thead>
               <tr className="bg-canvas text-left text-xs text-muted">
                 <th scope="col" className="border-b border-line px-5 py-3.5 font-medium">팀</th>
-                <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">접수 서류</th>
+                <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">첨부 서류</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">판정</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">판정 사유</th>
                 <th scope="col" className="border-b border-line px-3 py-3.5 font-medium">담당자 결정</th>
@@ -219,7 +223,7 @@ function TeamTable({ rows }: { rows: TeamRow[] }) {
                         <span className="font-semibold tabular-nums">{s ? `v${s.version}` : '제출본 없음'}</span>
                       </div>
                     </td>
-                    <td data-label="접수 서류" className="team-docs px-3 py-4 align-top">{s ? <DocChips documents={r.detail?.result?.documents} /> : '—'}</td>
+                    <td data-label="첨부 서류" className="team-docs px-3 py-4 align-top">{s ? <DocChips documents={r.detail?.result?.documents} /> : '—'}</td>
                     <td className="team-verdict px-3 py-4 align-top">
                       {r.held ? (
                         <StateBadge state="unassigned" />

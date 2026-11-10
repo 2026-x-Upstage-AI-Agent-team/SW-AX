@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from '../../components/workspaceNavigation';
 import { FileUp } from 'lucide-react';
 import { ApiError, bytes } from '../../api/client';
 import { isDemoBackend } from '../../api/backend';
@@ -29,11 +29,11 @@ function writePending(value: { selection: string; key: string } | null) {
     if (value) sessionStorage.setItem(PENDING_KEY, JSON.stringify(value));
     else sessionStorage.removeItem(PENDING_KEY);
   } catch {
-    /* 저장소를 쓸 수 없으면 새 키로 접수한다 */
+    /* 저장소를 쓸 수 없으면 새 키로 첨부한다 */
   }
 }
 
-/** base가 있으면 그 제출본의 보완 접수: 팀이 고정되고, 교체할 이전 원본을 고를 수 있다. */
+/** base가 있으면 그 제출본의 보완 서류 첨부: 팀이 고정되고, 교체할 이전 원본을 고를 수 있다. */
 export default function Upload({ event, teams, base }: { event: AwardEvent; teams: AwardTeam[]; base?: SubmissionDetail }) {
   const navigate = useNavigate();
   const { refresh } = useEvent();
@@ -79,7 +79,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
     }
     for (const file of added) {
       if (!/\.(hwp|hwpx)$/i.test(file.name) || /^00(?:\D|$)/.test(file.name)) {
-        setFileError(file.name + ' 파일은 접수할 수 없습니다. 00 지급내역서를 제외한 HWP·HWPX를 선택해 주세요.');
+        setFileError(file.name + ' 파일은 첨부할 수 없습니다. 00 지급내역서를 제외한 HWP·HWPX를 선택해 주세요.');
         return;
       }
       if (!file.size || file.size > MAX_FILE) {
@@ -162,7 +162,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         writePending(null);
-        setError(err.message + ' 접수 내역을 확인해 주세요. 다시 접수하면 새 접수번호가 생성됩니다.');
+        setError(err.message + ' 첨부 내역을 확인해 주세요. 다시 첨부하면 새 첨부번호가 생성됩니다.');
       } else {
         setError((err as Error).message);
       }
@@ -172,14 +172,14 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
   }
 
   return (
-    <form onSubmit={submit} className="surface flex flex-col gap-6 p-[clamp(18px,3vw,32px)]">
+    <form onSubmit={submit} data-tour="upload-form" data-tour-pending={files.length > 0} data-tour-busy={busy || !!loadingEdit} className="surface flex flex-col gap-6 p-[clamp(18px,3vw,32px)]">
       {dragging && (
         <div aria-hidden="true" className="drop-overlay">
           <span><FileUp size={28} strokeWidth={1.7} />여기에 놓아 파일 추가</span>
         </div>
       )}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-extrabold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '제출 원본'}</h2>
+        <h2 className="text-xl font-extrabold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '첨부할 서류'}</h2>
         <span className="text-sm text-muted">HWP · HWPX</span>
       </div>
       <fieldset disabled={busy || !!loadingEdit} className="flex min-w-0 flex-col gap-2">
@@ -210,11 +210,11 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         ) : (
           <>
             <label htmlFor="target" className="text-sm font-bold">
-              접수 출처
+              첨부할 팀
             </label>
             <select id="target" value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 max-w-[370px] rounded-xl border border-line-2 bg-white px-3">
-              {!isDemoBackend && <option value="bundle">팀 묶음 접수</option>}
-              <option value="">팀 미지정 · 혼합 접수</option>
+              {!isDemoBackend && <option value="bundle">새 팀 서류 첨부 · 팀명 입력 없이</option>}
+              <option value="">팀 미지정 · 여러 팀 서류 첨부</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {teamLabel(t)}
@@ -222,8 +222,8 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
               ))}
             </select>
             <p className="text-sm text-muted">{target === 'bundle'
-              ? '한 팀에서 받은 서류만 함께 올리세요. 접수 순서대로 팀번호를 부여하고, 판정 후 신청서의 팀명을 표시합니다. 신청서가 없어도 받은 서류로 판정합니다.'
-              : target ? '선택한 기존 팀에 접수합니다.' : '여러 팀의 서류를 함께 받았을 때 사용합니다. 팀을 구분할 근거가 부족하면 담당자가 배정합니다.'}</p>
+              ? '한 팀에서 받은 서류만 함께 올리세요. 첨부 순서대로 팀번호를 부여하고, 판정 후 신청서의 팀명을 표시합니다. 신청서가 없어도 받은 서류로 판정합니다.'
+              : target ? '선택한 기존 팀에 첨부합니다.' : '여러 팀의 서류를 함께 받았을 때 사용합니다. 팀을 구분할 근거가 부족하면 담당자가 배정합니다.'}</p>
           </>
         )}
         <input
@@ -231,7 +231,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           type="file"
           multiple
           accept=".hwp,.hwpx"
-          aria-label="제출 원본 파일 선택"
+          aria-label="첨부할 서류 파일 선택"
           hidden
           onChange={(e) => {
             add(e.target.files);
@@ -240,7 +240,8 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         />
         <button
           type="button"
-          aria-label="제출 원본 파일 선택"
+          aria-label="첨부할 서류 파일 선택"
+          data-tour="file-picker"
           aria-describedby={fileError ? 'upload-limits upload-file-error' : 'upload-limits'}
           onClick={() => picker.current?.click()}
           className={cx(
@@ -294,8 +295,8 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         <span>
           선택 <b>{files.length}</b>개 {bytes(total)}
         </span>
-        <button className={buttonStyles.primary} disabled={busy || !!loadingEdit || !files.length}>
-          {busy ? '업로드 중…' : base ? '보완본 접수하기' : '문서 업로드하기'}
+        <button className={buttonStyles.primary} data-tour="upload-submit" disabled={busy || !!loadingEdit || !files.length}>
+          {busy ? '첨부 중…' : base ? '보완 서류 첨부하기' : '파일 첨부하기'}
         </button>
       </footer>
     </form>

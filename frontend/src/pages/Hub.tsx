@@ -1,4 +1,4 @@
-import { Link } from 'react-router';
+import { Link } from '../components/workspaceNavigation';
 import { CheckCheck, FileStack, LogOut, Plus } from 'lucide-react';
 import { isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';

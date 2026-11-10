@@ -3,7 +3,17 @@
 React 19 · Vite · TypeScript · Tailwind CSS v4 · React Router.
 색상은 울산대학교 SW중심대학사업단 사이트(sw.ulsan.ac.kr) 팔레트를 `src/index.css`의 `@theme`에 모아 두었다.
 
-넓은 화면에서는 사이드바에서 대회를 선택하고, 휴대폰에서는 상단 메뉴에서 대회를 바꾼다. 업무 현황에서 판정 분포와 확인할 일을 먼저 보고 팀별 근거를 열 수 있다. 확정한 보고서의 HWPX·PDF 다운로드는 미리보기 위에 함께 표시한다. 키보드 포커스, 동작 줄이기, 투명도 줄이기, 고대비 설정을 지원한다. [적용한 Apple 디자인 지침](https://github.com/emilkowalski/skills/tree/main/skills/apple-design)
+시작 화면에서 **시상금 서류 검토** 카테고리를 선택하고, 대회별 워크스페이스를 만들거나 연다. 워크스페이스의 업무 현황에서 **파일 첨부하기**로 한 팀의 서류를 함께 올리고 검토를 시작한다. 사이드바와 휴대폰 메뉴의 **워크스페이스 목록**으로 다른 작업 공간을 연다. 확정한 보고서의 HWPX·PDF 다운로드는 미리보기 위에 함께 표시한다. 키보드 포커스, 동작 줄이기, 투명도 줄이기, 고대비 설정을 지원한다. [적용한 Apple 디자인 지침](https://github.com/emilkowalski/skills/tree/main/skills/apple-design)
+
+새 워크스페이스에 처음 들어오면 **실제 버튼을 강조하는 시작 가이드**가 자동으로 열린다. 파일 첨부 메뉴 → 파일 선택 → 첨부 버튼 → 첨부 내역 → 검토 결과 → 이메일 발송 → 보고서의 7단계를 안내한다. 화면 배경을 어둡게 하고 눌러야 할 버튼 옆에 설명을 띄운다. **다음 단계 / 이전 / 가이드 종료**를 제공하고, 종료한 상태와 진행 단계는 워크스페이스별로 기억한다. 업무 현황이나 사이드바의 **시작 가이드**로 다시 볼 수 있다. 모바일에서는 메뉴 열기부터 안내한다. 가이드는 파일 첨부·발송·보고서 생성을 자동 실행하지 않는다. 선택한 서류가 있으면 첨부 전 다른 화면으로 넘어가지 않으며 종료·다시 시작에도 선택을 유지한다.
+
+최신 와이어프레임의 흰 사이드바·회색 배경·14px 카드·초록색 조작 버튼을 카테고리와 워크스페이스에도 적용했다. 사이드바는 **업무 현황 / 파일 첨부 / 이메일 발송 / 보고서**이며, 파일 첨부 화면의 탭에 **팀별 파일 정리 / 첨부 내역**을 모았다. 메일의 목록·상세 검토와 승인 대기 건수, 보고서의 승인 팀별 지급 정보 입력은 최신 main 구현을 유지한다.
+
+`/#/`는 업무 카테고리, `/#/categories/awards/workspaces`는 워크스페이스 목록·생성 화면이다. 내부 화면은 `/#/categories/awards/workspaces/{워크스페이스 ID}` 아래에 있다. 주소에 있는 ID로 대회를 선택하므로 새로고침과 여러 탭에서 작업 공간이 유지된다. 존재하지 않거나 권한이 없는 작업 공간은 다른 대회로 자동 전환하지 않는다. 기존 `/#/intake`, `/#/gmail` 등은 마지막 작업 공간의 새 주소로 연결한다.
+
+로그인을 마치면 이전 화면 주소와 관계없이 `/#/`의 업무 카테고리 선택 화면으로 이동한다. 로그인 폼과 서버 리디렉션 모두 이 주소를 명시하므로 실패 후 재시도하거나 로그인 스크립트가 실행되지 않아도 이전 작업 공간으로 바로 진입하지 않는다.
+
+운영 DB의 `work_category`와 `award_event.category_id`가 카테고리와 작업 공간을 연결한다. 현재 `awards`만 `enabled=true`이며 기존 대회에도 자동 적용한다. 결과보고서·사업비 집행 증빙·장학금 서류·참여/활동 증빙·협약/계약 서류 검토는 `enabled=false`인 회색 ‘준비 중’ 카드다. 링크와 키보드 진입을 제공하지 않고, 직접 주소에서는 준비 중 안내를 표시하며 서버도 워크스페이스 생성을 거부한다. 표시 순서는 `sort_order`를 사용한다. 카테고리를 활성화할 때는 해당 업무의 검토 화면·워크플로우를 함께 구현해야 한다.
 
 팀 배정은 작업 공간이 넓으면 목록과 원본을 나란히 보여준다. 좁은 화면에서는 파일을 열어 검토하고 ‘파일 목록으로’ 또는 브라우저 뒤로가기로 선택한 행에 돌아온다. 조회 실패는 같은 화면에서 다시 시도하고, 배정 입력 오류와 업로드 파일 오류는 해당 입력란에서 확인한다. [적용한 UI UX Pro Max 지침](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/4f2dbb67e64969a9a30ab00742f2d55d66ddec2b/.claude/skills/ui-ux-pro-max/references/quick-reference.md)
 
@@ -44,18 +54,21 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 
 ## 화면과 API
 
+아래 화면 경로는 워크스페이스 주소 뒤에 붙는다. 한글 편집기 `/files/{id}/edit`와 문서 미리보기는 독립 화면이며, 편집기에는 돌아갈 워크스페이스 정보를 함께 전달한다. UI의 ‘원본 접수’는 ‘파일 첨부’, ‘접수 내역’은 ‘첨부 내역’, ‘팀 배정 확인’은 ‘팀별 파일 정리’로 표시한다. API의 기존 경로와 제출 버전은 유지한다.
+
 | 경로 | 화면 | 검토 서비스 API |
 |---|---|---|
-| `/home` | 문서 업무 홈. 로그인 직후 열리며 시상금 서류 검토실로 들어간다. 사이드바 로고로 돌아온다. | `GET /api/auth/session` |
-| `/` | 업무 현황 (확인할 일, 판정 현황, 팀별 판정 표) | `GET /api/dashboard`, `GET /api/submissions/{id}` |
+| `/` · `/home` | 카테고리 선택. 로그인 직후 열리며 업무별 워크스페이스 목록으로 들어간다. | `GET /api/auth/session`, `GET /api/categories` |
+| `/categories/:categoryId/workspaces` | 카테고리별 워크스페이스 생성·선택 | `GET·POST /api/events` |
+| `/categories/awards/workspaces/:workspaceId` | 업무 현황과 시작 가이드. 아래의 작업 경로는 이 주소 뒤에 붙는다. | `GET /api/dashboard`, `GET /api/submissions/{id}` |
 | `/teams/:id` | 팀별 서류 검토 (원본 PDF, Upstage 판정·필드 설명, 검토 항목, 담당자 결론, 명단, 버전 기록) | `GET·PUT /api/submissions/{id}[/review]`, `POST .../retry`, `GET /api/files/{id}/preview` |
-| `/intake` · `/intake?base=:id` | 문서 업로드(접수하기) · 보완본 접수. 화면 어디에나 파일을 끌어다 놓을 수 있다. | `POST /api/intake-batches` (`base`, `removed`) |
-| `/intake/batches[/:id]` | 문서 업로드 › 접수 내역 · 접수 상세 | `GET /api/intake-batches/{id}` |
-| `/assign` | 문서 업로드 › 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
+| `/intake` · `/intake?base=:id` | 파일 첨부 · 보완 서류 첨부. 화면 어디에나 파일을 끌어다 놓을 수 있다. | `POST /api/intake-batches` (`base`, `removed`) |
+| `/intake/batches[/:id]` | 파일 첨부 › 첨부 내역 · 첨부 상세 | `GET /api/intake-batches/{id}` |
+| `/assign` | 파일 첨부 › 팀별 파일 정리 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
 | `/mail` | 메일 목록과 초안 검토(제목·본문 수정, 승인 후 발송), 발송 이력, 팀장 수신 주소 확인·입력 | `PUT /api/teams/{id}/email`, `GET /api/mail/{id}`, `PUT /api/mail/{id}/draft`, `POST /api/mail/{id}/approve`, `POST /api/mail/{id}/retry` |
 | `/gmail` | 담당자 Gmail 연결·해제·재인증 | Spring Boot 상태 `GET /api/settings/gmail`, Google 연결 해제 `POST /api/settings/gmail/oauth/disconnect`. 양쪽 서비스 `POST /api/settings/gmail/oauth/start`, `GET /api/settings/gmail/callback`, `POST /api/settings/gmail/connect` |
 | `/report` | 보고서 확정 (팀 순서, 지급 정보 입력, 두 표 미리보기, 생성·확정·다운로드) | `GET /api/events/{id}/draft`, `POST /api/reports`, `GET·POST /api/reports/{id}[/confirm|/edited|/preview|/hwpx|/pdf]` |
-| `/manage` | 대회 등록, 지급내역서 행사 정보, 선택한 대회 삭제 | `POST /api/events`, `PUT /api/events/{id}/overview`, `DELETE /api/events/{id}` |
+| `/manage` | 현재 워크스페이스 설정, 지급내역서 행사 정보, 삭제 | `PUT /api/events/{id}/overview`, `DELETE /api/events/{id}` |
 
 판독·판정·문서 생성·메일 발송이 진행 중이면 현황을 몇 초마다 다시 읽는다.
 
@@ -77,3 +90,5 @@ src/
 ```
 
 운영판은 로그인 세션에 배정된 대회의 PostgreSQL 데이터로 화면을 구성한다. 접수·제출본의 운영 상세 정보는 `/api/operations/batches/{id}`와 `/api/operations/submissions/{id}`에서 읽는다.
+
+`INTAKE_TEST_URL`, `INTAKE_TEST_LOGIN_A`, `INTAKE_TEST_PASSWORD_A`를 로컬 시험 서버에 맞춰 지정하고 `npm run test:workspaces`를 실행하면 카테고리 선택·생성·파일 첨부 진입·새로고침·다중 탭·320px 화면·없는 작업 공간을 검증한다. 이 시험은 빈 워크스페이스 두 개만 생성하며 종료할 때 해당 두 개를 삭제한다. Studio 호출과 메일 발송은 하지 않는다.

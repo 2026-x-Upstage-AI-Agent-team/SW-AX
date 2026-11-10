@@ -53,14 +53,15 @@ class StaffSecurity {
                         .defaultAuthenticationEntryPointFor(browserLogin, new NegatedRequestMatcher(api)))
                 .formLogin(form -> form.loginPage("/login").successHandler((req, res, auth) -> {
                     if ("application/json".equals(req.getHeader("Accept"))) res.setStatus(HttpServletResponse.SC_NO_CONTENT);
-                    else res.sendRedirect(req.getContextPath() + "/");
+                    // An explicit fragment also clears a stale workspace hash when JavaScript is disabled.
+                    else res.sendRedirect(req.getContextPath() + "/#/");
                 }).failureHandler((req, res, ex) -> {
                     if ("application/json".equals(req.getHeader("Accept"))) res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    else res.sendRedirect(req.getContextPath() + "/login?error");
+                    else res.sendRedirect(req.getContextPath() + "/login?error#/");
                 }).permitAll())
                 .logout(logout -> logout.deleteCookies("JSESSIONID").logoutSuccessHandler((req, res, auth) -> {
                     if ("application/json".equals(req.getHeader("Accept"))) res.setStatus(HttpServletResponse.SC_NO_CONTENT);
-                    else res.sendRedirect(req.getContextPath() + "/login?logout");
+                    else res.sendRedirect(req.getContextPath() + "/login?logout#/");
                 }));
         return http.build();
     }
