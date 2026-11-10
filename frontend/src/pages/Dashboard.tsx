@@ -51,25 +51,25 @@ export default function Dashboard() {
     else if (s.verdict === '담당자확인' && !s.decision)
       alerts.push({ key: r.id + 'check', text: `${r.name} · 원본 대조가 필요합니다.`, sub: r.reviewSummary ?? '검토할 서류를 확인해 주세요.', to: `/teams/${s.id}`, action: '원본 대조하기' });
     else if (r.leaderMail?.state === 'recipient_check')
-      alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내가 보류 중입니다. 신청서와 원접수의 주소를 대조해 주세요.', to: `/teams/${s.id}`, action: '주소 확인' });
+      alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내가 보류 중입니다. 신청서와 원접수의 주소를 대조해 주세요.', to: '/mail?mail=' + encodeURIComponent(r.leaderMail.id), action: '주소 확인' });
     else if (s.verdict === '재제출요청' && !r.email)
-      alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 이메일이 없습니다.`, sub: '보완 요청 메일이 수신자 확인을 기다립니다.', to: `/teams/${s.id}`, action: '이메일 입력' });
+      alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 이메일이 없습니다.`, sub: '보완 요청 메일이 수신자 확인을 기다립니다.', to: '/mail', action: '이메일 입력' });
     else if (verdictGroup(r) === 'ok' && !s.decision)
       alerts.push({ key: r.id + 'approval', text: `${r.name} · 담당자 승인 대기`, sub: '성공 판정의 원본과 근거를 검토하고 담당자 결정을 기록하세요.', to: `/teams/${s.id}`, action: '판정 검토' });
   }
 
   return (
     <Page tone="gray">
-      <PageHeader title="업무 현황"  side={
-        <Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />원본 접수하기</Link>
+      <PageHeader title="업무 현황" side={
+        <Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />문서 업로드하기</Link>
       } />
-      {events?.length === 0 ? <Link to="/manage" className={buttonStyles.text}>대회를 등록해 원본 접수를 시작하세요.</Link> : !dashboard ? (
+      {events?.length === 0 ? <Link to="/manage" className={buttonStyles.text}>대회를 등록해 문서 업로드를 시작하세요.</Link> : !dashboard ? (
         <Notice error={error && `${error} (검토 서비스가 실행 중인지 확인해 주세요.)`} onRetry={refresh} />
       ) : (
         <>
           <div className="overview-panels">
-            <VerdictSummary rows={list} />
             <ActionQueue alerts={alerts} />
+            <VerdictSummary rows={list} />
           </div>
           <TeamTable rows={list} />
           <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-subtle">
@@ -181,7 +181,7 @@ function TeamTable({ rows }: { rows: TeamRow[] }) {
         <p className="px-6 py-10 text-center text-sm text-muted">
           아직 접수된 팀이 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">
-            원본을 접수
+            문서를 업로드
           </Link>
           하면 팀이 자동으로 만들어집니다.
         </p>

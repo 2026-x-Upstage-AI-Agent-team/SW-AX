@@ -66,9 +66,6 @@ export const teamLabel = (team: { name: string; rep?: string | null; intake_numb
 
 export const createEvent = (name: string) => postJson<AwardEvent>(paths.events, { name });
 
-export const createTeam = (event: string, name: string, rep: string) =>
-  postJson<AwardTeam>(paths.teams(event), { name, rep });
-
 /**
  * 원본 일괄 업로드. 같은 선택을 다시 보내면 같은 Idempotency-Key로 기존 접수번호를 받는다.
  * Spring Boot는 202, 검토 서비스는 202(새 접수) 또는 200(이미 배정까지 끝난 같은 접수)을 돌려준다.

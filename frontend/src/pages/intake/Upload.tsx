@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { FileUp } from 'lucide-react';
 import { ApiError, bytes } from '../../api/client';
@@ -91,6 +91,47 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
     setFileError('');
   }
 
+  // 화면 어디에 놓아도 파일을 받는다. 파일이 아닌 끌기(텍스트 등)는 건드리지 않는다.
+  const addRef = useRef(add);
+  addRef.current = add;
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setDragging(true);
+    };
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      addRef.current(e.dataTransfer?.files ?? null);
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragover', over);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || loadingEdit || !files.length) return;
@@ -132,6 +173,11 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
 
   return (
     <form onSubmit={submit} className="surface flex flex-col gap-6 p-[clamp(18px,3vw,32px)]">
+      {dragging && (
+        <div aria-hidden="true" className="drop-overlay">
+          <span><FileUp size={28} strokeWidth={1.7} />여기에 놓아 파일 추가</span>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '제출 원본'}</h2>
         <span className="text-sm text-muted">HWP · HWPX</span>
@@ -167,7 +213,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
               접수 출처
             </label>
             <select id="target" value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 max-w-[370px] rounded-xl border border-line-2 bg-white px-3">
-              {!isDemoBackend && <option value="bundle">새 팀 묶음 접수 · 팀명 입력 없이</option>}
+              {!isDemoBackend && <option value="bundle">팀 묶음 접수</option>}
               <option value="">팀 미지정 · 혼합 접수</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -197,16 +243,6 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           aria-label="제출 원본 파일 선택"
           aria-describedby={fileError ? 'upload-limits upload-file-error' : 'upload-limits'}
           onClick={() => picker.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            add(e.dataTransfer.files);
-          }}
           className={cx(
             'mt-4 grid w-full place-items-center gap-2 rounded-2xl border border-dashed px-4 py-8 text-brand-deep sm:py-11',
             dragging ? 'border-brand-strong bg-brand-tint ring-2 ring-brand-strong' : 'border-brand/65 bg-canvas hover:border-brand-strong hover:bg-brand-tint',
@@ -215,7 +251,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           <span aria-hidden="true" className="mb-1 grid size-12 place-items-center rounded-2xl bg-brand-tint">
             <FileUp size={25} strokeWidth={1.7} />
           </span>
-          <strong className="text-base text-ink">{dragging ? '여기에 놓아 파일 추가' : '파일을 끌어오거나 선택하세요'}</strong>
+          <strong className="text-base text-ink">화면 어디에나 파일을 끌어다 놓거나 선택하세요</strong>
           <span id="upload-limits" className="text-[13px] text-muted">00 지급내역서 제외 · 최대 100개 · 파일당 40 MiB · 합계 300 MiB</span>
         </button>
         {fileError && <p id="upload-file-error" role="alert" className="rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">{fileError}</p>}
@@ -256,10 +292,10 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
       )}
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-sm">
         <span>
-          선택 <b>{files.length}</b>개 · {bytes(total)}
+          선택 <b>{files.length}</b>개 {bytes(total)}
         </span>
         <button className={buttonStyles.primary} disabled={busy || !!loadingEdit || !files.length}>
-          {busy ? '접수 중…' : base ? '보완본 접수하기' : '원본 접수하기'}
+          {busy ? '업로드 중…' : base ? '보완본 접수하기' : '문서 업로드하기'}
         </button>
       </footer>
     </form>

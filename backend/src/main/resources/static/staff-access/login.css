@@ -2,8 +2,8 @@
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   font-optical-sizing: auto;
-  color: #192922;
-  background: #f4f6f3;
+  color: #1c1c1e;
+  background: #f7f7f7;
   --forest: #174d38;
   --action: #226649;
   --muted: #54635a;
@@ -33,7 +33,7 @@ button { cursor: pointer; }
   width: min(100%, 30rem);
   overflow: hidden;
   background: #fff;
-  border: 1px solid #dce4dc;
+  border: 1px solid #d1d1d6;
   border-radius: 1.5rem;
   box-shadow: 0 1.25rem 4rem -2.75rem rgb(26 61 41 / 28%);
 }
@@ -75,7 +75,7 @@ input {
   border: 1px solid #98a89d;
   border-radius: .75rem;
   background: white;
-  color: #192922;
+  color: #1c1c1e;
   font-size: 1rem;
 }
 input:focus { border-color: var(--action); }

@@ -1,23 +1,29 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigationType } from 'react-router';
-import { AtSign, CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDashboard, Mail, Menu, PanelLeftClose, Settings2, Workflow } from 'lucide-react';
+import { AtSign, CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDashboard, Mail, Menu, PanelLeftClose, Settings2 } from 'lucide-react';
 import { backend } from '../api/backend';
+import { isLeaderMail, isMailDraft } from '../api/service';
 import { useEvent } from '../context/EventContext';
 import { cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
 
 const menu = [
   { to: '/', label: '업무 현황', Icon: LayoutDashboard },
-  { to: '/intake', label: '원본 접수', Icon: Inbox },
-  { to: '/assign', label: '팀 배정 확인', Icon: Workflow },
+  { to: '/intake', label: '문서 업로드', Icon: Inbox },
   { to: '/mail', label: '이메일 발송', Icon: Mail },
-  { to: '/gmail', label: 'Gmail 연결', Icon: AtSign },
   { to: '/report', label: '보고서', Icon: Files },
 ];
 
+/** 메뉴가 켜지는 경로. 팀별 검토는 업무 현황, 팀 배정 확인은 문서 업로드 아래에 있다. */
+function isMenuActive(to: string, pathname: string) {
+  if (to === '/') return pathname === '/' || pathname.startsWith('/teams/');
+  if (to === '/intake') return pathname.startsWith('/intake') || pathname.startsWith('/assign');
+  return pathname === to || pathname.startsWith(to + '/');
+}
+
 function Brand({ subtitle = '시상금 서류 검토실', onNavigate }: { subtitle?: string; onNavigate?: () => void }) {
   return (
-    <Link to="/" className="brand-lockup" onClick={onNavigate} aria-label="시상금 서류 검토실 업무 현황">
+    <Link to="/home" className="brand-lockup" onClick={onNavigate} aria-label="SW·AX 문서 업무 홈으로">
       <span className="brand-mark"><CheckCheck size={22} strokeWidth={2.5} aria-hidden="true" /></span>
       <span className="min-w-0"><strong>SW·AX</strong><small title={subtitle}>{subtitle}</small></span>
     </Link>
@@ -25,8 +31,9 @@ function Brand({ subtitle = '시상금 서류 검토실', onNavigate }: { subtit
 }
 
 function WorkspaceNav({ worker, onNavigate }: { worker: ReturnType<typeof useWorkerControl>; onNavigate?: () => void }) {
-  const { events, eventsError, event, selectEvent } = useEvent();
+  const { events, eventsError, event, selectEvent, dashboard } = useEvent();
   const { pathname } = useLocation();
+  const drafts = dashboard?.mail.filter((m) => isLeaderMail(m) && isMailDraft(m)).length ?? 0;
   return (
     <>
       <label className="event-field">
@@ -42,16 +49,20 @@ function WorkspaceNav({ worker, onNavigate }: { worker: ReturnType<typeof useWor
       </label>
       <nav aria-label="주 메뉴" className="workspace-nav">
         {menu.map(({ to, label, Icon }) => (
-          <NavLink key={to} to={to} end={to === '/'} onClick={onNavigate}
-            className={({ isActive }) => cx('nav-item', (isActive || (to === '/' && pathname.startsWith('/teams/'))) && 'is-current')}>
+          <Link key={to} to={to} onClick={onNavigate} aria-current={isMenuActive(to, pathname) ? 'page' : undefined}
+            className={cx('nav-item', isMenuActive(to, pathname) && 'is-current')}>
             <Icon size={19} aria-hidden="true" />{label}
-          </NavLink>
+            {to === '/mail' && drafts > 0 && <span className="nav-count">{drafts}<span className="sr-only">건 승인 대기</span></span>}
+          </Link>
         ))}
       </nav>
       <div className="sidebar-foot">
         <WorkerStatus control={worker} />
+        <NavLink to="/gmail" onClick={onNavigate} className={({ isActive }) => cx('nav-item', isActive && 'is-current')}>
+          <AtSign size={19} aria-hidden="true" />Gmail 연결
+        </NavLink>
         <NavLink to="/manage" onClick={onNavigate} className={({ isActive }) => cx('nav-item', isActive && 'is-current')}>
-          <Settings2 size={19} aria-hidden="true" />대회·팀 관리
+          <Settings2 size={19} aria-hidden="true" />대회 등록
         </NavLink>
         <p className="service-mode">{backend === 'service' ? '검토 서비스' : '접수 API'}</p>
       </div>

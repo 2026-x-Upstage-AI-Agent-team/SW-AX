@@ -584,11 +584,11 @@ test('업로드 오류를 파일 선택기에 연결하고 전송이 끝나면 �
   assert.ok((await choose.getAttribute('aria-describedby')).split(' ').includes(await error.getAttribute('id')));
   assert.equal(await page.getByText(name, { exact: true }).count(), 1);
   const received = new Promise(resolve => { receiveUpload = resolve; });
-  await page.getByRole('button', { name: '원본 접수하기' }).click();
+  await page.getByRole('button', { name: '문서 업로드하기' }).click();
   const response = await received;
   try {
     await page.getByRole('progressbar', { name: '원본 저장 확인' }).waitFor();
-    assert.ok(await page.getByRole('button', { name: '접수 중…' }).isDisabled());
+    assert.ok(await page.getByRole('button', { name: '업로드 중…' }).isDisabled());
   } finally {
     receiveUpload = undefined;
     response.writeHead(202, { 'Content-Type': 'application/json' });
@@ -618,7 +618,7 @@ test('새 팀 묶음이 기본이며 같은 접수 상세에 임시명과 판독
     };
   });
   t.after(() => { receiveUpload = undefined; });
-  await page.getByRole('button', {name:'원본 접수하기'}).click();
+  await page.getByRole('button', {name:'문서 업로드하기'}).click();
   const body = await posted;
   assert.match(body, /name="mode"\r\n\r\nbundle/);
   assert.doesNotMatch(body, /name="target"/);
