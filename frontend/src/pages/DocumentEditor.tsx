@@ -165,7 +165,7 @@ function Editor({ file }: { file: string }) {
           if (locked.current || !(await canLeave())) return;
           if (legacy) window.location.assign(returnUrl);
           else navigate(back);
-        }}><ArrowLeft size={16} />{review || legacyRoute.startsWith('review') ? '팀별 검토' : '팀별 파일 정리'}</a>
+        }}><ArrowLeft size={16} />{review || legacyRoute.startsWith('review') ? '팀별 검토' : '팀 배정 확인'}</a>
         <div className="min-w-36 flex-1">
           <h1 className="font-bold text-ink">한글 문서 편집</h1>
           {history && <p className="break-all text-sm text-muted">{history.name}</p>}

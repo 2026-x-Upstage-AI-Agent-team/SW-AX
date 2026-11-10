@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router';
 import App from './App';
 import './index.css';
+import './workspace-additions.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

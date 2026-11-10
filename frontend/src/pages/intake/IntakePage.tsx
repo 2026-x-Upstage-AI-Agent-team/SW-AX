@@ -194,7 +194,7 @@ function Detail({ eventId }: { eventId: string }) {
           <h2 className="text-xl font-extrabold">
             첨부한 파일 <em className="ml-1 text-base not-italic text-brand-strong">{files.length}</em>
           </h2>
-          {!conflicted && <Link to="/assign" className={buttonStyles.text}>팀별 파일 정리</Link>}
+          {!conflicted && <Link to="/assign" className={buttonStyles.text}>팀 배정 확인</Link>}
           <span className="text-sm text-muted">{bytes(batch.total_bytes)}</span>
         </div>
         <ol>
@@ -330,7 +330,7 @@ function ServiceDetail() {
         {b.state === 'conflict' && <CorrectionNotice id={b.id} current={dashboard?.teams.find((t) => t.id === b.target)?.current} onSaved={result.reload} />}
         {pending > 0 && b.state !== 'conflict' && b.state !== 'conflict_reviewed' && (
           <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>
-            팀별 파일 정리 {pending}개
+            팀 배정 확인 {pending}개
           </Link>
         )}
         {b.teams.length > 0 && (

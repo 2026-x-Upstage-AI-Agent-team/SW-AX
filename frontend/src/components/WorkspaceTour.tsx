@@ -7,6 +7,7 @@ import { workspacePath } from '../api/workspaces';
 import { buttonStyles } from './ui';
 
 type TourControl = {
+  active: boolean;
   start: () => void;
   menuDialog: RefObject<HTMLDialogElement | null>;
   menuOpen: boolean;
@@ -28,9 +29,9 @@ const steps = [
   { path: '/intake', target: 'upload-submit', title: '선택한 파일을 확인하고 첨부하세요.',
     text: '목록을 확인한 뒤 ‘파일 첨부하기’를 누르면 서류 판독과 자동 검토가 시작돼요. 다음 팀도 같은 순서로 올리면 돼요.', hint: '아직 파일을 고르지 않았다면 ‘다음 단계’로 나머지 화면을 둘러보세요.' },
   { path: '/intake/batches', target: 'upload-history', title: '첨부한 서류의 처리 상태를 확인하세요.',
-    text: '‘첨부 내역’에서 첨부번호를 누르면 판독·검토 진행 상태를 볼 수 있어요. 소속 팀을 확인할 파일이 있으면 ‘팀별 파일 정리’를 이용하세요.', hint: '판독 중에는 같은 서류를 다시 첨부하지 않아도 돼요.' },
-  { path: '/', target: 'nav-dashboard', title: '검토가 끝나면 결과를 확인하세요.',
-    text: '‘업무 현황’의 팀별 판정에서 ‘검토 열기’를 누르세요. 원문과 근거를 대조한 뒤 승인 또는 보완 필요를 선택하고 ‘결론 기록’을 눌러요.', hint: '보완이 필요하면 해당 팀의 검토 화면에서 보완 서류를 첨부할 수 있어요.' },
+    text: '‘첨부 내역’에서 첨부번호를 누르면 판독·검토 진행 상태를 볼 수 있어요. 소속 팀을 확인할 파일이 있으면 ‘팀 배정 확인’을 이용하세요.', hint: '판독 중에는 같은 서류를 다시 첨부하지 않아도 돼요.' },
+  { path: '/review', target: 'nav-review', title: '검토가 끝나면 결과를 확인하세요.',
+    text: '‘팀별 검토’에서 확인할 팀을 선택하세요. 원문과 근거를 대조한 뒤 승인 또는 보완 필요를 선택하고 ‘결론 기록’을 눌러요.', hint: '작업 단계로 필터하거나 팀명·대표자로 검색할 수 있어요. 보완 서류는 해당 팀의 검토 화면에서 첨부하세요.' },
   { path: '/mail', target: 'nav-mail', title: '필요한 팀장 안내를 확인하세요.',
     text: '목록에서 메일을 선택해 오른쪽에서 수신자와 내용을 확인하세요. 수정했다면 ‘초안 저장’을 누르고, 준비가 되면 ‘승인 후 발송’으로 안내해요.', hint: '안내가 필요한 경우 진행해요. 실제 Gmail 발송은 ‘Gmail 연결’이 필요해요.' },
   { path: '/report', target: 'nav-report', title: '마지막으로 보고서를 만들어요.',
@@ -113,7 +114,7 @@ export function WorkspaceTourProvider({ children }: { children: ReactNode }) {
     } else move(0);
   }
 
-  return <TourContext.Provider value={{ start, menuDialog, menuOpen, openMenu, closeMenu }}>
+  return <TourContext.Provider value={{ active: step !== null, start, menuDialog, menuOpen, openMenu, closeMenu }}>
     {children}
     {step !== null && <TourOverlay key={storageKey} step={step} move={move} finish={finish} menuOpen={menuOpen} menuDialog={menuDialog} openMenu={openMenu}
       complete={() => { finish(); navigate(workspacePath(workspaceId, '/intake', categoryId)); }} />}
@@ -268,7 +269,7 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
   return createPortal(content, menuOpen && menuDialog.current ? menuDialog.current : document.body);
 }
 
-export default function WorkspaceGuideStart() {
+export default function WorkspaceGuideStart({ compact = false, onBeforeStart }: { compact?: boolean; onBeforeStart?: () => void } = {}) {
   const { start } = useWorkspaceTour();
-  return <button type="button" onClick={start} className={buttonStyles.text}><BookOpen size={16} aria-hidden="true" />시작 가이드</button>;
+  return <button type="button" onClick={() => { onBeforeStart?.(); start(); }} className={compact ? 'icon-button' : buttonStyles.text} aria-label="시작 가이드" title="시작 가이드"><BookOpen size={compact ? 20 : 16} aria-hidden="true" />{!compact && '시작 가이드'}</button>;
 }

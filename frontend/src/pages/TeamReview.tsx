@@ -38,6 +38,9 @@ const DOC_KEYS: DocKey[] = ['01', '02', '03', '?'];
 
 export default function TeamReview() {
   const { id = '' } = useParams();
+  const [search] = useSearchParams();
+  const requestedBack = search.get('back');
+  const back = requestedBack && /^\/review(?:\?[^#]*)?$/.test(requestedBack) ? requestedBack : '/review';
   const { revision, refresh } = useEvent();
   const result = useAsync(() => getSubmission(id), [id, revision]);
   const submission = result.data?.id === id ? result.data : undefined;
@@ -47,8 +50,8 @@ export default function TeamReview() {
   return (
     <Page tone="gray">
       <div className="flex flex-col gap-3.5">
-        <Link to="/" className="text-sm text-brand-strong hover:text-brand-deep">
-          ← 업무 현황
+        <Link to={back} className="text-sm text-brand-strong hover:text-brand-deep">
+          ← 팀별 검토
         </Link>
         {!submission ? <Notice error={result.error} onRetry={result.reload} /> : <Review key={submission.id} s={submission} onSaved={refresh} />}
       </div>
@@ -133,7 +136,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
         )}
       </div>
       {evidence.summary && <p className="max-w-4xl text-[17px] leading-relaxed text-ink-2">{evidence.summary}</p>}
-      {s.held && <Feedback error="이 팀에 속할 수 있는 미배정 파일이 있어 검토 저장과 안내가 보류됩니다. 팀별 파일 정리에서 먼저 정리해 주세요." />}
+      {s.held && <Feedback error="이 팀에 속할 수 있는 미배정 파일이 있어 검토 저장과 안내가 보류됩니다. 팀 배정 확인에서 먼저 정리해 주세요." />}
       {s.state !== 'done' && <StatusCard s={s} onSaved={onSaved} />}
 
       <div className="mt-4 flex flex-wrap items-start gap-6">
@@ -300,7 +303,7 @@ function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
       )}
       {s.state === 'ownership' && (
         <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>
-          팀별 파일 정리으로
+          팀 배정 확인으로
         </Link>
       )}
       {recoverable && (

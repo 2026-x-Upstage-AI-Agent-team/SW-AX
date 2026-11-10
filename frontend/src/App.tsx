@@ -16,6 +16,7 @@ import Mail from './pages/Mail';
 import Manage from './pages/Manage';
 import Report from './pages/Report';
 import TeamReview from './pages/TeamReview';
+import ReviewList from './pages/ReviewList';
 import Categories, { PortalLayout } from './pages/Categories';
 import Workspaces from './pages/Workspaces';
 
@@ -31,6 +32,7 @@ export default function App() {
       <Route path="files/:id/preview" element={<EmbeddedDocumentPreview />} />
       <Route path="categories/:categoryId/workspaces/:workspaceId" element={<WorkspaceShell />}>
         <Route index element={<Dashboard />} />
+        <Route path="review" element={<ReviewList />} />
         <Route path="teams/:id" element={<TeamReview />} />
         <Route path="intake" element={<IntakePage view="upload" />} />
         <Route path="intake/batches" element={<IntakePage view="history" />} />
@@ -42,7 +44,7 @@ export default function App() {
         <Route path="manage" element={<Manage />} />
         <Route path="*" element={<NotFound />} />
       </Route>
-      {['intake/*', 'teams/:id', 'assign', 'mail', 'gmail', 'report', 'manage'].map(path =>
+      {['intake/*', 'teams/:id', 'review', 'assign', 'mail', 'gmail', 'report', 'manage'].map(path =>
         <Route key={path} path={path} element={<LegacyWorkspaceEntry />} />)}
       <Route path="*" element={<NotFound />} />
     </Routes>

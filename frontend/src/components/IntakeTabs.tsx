@@ -1,13 +1,13 @@
 import { NavLink } from './workspaceNavigation';
 import { useEvent } from '../context/EventContext';
 
-/** 파일 첨부 화면의 세 갈래: 파일 첨부하기 · 팀별 파일 정리 · 첨부 내역 */
+/** 파일 첨부 화면의 세 갈래: 파일 첨부하기 · 팀 배정 확인 · 첨부 내역 */
 export default function IntakeTabs() {
   const { dashboard } = useEvent();
   const pending = dashboard?.batches.reduce((n, b) => n + (b.pending ?? 0), 0) ?? 0;
   const tabs: Array<[string, string, boolean]> = [
     ['/intake', '파일 첨부', true],
-    ['/assign', '팀별 파일 정리', false],
+    ['/assign', '팀 배정 확인', false],
     ['/intake/batches', '첨부 내역', false],
   ];
   return (

@@ -35,7 +35,7 @@ export default function Mail() {
 
   return (
     <Page width="review">
-      <PageHeader title="이메일 발송" lead="판정 결과로 작성된 초안을 확인하세요. 담당자가 수신자와 내용을 확인하고 승인한 메일만 발송됩니다." />
+      <PageHeader title="팀장 안내" lead="판정 결과로 작성된 초안을 확인하세요. 담당자가 수신자와 내용을 확인하고 승인한 메일만 발송됩니다." />
 
       {!dashboard ? (
         <Notice error={dashboardError} onRetry={refresh} />

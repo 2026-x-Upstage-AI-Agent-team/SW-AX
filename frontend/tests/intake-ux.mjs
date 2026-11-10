@@ -102,7 +102,7 @@ test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화
     await assertGuideAttached(page, 'upload-submit');
   }
   await page.setViewportSize({ width: 1280, height: 850 });
-  for (const target of ['upload-history', 'nav-dashboard', 'nav-mail', 'nav-report']) {
+  for (const target of ['upload-history', 'nav-review', 'nav-mail', 'nav-report']) {
     await guide.getByRole('button', { name: '다음 단계' }).click();
     await page.locator(`.tour-spotlight[data-target="${target}"]`).waitFor();
   }
@@ -111,7 +111,7 @@ test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
   await page.goto('/#/categories/awards/workspaces/test/');
   assert.equal(await guide.count(), 0);
-  await page.locator('.workspace-guide-entry').getByRole('button', { name: '시작 가이드' }).click();
+  await page.locator('.workspace-rail').getByRole('button', { name: '시작 가이드', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
   await page.keyboard.press('Tab');
   assert.ok(await page.evaluate(() => document.activeElement?.matches('[data-tour="nav-upload"], .tour-card button')));
@@ -149,7 +149,8 @@ test('320px 가이드는 메뉴를 열고 실제 파일 첨부 버튼을 누를 
   await page.goto('/#/categories/awards/workspaces/test/');
   await page.reload();
   assert.equal(await guide.count(), 0);
-  await page.locator('.workspace-guide-entry').getByRole('button', { name: '시작 가이드' }).click();
+  await page.getByRole('button', { name: '메뉴 열기', exact: true }).click();
+  await page.getByRole('dialog', { name: '작업 메뉴', exact: true }).getByRole('button', { name: '시작 가이드', exact: true }).click();
   await guide.getByRole('button', { name: '메뉴 열기', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
   await page.keyboard.press('Escape');
@@ -228,7 +229,7 @@ test('판독 대기 원본은 확인할 파일에 있고 배정되면 처리된 
   assert.deepEqual(await rowIds(lists.nth(1)), ['assignment-file-waiting', 'assignment-file-assigned', 'assignment-file-outside']);
 });
 
-test('팀별 판정 필터는 대기·조치 필요·성공을 구분하고 새 판정이 도착하면 개수를 갱신한다', async t => {
+test('검토 작업 필터는 AI 성공과 담당자 승인을 구분하고 진행 상태를 갱신한다', async t => {
   const page = await newPage(t, 375);
   await page.clock.install();
   function row(id, state, verdict = null, decision = null, held = false) {
@@ -242,29 +243,24 @@ test('팀별 판정 필터는 대기·조치 필요·성공을 구분하고 새 
   ];
   await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
   await page.route('**/api/operations/submissions/*', route => route.fulfill({ json: { id: route.request().url().split('/').pop(), history: [] } }));
-  await page.goto('/#/categories/awards/workspaces/test/');
-  const filters = page.getByRole('group', { name: '판정 필터' });
-  const table = page.getByRole('region', { name: '팀별 판정 표' });
-  const names = () => table.locator('tbody .team-identity').evaluateAll(cells => cells.map(cell => cell.firstElementChild.textContent));
+  await page.goto('/#/categories/awards/workspaces/test/review?filter=all');
+  const filters = page.getByRole('group', { name: '검토 작업 필터' });
+  const queue = page.getByRole('region', { name: '검토 대상 팀' });
+  const names = () => queue.getByRole('article').locator('h3').allTextContents();
   async function select(label) {
     const button = filters.getByRole('button', { name: label, exact: true });
     await button.click();
-    assert.equal(await button.getAttribute('aria-pressed'), 'true');
+    await filters.getByRole('button', { name: label, exact: true, pressed: true }).waitFor();
   }
-  await select('전체 11');
-  assert.equal((await names()).length, 11);
-  await select('처리 대기 4');
-  assert.deepEqual(await names(), ['접수팀', '재판정팀', '요청팀', '검토팀']);
-  await select('조치 필요 5');
-  assert.deepEqual(await names(), ['확인팀', '재제출팀', '오류팀', '배정확인팀', '미제출팀']);
-  await select('정리됨 2');
-  assert.deepEqual(await names(), ['승인전팀', '승인팀']);
+  await select('전체 11'); assert.equal((await names()).length, 11);
+  await select('자동 검토 중 4'); assert.deepEqual(await names(), ['접수팀', '재판정팀', '요청팀', '검토팀']);
+  await select('검토 대기 2'); assert.deepEqual(await names(), ['오류팀', '승인전팀']);
+  await select('승인 완료 2'); assert.deepEqual(await names(), ['확인팀', '승인팀']);
+  await select('팀 배정 확인 2'); assert.deepEqual(await names(), ['배정확인팀', '미제출팀']);
   teams[0] = row('접수팀', 'done', '성공');
   await page.clock.fastForward(3001);
-  await filters.getByRole('button', { name: '정리됨 3', pressed: true }).waitFor();
-  assert.deepEqual(await names(), ['접수팀', '승인전팀', '승인팀']);
-  await select('처리 대기 3');
-  assert.deepEqual(await names(), ['재판정팀', '요청팀', '검토팀']);
+  await select('검토 대기 3'); assert.deepEqual(await names(), ['오류팀', '접수팀', '승인전팀']);
+  await select('승인 완료 2'); assert.deepEqual(await names(), ['확인팀', '승인팀']);
   await page.setViewportSize({ width: 320, height: 740 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
 });
@@ -303,9 +299,9 @@ test('판정 사유는 문제만 요약하고 검토 상세에서 원본 근거�
   for (const s of submissions) {
     await page.route('**/api/operations/submissions/' + s.id, route => route.fulfill({ json: s }));
   }
-  await page.goto('/#/categories/awards/workspaces/test/');
-  const table = page.getByRole('region', { name: '팀별 판정 표' });
-  const reason = name => table.getByRole('row').filter({ hasText: name }).locator('.team-reason');
+  await page.goto('/#/categories/awards/workspaces/test/review?filter=all');
+  const table = page.getByRole('region', { name: '검토 대상 팀' });
+  const reason = name => table.getByRole('article').filter({ has: page.getByRole('heading', { name, exact: true }) }).locator('[data-review-summary]');
   await reason('중복팀').filter({ hasText: /신분증 발급일/ }).waitFor();
   assert.match(await reason('중복팀').innerText(), /동의서 중복.*신분증 발급일 미기재.*외 1건/);
   assert.match(await reason('정상팀').innerText(), /보완 사항 없음/);
@@ -315,7 +311,7 @@ test('판정 사유는 문제만 요약하고 검토 상세에서 원본 근거�
   assert.equal(await reason('추가검사팀').innerText(), '신청서·동의서 소속 표기 대조 · 제출 서류 원본 확인');
   const privateText = /123456789012|issued_date|Sub-doc|【†/;
   assert.doesNotMatch(await page.locator('main').innerText(), privateText);
-  await table.getByRole('link', { name: '중복팀 검토 열기', exact: true }).click();
+  await table.getByRole('link', { name: '중복팀 보완 항목 확인', exact: true }).click();
   const checks = page.getByRole('complementary', { name: '검토 체크리스트' });
   await checks.getByText('신분증 발급일 미기재', { exact: true }).waitFor();
   const explanation = page.getByRole('region', { name: 'Upstage 검토 설명' });
@@ -435,7 +431,7 @@ test('보고서의 빈 추출값은 미확인으로 표시하고 등록 대표�
   assert.equal(await page.getByRole('checkbox', { name: '미확인 편철에 포함', exact: true }).count(), 1);
 });
 
-test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본 없는 팀에는 링크를 표시하지 않는다', async t => {
+test('팀별 검토는 현재 제출본을 열고 제출본 없는 팀에는 상세 링크를 표시하지 않는다', async t => {
   const page = await newPage(t);
   const submission = { id: 'submission-v2', version: 2, state: 'done', verdict: '재제출요청', decision: null, count: 1 };
   const teams = [
@@ -446,31 +442,30 @@ test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본
     email: '', note: '', result: null, files: [file], history: [], mail: [], audit: [], fields: { members: [], recipient: {} } };
   await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
   await page.route('**/api/operations/submissions/' + submission.id, route => route.fulfill({ json: detail }));
-  await page.goto('/#/categories/awards/workspaces/test/');
-  const table = page.getByRole('region', { name: '팀별 판정 표' });
-  const row = table.getByRole('row').filter({ hasText: '첫 대표' });
-  const open = row.getByRole('link', { name: '3팀 (첫 대표) 검토 열기', exact: true });
-  const missing = table.getByRole('row').filter({ hasText: '다른 대표' });
+  await page.goto('/#/categories/awards/workspaces/test/review?filter=all');
+  const table = page.getByRole('region', { name: '검토 대상 팀' });
+  const row = table.getByRole('article').filter({ hasText: '첫 대표' });
+  const open = row.getByRole('link', { name: '3팀 보완 항목 확인', exact: true });
+  const missing = table.getByRole('article').filter({ hasText: '다른 대표' });
   for (const width of [1440, 320]) {
     await page.setViewportSize({ width, height: 850 });
     await open.waitFor();
     const href = await open.getAttribute('href');
-    assert.equal(href, '#/categories/awards/workspaces/test/teams/submission-v2');
+    assert.ok(href.startsWith('#/categories/awards/workspaces/test/teams/submission-v2?back='));
     assert.equal(await row.getByRole('link', { name: '3팀', exact: true }).getAttribute('href'), href);
-    assert.equal(await missing.getByRole('link').count(), 0);
-    assert.equal(await missing.getByRole('cell').last().innerText(), '제출본 없음');
+    assert.equal(await missing.getByRole('link', { name: /검토 내역/ }).count(), 0);
+    await missing.getByText(/제출본 없음/).waitFor();
     const bounds = await table.boundingBox(), link = await open.boundingBox();
     assert.ok(link.x >= bounds.x && link.x + link.width <= bounds.x + bounds.width + 1);
     if (width === 1440) { await open.focus(); await open.press('Enter'); }
     else await open.click();
-    await page.waitForURL('**/#/categories/awards/workspaces/test/teams/submission-v2');
+    await page.waitForURL(url => url.hash.startsWith('#/categories/awards/workspaces/test/teams/submission-v2?back='));
     await page.getByRole('heading', { name: '미확인', exact: true }).waitFor();
     await page.getByRole('region', { name: '원문 미리보기' }).waitFor();
     await page.goBack();
   }
-  await page.getByRole('button', { name: '정리됨 0' }).click();
-  const empty = table.getByRole('cell', { name: '이 필터에 해당하는 팀이 없습니다.' });
-  assert.equal(await empty.getAttribute('colspan'), '7');
+  await page.getByRole('button', { name: '승인 완료 0', exact: true }).click();
+  await page.getByRole('heading', { name: '이 단계에 해당하는 팀이 없습니다.' }).waitFor();
 });
 
 test('사이드바 실행 버튼은 한 번만 요청하고 모바일 메뉴와 같은 실행 상태를 표시한다', async t => {
@@ -507,7 +502,7 @@ test('사이드바 실행 버튼은 한 번만 요청하고 모바일 메뉴와 
   finish();
   await menu.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
   assert.equal(starts, 1);
-  await menu.getByRole('link', { name: '이메일 발송' }).click();
+  await menu.getByRole('link', { name: '팀장 안내' }).click();
   await page.getByRole('button', { name: '메뉴 열기' }).click();
   await menu.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
   result = null;

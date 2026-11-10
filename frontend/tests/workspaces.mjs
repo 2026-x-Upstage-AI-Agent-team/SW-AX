@@ -21,7 +21,7 @@ test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테�
       await page.getByLabel('비밀번호', { exact: true }).fill(process.env.INTAKE_TEST_PASSWORD_A);
       await page.getByRole('button', { name: '로그인', exact: true }).click();
       await page.waitForURL(baseURL + '/#/');
-      await page.getByRole('heading', { name: /어떤 서류 업무/ }).waitFor();
+      await page.getByRole('heading', { name: '문서 업무', exact: true }).waitFor();
       assert.equal(await page.getByRole('navigation', { name: '주 메뉴' }).count(), 0);
       await context.close();
     }
@@ -69,7 +69,7 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('/#/');
-    await page.getByRole('heading', { name: /어떤 서류 업무/ }).waitFor();
+    await page.getByRole('heading', { name: '문서 업무', exact: true }).waitFor();
     assert.equal(await page.getByRole('navigation', { name: '주 메뉴' }).count(), 0);
     const disabledCards = page.locator('.category-card-disabled');
     await disabledCards.first().waitFor();
@@ -109,7 +109,7 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     assert.equal(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isDisabled(), true);
     await page.reload();
     await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
-    assert.ok((await page.locator('.workspace-context').innerText()).includes(name));
+    assert.equal(await page.getByRole('combobox', { name: '워크스페이스 선택', exact: true }).inputValue(), workspace.id);
 
     const otherResponse = await request.post('/api/events', { headers, data: { name: name + ' 두 번째', category_id: 'awards' } });
     assert.equal(otherResponse.status(), 200);
@@ -121,7 +121,7 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     // This changes the remembered workspace, but must never change the first tab's target.
     await page.reload();
     await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
-    assert.ok((await page.locator('.workspace-context').innerText()).includes(name));
+    assert.equal(await page.getByRole('combobox', { name: '워크스페이스 선택', exact: true }).inputValue(), workspace.id);
     assert.equal(new URL(page.url()).hash, '#' + root + '/intake');
     await page.getByRole('link', { name: '워크스페이스 목록', exact: true }).click();
     await page.getByRole('heading', { name, exact: true }).waitFor();

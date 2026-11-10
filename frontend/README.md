@@ -5,9 +5,11 @@ React 19 · Vite · TypeScript · Tailwind CSS v4 · React Router.
 
 시작 화면에서 **시상금 서류 검토** 카테고리를 선택하고, 대회별 워크스페이스를 만들거나 연다. 워크스페이스의 업무 현황에서 **파일 첨부하기**로 한 팀의 서류를 함께 올리고 검토를 시작한다. 사이드바와 휴대폰 메뉴의 **워크스페이스 목록**으로 다른 작업 공간을 연다. 확정한 보고서의 HWPX·PDF 다운로드는 미리보기 위에 함께 표시한다. 키보드 포커스, 동작 줄이기, 투명도 줄이기, 고대비 설정을 지원한다. [적용한 Apple 디자인 지침](https://github.com/emilkowalski/skills/tree/main/skills/apple-design)
 
-새 워크스페이스에 처음 들어오면 **실제 버튼을 강조하는 시작 가이드**가 자동으로 열린다. 파일 첨부 메뉴 → 파일 선택 → 첨부 버튼 → 첨부 내역 → 검토 결과 → 이메일 발송 → 보고서의 7단계를 안내한다. 화면 배경을 어둡게 하고 눌러야 할 버튼 옆에 설명을 띄운다. **다음 단계 / 이전 / 가이드 종료**를 제공하고, 종료한 상태와 진행 단계는 워크스페이스별로 기억한다. 업무 현황이나 사이드바의 **시작 가이드**로 다시 볼 수 있다. 모바일에서는 메뉴 열기부터 안내한다. 가이드는 파일 첨부·발송·보고서 생성을 자동 실행하지 않는다. 선택한 서류가 있으면 첨부 전 다른 화면으로 넘어가지 않으며 종료·다시 시작에도 선택을 유지한다.
+새 워크스페이스에 처음 들어오면 **실제 버튼을 강조하는 시작 가이드**가 자동으로 열린다. 파일 첨부 메뉴 → 파일 선택 → 첨부 버튼 → 첨부 내역 → 팀별 검토 → 팀장 안내 → 보고서의 7단계를 안내한다. 화면 배경을 어둡게 하고 눌러야 할 버튼 옆에 설명을 띄운다. **다음 단계 / 이전 / 가이드 종료**를 제공하고, 종료한 상태와 진행 단계는 워크스페이스별로 기억한다. 사이드바 하단의 책 모양 **시작 가이드** 버튼으로 다시 볼 수 있다. 모바일에서는 메뉴 열기부터 안내한다. 가이드는 파일 첨부·발송·보고서 생성을 자동 실행하지 않는다. 선택한 서류가 있으면 첨부 전 다른 화면으로 넘어가지 않으며 종료·다시 시작에도 선택을 유지한다.
 
-최신 와이어프레임의 흰 사이드바·회색 배경·14px 카드·초록색 조작 버튼을 카테고리와 워크스페이스에도 적용했다. 사이드바는 **업무 현황 / 파일 첨부 / 이메일 발송 / 보고서**이며, 파일 첨부 화면의 탭에 **팀별 파일 정리 / 첨부 내역**을 모았다. 메일의 목록·상세 검토와 승인 대기 건수, 보고서의 승인 팀별 지급 정보 입력은 최신 main 구현을 유지한다.
+기본 `src/index.css`는 원격 `main`의 `c6f0167`과 동일하다. 문서 업무 홈·흰 사이드바·회색 배경·14px 카드·기존 버튼과 대화상자를 기반으로 추가 기능을 연결했다. 가이드와 접기 상태에 필요한 스타일은 `src/workspace-additions.css`에 분리한다. 사이드바는 **업무 현황 / 서류 관리 / 팀별 검토 / 팀장 안내 / 보고서**이며, 서류 관리 아래에 **파일 첨부 / 첨부 내역 / 팀 배정 확인**을 둔다. Gmail·워크스페이스 설정과 검색·시작 가이드·사이드바 접기·계정 메뉴는 하단에 있다. 메일의 목록·상세 검토와 승인 대기 건수, 보고서의 승인 팀별 지급 정보 입력은 main 구현을 유지한다.
+
+**업무 현황**은 확인할 일·AI 판정 분포·단계별 현황을 보여준다. **팀별 검토**는 검토 대기·보완 진행·자동 검토 중·팀 배정 확인·승인 완료·전체 필터, 팀명/대표자 검색, 정렬과 다음 팀 검토를 제공한다. AI 성공과 담당자 승인은 별개이며, 각 팀의 현재 단계에 맞는 원문 대조·보완 안내·보완 첨부·지급 정보 입력으로 연결한다. 상세에서 돌아오면 검색 조건과 선택 팀의 위치가 복원된다. 검색 버튼이나 Ctrl/Cmd+K로 현재 공간의 실제 팀·첨부 파일·메뉴를 찾고, 파일 조회 실패 시 다시 시도할 수 있다.
 
 파일 첨부의 세 탭은 `IntakeLayout`의 동일한 폭·여백·제목·설명을 공유한다. 문서 미리보기에 필요한 넓은 폭을 유지하고, 스크롤바 유무가 바뀌어도 제목과 탭 위치가 움직이지 않는다.
 
@@ -33,6 +35,8 @@ npm run dev           # 접수 API(Spring Boot, 127.0.0.1:18765)에 연결
 npm run dev:service   # 검토 서비스(Windows 시연판 FastAPI, 127.0.0.1:8765)에 연결
 npm run build         # 타입 검사 후 dist/ 생성 (backend gradle 빌드가 static/ 으로 복사)
 npm run test:ux       # 빌드한 화면의 배정·접수 흐름을 Chrome과 시험용 로컬 API로 확인
+npm run test:navigation # 검색·사이드바·검토 목록·후속 작업을 시험용 API로 확인
+npm run test:workspaces # INTAKE_TEST_URL과 시험 계정으로 로그인·워크스페이스 흐름 확인
 npm run test:editor   # 별도 시험 서버에서 공식 가상 HWP·HWPX를 직접 편집하고 새 버전을 다시 연다
 ```
 
@@ -56,7 +60,7 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 
 ## 화면과 API
 
-아래 화면 경로는 워크스페이스 주소 뒤에 붙는다. 한글 편집기 `/files/{id}/edit`와 문서 미리보기는 독립 화면이며, 편집기에는 돌아갈 워크스페이스 정보를 함께 전달한다. UI의 ‘원본 접수’는 ‘파일 첨부’, ‘접수 내역’은 ‘첨부 내역’, ‘팀 배정 확인’은 ‘팀별 파일 정리’로 표시한다. API의 기존 경로와 제출 버전은 유지한다.
+아래 화면 경로는 워크스페이스 주소 뒤에 붙는다. 한글 편집기 `/files/{id}/edit`와 문서 미리보기는 독립 화면이며, 편집기에는 돌아갈 워크스페이스 정보를 함께 전달한다. UI의 ‘원본 접수’는 ‘파일 첨부’, ‘접수 내역’은 ‘첨부 내역’, ‘팀별 파일 정리’는 ‘팀 배정 확인’으로 표시한다. API의 기존 경로와 제출 버전은 유지한다.
 
 | 경로 | 화면 | 검토 서비스 API |
 |---|---|---|
@@ -64,9 +68,10 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 | `/categories/:categoryId/workspaces` | 카테고리별 워크스페이스 생성·선택 | `GET·POST /api/events` |
 | `/categories/awards/workspaces/:workspaceId` | 업무 현황과 시작 가이드. 아래의 작업 경로는 이 주소 뒤에 붙는다. | `GET /api/dashboard`, `GET /api/submissions/{id}` |
 | `/teams/:id` | 팀별 서류 검토 (원본 PDF, Upstage 판정·필드 설명, 검토 항목, 담당자 결론, 명단, 버전 기록) | `GET·PUT /api/submissions/{id}[/review]`, `POST .../retry`, `GET /api/files/{id}/preview` |
+| `/review` | 팀별 검토 목록 (작업 단계·검색·정렬·후속 작업) | `GET /api/dashboard`, `GET /api/submissions/{id}` |
 | `/intake` · `/intake?base=:id` | 파일 첨부 · 보완 서류 첨부. 화면 어디에나 파일을 끌어다 놓을 수 있다. | `POST /api/intake-batches` (`base`, `removed`) |
 | `/intake/batches[/:id]` | 파일 첨부 › 첨부 내역 · 첨부 상세 | `GET /api/intake-batches/{id}` |
-| `/assign` | 파일 첨부 › 팀별 파일 정리 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
+| `/assign` | 파일 첨부 › 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
 | `/mail` | 메일 목록과 초안 검토(제목·본문 수정, 승인 후 발송), 발송 이력, 팀장 수신 주소 확인·입력 | `PUT /api/teams/{id}/email`, `GET /api/mail/{id}`, `PUT /api/mail/{id}/draft`, `POST /api/mail/{id}/approve`, `POST /api/mail/{id}/retry` |
 | `/gmail` | 담당자 Gmail 연결·해제·재인증 | Spring Boot 상태 `GET /api/settings/gmail`, Google 연결 해제 `POST /api/settings/gmail/oauth/disconnect`. 양쪽 서비스 `POST /api/settings/gmail/oauth/start`, `GET /api/settings/gmail/callback`, `POST /api/settings/gmail/connect` |
 | `/report` | 보고서 확정 (팀 순서, 지급 정보 입력, 두 표 미리보기, 생성·확정·다운로드) | `GET /api/events/{id}/draft`, `POST /api/reports`, `GET·POST /api/reports/{id}[/confirm|/edited|/preview|/hwpx|/pdf]` |

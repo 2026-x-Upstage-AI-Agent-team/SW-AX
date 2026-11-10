@@ -15,7 +15,7 @@ export function useWorkspaceLocation() {
       url.searchParams.set('category', categoryId);
       return url.pathname + url.search + url.hash;
     }
-    if (!/^\/(?:$|intake(?:[/?]|$)|teams\/|assign(?:[/?]|$)|mail(?:[/?]|$)|gmail(?:[/?]|$)|report(?:[/?]|$)|manage(?:[/?]|$))/.test(path)) return to;
+    if (!/^\/(?:[?#]|$|intake(?:[/?]|$)|teams\/|review(?:[/?]|$)|assign(?:[/?]|$)|mail(?:[/?]|$)|gmail(?:[/?]|$)|report(?:[/?]|$)|manage(?:[/?]|$))/.test(path)) return to;
     return typeof to === 'string' ? workspacePath(workspaceId, path, categoryId)
       : { ...to, pathname: workspacePath(workspaceId, path, categoryId) };
   };
