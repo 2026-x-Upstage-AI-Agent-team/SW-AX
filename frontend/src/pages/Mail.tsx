@@ -20,6 +20,7 @@ import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx, inputStyle 
 import { useEvent } from '../context/EventContext';
 
 type Tab = 'drafts' | 'leader';
+const mailPanel = 'surface flex min-h-28 min-w-0 flex-col gap-3.5 p-[clamp(18px,2vw,24px)]';
 
 export default function Mail() {
   const { dashboard, dashboardError, refresh } = useEvent();
@@ -49,63 +50,68 @@ export default function Mail() {
           )}
           {message && <Feedback message={message} />}
 
-          <div className="flex flex-wrap items-start gap-5">
-            <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-4">
-              <div role="group" aria-label="메일 목록" className="segments self-start">
-                {(
-                  [
-                    ['drafts', `승인 대기 ${drafts.length}`],
-                    ['leader', `팀장 안내 ${mail.length}`],
-                  ] as Array<[Tab, string]>
-                ).map(([key, label]) => (
-                  <button key={key} type="button" aria-pressed={tab === key} className="segment"
-                    onClick={() => { setTab(key); setMessage(''); }}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {list.length === 0 ? (
-                <p key={tab} className="motion-results surface px-6 py-8 text-center text-sm text-muted">
-                  {tab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}
-                </p>
-              ) : (
-                <ul key={tab} aria-label={tab === 'drafts' ? '승인 대기 메일' : '팀장 안내 메일'} className="motion-results surface flex flex-col gap-1 p-2">
-                  {list.map((m) => (
-                    <li key={m.id}>
-                      <button type="button" aria-current={selected?.id === m.id ? 'true' : undefined}
-                        onClick={() => { setPicked(m.id); setMessage(''); }}
-                        className={cx('flex w-full flex-col items-start gap-1.5 rounded-[10px] border-[1.5px] p-3 text-left',
-                          selected?.id === m.id ? 'border-brand-strong bg-brand-tint' : 'border-transparent hover:bg-line-soft')}>
-                        <span className="flex flex-wrap items-center gap-2 text-sm">
-                          {m.name && <strong>{m.name}{m.version ? ` v${m.version}` : ''}</strong>}
-                          <span>{m.kind}</span>
-                          <StateBadge state={m.state} />
-                        </span>
-                        <span className="text-xs text-muted">
-                          {m.sent_to && m.sent_to + ' · '}초안 생성 {when(m.created)}
-                          {['sent', 'local'].includes(m.state) && (m.sent_at ? ' · 발송 ' + when(m.sent_at) : ' · 발송 시각 기록 없음')}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {noEmail.length > 0 && <EmailList teams={noEmail} onSaved={refresh} />}
+          <div className="@container flex flex-col gap-4">
+            <div role="group" aria-label="메일 보기" className="segments self-start">
+              {(
+                [
+                  ['drafts', `승인 대기 ${drafts.length}`],
+                  ['leader', `팀장 안내 ${mail.length}`],
+                ] as Array<[Tab, string]>
+              ).map(([key, label]) => (
+                <button key={key} type="button" aria-pressed={tab === key} className="segment"
+                  onClick={() => { setTab(key); setMessage(''); }}>
+                  {label}
+                </button>
+              ))}
             </div>
 
-            <section aria-labelledby="draft-h" className="surface flex min-w-0 flex-[2_1_480px] flex-col gap-3.5 p-[clamp(18px,2vw,24px)]">
-              {selected ? (
-                <MailDetail key={selected.id + ':' + selected.state} m={selected} hasEmailForm={noEmail.some((t) => t.current === selected.submission)}
-                  onSaved={refresh} onApproved={setMessage} />
-              ) : (
-                <>
-                  <h2 id="draft-h" className="panel-title">초안 검토</h2>
-                  <p className="motion-results text-sm text-muted">왼쪽 목록에서 메일을 고르면 내용이 여기에 표시됩니다.</p>
-                </>
-              )}
-            </section>
+            <div className="grid items-start gap-5 @min-[52rem]:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+              <div className="flex min-w-0 flex-col gap-4">
+                <section aria-labelledby="mail-list-h" className={mailPanel}>
+                  <h2 id="mail-list-h" className="panel-title">메일 목록</h2>
+                  {list.length === 0 ? (
+                    <p key={tab} className="motion-results text-sm text-muted">
+                      {tab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}
+                    </p>
+                  ) : (
+                    <ul key={tab} aria-label={tab === 'drafts' ? '승인 대기 메일' : '팀장 안내 메일'} className="motion-results flex flex-col gap-1">
+                      {list.map((m) => (
+                        <li key={m.id}>
+                          <button type="button" aria-current={selected?.id === m.id ? 'true' : undefined}
+                            onClick={() => { setPicked(m.id); setMessage(''); }}
+                            className={cx('flex w-full flex-col items-start gap-1.5 rounded-[10px] border-[1.5px] p-3 text-left',
+                              selected?.id === m.id ? 'border-brand-strong bg-brand-tint' : 'border-transparent hover:bg-line-soft')}>
+                            <span className="flex flex-wrap items-center gap-2 text-sm">
+                              {m.name && <strong>{m.name}{m.version ? ` v${m.version}` : ''}</strong>}
+                              <span>{m.kind}</span>
+                              <StateBadge state={m.state} />
+                            </span>
+                            <span className="text-xs text-muted">
+                              {m.sent_to && m.sent_to + ' · '}초안 생성 {when(m.created)}
+                              {['sent', 'local'].includes(m.state) && (m.sent_at ? ' · 발송 ' + when(m.sent_at) : ' · 발송 시각 기록 없음')}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                {noEmail.length > 0 && <EmailList teams={noEmail} onSaved={refresh} />}
+              </div>
+
+              <section aria-labelledby="draft-h" className={mailPanel}>
+                {selected ? (
+                  <MailDetail key={selected.id + ':' + selected.state} m={selected} hasEmailForm={noEmail.some((t) => t.current === selected.submission)}
+                    onSaved={refresh} onApproved={setMessage} />
+                ) : (
+                  <>
+                    <h2 id="draft-h" className="panel-title">초안 검토</h2>
+                    <p className="motion-results text-sm text-muted">목록에서 메일을 고르면 내용이 여기에 표시됩니다.</p>
+                  </>
+                )}
+              </section>
+            </div>
           </div>
         </>
       )}

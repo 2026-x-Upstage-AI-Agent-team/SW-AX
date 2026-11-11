@@ -238,6 +238,36 @@ test('320px 모바일 메뉴에서 설정·Gmail·팀장 안내로 이동하며 
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 });
 
+test('팀장 안내의 메일 목록과 초안 검토는 정렬되고 좁은 화면에서는 쌓인다', async t => {
+  const page = await pageFor(t);
+  await page.goto(root + '/mail');
+  const tabs = page.getByRole('group', { name: '메일 보기', exact: true });
+  const list = page.getByRole('region', { name: '메일 목록', exact: true });
+  const draft = page.getByRole('region', { name: '초안 검토', exact: true });
+  const checkDesktop = async () => {
+    const [controls, left, right] = await Promise.all([tabs.boundingBox(), list.boundingBox(), draft.boundingBox()]);
+    assert.ok(controls && left && right);
+    assert.ok(controls.y + controls.height <= left.y);
+    assert.ok(left.x + left.width < right.x);
+    assert.ok(Math.abs(left.y - right.y) < 1);
+    assert.ok(Math.abs(left.height - right.height) < 1);
+  };
+
+  await list.getByText('승인을 기다리는 메일이 없습니다.').waitFor();
+  await checkDesktop();
+  await tabs.getByRole('button', { name: '팀장 안내 0', exact: true }).click();
+  await list.getByText('아직 만들어진 메일이 없습니다.').waitFor();
+  await checkDesktop();
+
+  await page.setViewportSize({ width: 320, height: 1000 });
+  const [upper, lower] = await Promise.all([list.boundingBox(), draft.boundingBox()]);
+  assert.ok(upper && lower);
+  assert.ok(upper.y + upper.height < lower.y);
+  assert.ok(Math.abs(upper.x - lower.x) < 1);
+  assert.ok(Math.abs(upper.width - lower.width) < 1);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+});
+
 test('확인할 일 배지는 현황의 같은 목록으로 이동하고 계정에는 실제 로그인명을 표시한다', async t => {
   const page = await pageFor(t);
   await page.goto(root + '/review');
