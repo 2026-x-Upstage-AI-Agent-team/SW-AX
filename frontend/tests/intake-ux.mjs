@@ -722,14 +722,20 @@ test('업로드 오류를 파일 선택기에 연결하고 전송이 끝나면 �
   await page.waitForURL('**/#/categories/awards/workspaces/test/intake/batches/batch');
 });
 
-test('새 팀 묶음이 기본이며 같은 첨부 상세에 임시명과 판독된 팀명을 표시한다', async t => {
+test('첨부 상세는 판독·대기·자동 검토를 갱신하고 결과가 나오면 로딩을 멈춘다', async t => {
   const page = await newPage(t);
-  let realName = false;
+  await page.clock.install();
+  let state = 'preparing';
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: {
+    ...dashboard,
+    batches: [{ ...batch, id: 'numbered', state: state === 'preparing' ? state : 'assigned', pending: 0 }],
+    teams: [{ ...team, submission: state === 'preparing' ? null : { id: 'submission', state: state === 'running' ? 'polling' : state, version: 1 } }],
+  } }));
   await page.route('**/api/intake-batches/numbered', route => route.fulfill({ json: {
     batch: { batch_id:'numbered', event_id:event.id, target_team_id:'team', status:'received', created_at:'2026-11-09T09:00:00Z', intake_number:1,
-      team_name: realName ? '가상검토팀01' : '접수 1팀', team_rep:'', file_count:1, total_bytes:4 },
-    files:[], teams:[{team:'team',state:'confirmed',version:1,submission_id:'submission',
-      review_job:{review_job_id:'job',state:realName ? 'done' : 'running'}}],
+      team_name: state === 'done' ? '가상검토팀01' : '접수 1팀', team_rep:'', file_count:1, total_bytes:4 },
+    files:[], teams:state === 'preparing' ? [] : [{team:'team',state:'confirmed',version:1,submission_id:'submission',
+      review_job:{review_job_id:'job',state:state === 'paused' ? 'running' : state}}],
   } }));
   await page.goto('/#/categories/awards/workspaces/test/intake');
   assert.equal(await page.getByLabel('첨부할 팀').inputValue(), 'bundle');
@@ -749,8 +755,28 @@ test('새 팀 묶음이 기본이며 같은 첨부 상세에 임시명과 판독
   assert.doesNotMatch(body, /name="target"/);
   await page.waitForURL('**/#/categories/awards/workspaces/test/intake/batches/numbered');
   await page.locator('dd').filter({hasText:/^1번 팀$/}).waitFor();
-  realName = true;
+  await page.getByRole('progressbar', { name: '첨부한 파일을 판독 중이에요' }).waitFor();
+  for (const [next, label] of [['queued', '자동 검토를 기다리고 있어요'], ['running', 'AI가 서류를 검토 중이에요']]) {
+    state = next;
+    await page.clock.fastForward(3100);
+    await page.getByRole('progressbar', { name: label }).waitFor();
+  }
+  await page.setViewportSize({ width: 320, height: 850 });
+  state = 'done';
+  await page.clock.fastForward(3100);
   await page.getByText('1번 팀 · 가상검토팀01', {exact:true}).first().waitFor();
+  await page.getByRole('heading', { name: 'AI 검토가 완료됐어요' }).waitFor();
+  assert.equal(await page.getByRole('progressbar').count(), 0);
+  assert.match(await page.getByRole('link', { name: '검토 결과 보기' }).getAttribute('href'), /\/teams\/submission$/);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.equal(await page.getByText('1번 팀 · 가상검토팀01', {exact:true}).count(), 2);
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake/batches/numbered');
+
+  for (const stopped of ['paused', 'failed']) {
+    state = stopped;
+    await page.reload();
+    await page.getByRole('heading', { name: '검토 상태를 확인해 주세요' }).waitFor();
+    assert.equal(await page.getByRole('progressbar').count(), 0);
+    assert.match(await page.getByRole('link', { name: '검토 상태 보기' }).getAttribute('href'), /\/teams\/submission$/);
+  }
 });

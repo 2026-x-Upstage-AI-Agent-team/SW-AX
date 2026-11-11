@@ -21,6 +21,7 @@ import {
 } from '../api/service';
 import { Page } from '../components/Layout';
 import DocumentPreview from '../components/DocumentPreview';
+import { ProgressTrack } from '../components/WorkflowProgress';
 import {
   CheckIcon,
   Feedback,
@@ -270,6 +271,7 @@ function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const recoverable = recoverableStates.has(s.state);
+  const processing = busyStates.has(s.state);
   const lastPoll = s.last_polled_at == null ? null : new Date(s.last_polled_at * 1000);
   const waiting = s.polling_delayed ? '처리 지연' : 'Studio 판정을 기다리는 중입니다. 화면이 자동으로 새로고침됩니다.';
 
@@ -290,9 +292,10 @@ function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
     <div className={cx('flex flex-col gap-3 rounded-[18px] border px-6 py-4', recoverable || s.state === 'ownership' ? 'border-alert-strong/30 bg-alert-soft' : 'border-line bg-white')}>
       <div className="flex flex-wrap items-center gap-3">
         <StateBadge state={s.state} />
-        <span className="text-sm text-ink-2">{s.error || (busyStates.has(s.state) ? waiting : stateLabel(s.state))}</span>
+        <span role={processing ? 'status' : undefined} className="text-sm text-ink-2">{s.error || (processing ? waiting : stateLabel(s.state))}</span>
         {s.job && <span className="font-mono text-xs text-subtle">{s.job}</span>}
       </div>
+      {processing && <ProgressTrack label="자동 검토 진행" />}
       {s.polling_delayed && (
         <p className="text-sm tabular-nums">마지막 조회 시각 · {lastPoll
           ? <time dateTime={lastPoll.toISOString()}>{lastPoll.toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'medium' })}</time>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from '../../components/workspaceNavigation';
-import { FileUp } from 'lucide-react';
+import { FileUp, LoaderCircle } from 'lucide-react';
 import { ApiError, bytes } from '../../api/client';
 import { isDemoBackend } from '../../api/backend';
 import { teamLabel, uploadBatch, type AwardEvent, type AwardTeam } from '../../api/intake';
@@ -285,7 +285,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         </p>
       )}
       {busy && (
-        <div className="flex flex-wrap items-center gap-2.5 text-sm">
+        <div className="flex flex-wrap items-center gap-2.5 rounded-xl bg-canvas px-4 py-3 text-sm">
           <span role="status">{progress === 100 ? '서버에서 원본 저장 확인 중' : '원본 전송 중'}</span>
           <progress aria-label={progress === 100 ? '원본 저장 확인' : '원본 전송률'} max={100} value={progress === 100 ? undefined : progress} className="max-w-1/2 accent-brand" />
           {progress < 100 && <span aria-hidden="true" className="tabular-nums">{progress}%</span>}
@@ -296,6 +296,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           선택 <b>{files.length}</b>개 {bytes(total)}
         </span>
         <button className={buttonStyles.primary} data-tour="upload-submit" disabled={busy || !!loadingEdit || !files.length}>
+          {busy && <LoaderCircle size={17} className="shrink-0 motion-safe:animate-spin" aria-hidden="true" />}
           {busy ? '첨부 중…' : base ? '보완 서류 첨부하기' : '파일 첨부하기'}
         </button>
       </footer>

@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { CircleAlert, ExternalLink, FileText, LoaderCircle, Maximize2, X } from 'lucide-react';
-import { stateLabel } from '../api/labels';
+import { busyStates, stateLabel } from '../api/labels';
 import type { DocKey, Ref, Verdict } from '../api/service';
 
 export function cx(...names: Array<string | false | null | undefined>) {
@@ -29,7 +29,10 @@ export function StateBadge({ state, size = 'sm' }: { state: string; size?: 'sm' 
         : ['sent', 'local', 'done', 'assigned', 'confirmed', 'preview', 'received'].includes(state)
           ? 'bg-brand-tint text-brand-strong'
           : 'bg-canvas text-ink-2';
-  return <span className={cx(pill, size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-[13px]', tone)}>{stateLabel(state)}</span>;
+  return <span className={cx(pill, 'gap-1.5', size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-[13px]', tone)}>
+    {busyStates.has(state) && <LoaderCircle size={13} className="shrink-0 motion-safe:animate-spin" aria-hidden="true" />}
+    {stateLabel(state)}
+  </span>;
 }
 
 /** 01·02·03 부수를 칩으로. 0부는 없음, 2부 이상은 중복으로 표시 */

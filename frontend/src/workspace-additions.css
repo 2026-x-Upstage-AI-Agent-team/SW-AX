@@ -3,6 +3,22 @@
 }
 
 @layer components {
+  .workflow-progress-segment {
+    width: 100%;
+    background: repeating-linear-gradient(120deg, var(--color-brand) 0 5px, transparent 5px 10px);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .workflow-progress-segment {
+      width: 32%;
+      border-radius: inherit;
+      background: var(--color-brand);
+      animation: workflow-progress-sweep 1.8s ease-in-out infinite;
+    }
+  }
+  @keyframes workflow-progress-sweep {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(315%); }
+  }
   @media (min-width: 60rem) {
     .workspace[data-rail-collapsed="true"] { grid-template-columns: 4.5rem minmax(0, 1fr); }
     .workspace[data-rail-collapsed="true"] .workspace-rail { padding-inline: .6rem; }

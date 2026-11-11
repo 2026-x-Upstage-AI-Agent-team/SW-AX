@@ -4,15 +4,65 @@ import { Link, useNavigate } from '../../components/workspaceNavigation';
 import { backend } from '../../api/backend';
 import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
-import { docLabels, when } from '../../api/labels';
+import { busyStates, docLabels, recoverableStates, when } from '../../api/labels';
 import { filePreviewUrl, getBatch, getSubmission, isFileProcessed, reviewBatchConflict } from '../../api/service';
 import IntakeLayout from '../../components/IntakeLayout';
 import DeleteIntake from '../../components/DeleteIntake';
+import WorkflowProgress from '../../components/WorkflowProgress';
 import { Feedback, Notice, StateBadge, buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
 import Upload from './Upload';
 
 const card = 'flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]';
+
+type BatchJob = { state: string; submissionId: string | null };
+
+function BatchReviewStatus({ preparing, needsAssignment, jobs }: {
+  preparing: boolean;
+  needsAssignment: boolean;
+  jobs: BatchJob[];
+}) {
+  const updates = '진행 상태는 자동으로 갱신돼요. 다른 팀 서류를 계속 첨부할 수 있어요.';
+  if (preparing) return <WorkflowProgress
+    title="첨부한 파일을 판독 중이에요"
+    description={updates}
+    tone="working"
+  />;
+  if (jobs.some(job => busyStates.has(job.state) && job.state !== 'queued')) return <WorkflowProgress
+    title="AI가 서류를 검토 중이에요"
+    description={updates}
+    tone="working"
+  />;
+  if (jobs.some(job => job.state === 'queued')) return <WorkflowProgress
+    title="자동 검토를 기다리고 있어요"
+    description={updates}
+    tone="working"
+  />;
+
+  const stopped = jobs.find(job => recoverableStates.has(job.state) || job.state === 'ownership');
+  if (stopped) return <WorkflowProgress
+    title="검토 상태를 확인해 주세요"
+    description="팀별 검토에서 사유와 이어서 할 일을 확인할 수 있어요."
+    tone="attention"
+    action={<Link to={stopped.submissionId ? '/teams/' + stopped.submissionId : '/review?filter=all'} className={buttonStyles.secondary}>검토 상태 보기</Link>}
+  />;
+  if (needsAssignment) return <WorkflowProgress
+    title="팀 배정 확인이 필요해요"
+    description="파일이 어느 팀의 서류인지 확인한 뒤 검토를 이어갈 수 있어요."
+    tone="attention"
+    action={<Link to="/assign" className={buttonStyles.secondary}>팀 배정 확인하기</Link>}
+  />;
+
+  const completed = jobs.filter(job => job.state === 'done');
+  if (completed.length === 0) return null;
+  const single = completed.length === 1 ? completed[0].submissionId : null;
+  return <WorkflowProgress
+    title="AI 검토가 완료됐어요"
+    description={`${completed.length}팀의 검토 결과를 확인할 수 있어요.`}
+    tone="complete"
+    action={<Link to={single ? '/teams/' + single : '/review?filter=all'} className={buttonStyles.primary}>검토 결과 보기</Link>}
+  />;
+}
 
 /** /intake (업로드·보완 서류 첨부), /intake/batches (첨부 내역), /intake/batches/:id (첨부 상세) */
 export default function IntakePage({ view }: { view: 'upload' | 'history' | 'detail' }) {
@@ -58,10 +108,11 @@ function BaseUpload({ sid }: { sid: string }) {
 // ── Spring Boot 접수 API ─────────────────────────────
 
 function History({ eventId }: { eventId: string }) {
-  const { revision, refresh } = useEvent();
+  const { dashboard, revision, refresh } = useEvent();
   const location = useLocation();
   const [message, setMessage] = useState(location.state?.eventId === eventId ? location.state.message : '');
   const result = useApi<BatchSummary[]>(paths.batches(eventId), revision);
+  const preparing = new Set(dashboard?.batches.filter(batch => batch.state === 'preparing').map(batch => batch.id));
   if (!result.data) return <Notice error={result.error} onRetry={refresh} />;
   return (
     <section className={card}>
@@ -100,7 +151,7 @@ function History({ eventId }: { eventId: string }) {
                   <td className="whitespace-nowrap px-2 py-3">{batch.team_name ? teamLabel({ name: batch.team_name, rep: batch.team_rep, intake_number: batch.intake_number }) : '미지정'}</td>
                   <td className="whitespace-nowrap px-2 py-3">{batch.file_count}개</td>
                   <td className="whitespace-nowrap px-2 py-3">
-                    <StateBadge state={batch.status ?? 'received'} />
+                    <StateBadge state={preparing.has(batch.batch_id) ? 'preparing' : batch.status ?? 'received'} />
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">
                     <DeleteIntake kind="묶음" name={'첨부 ' + batch.batch_id.slice(0, 8)} path={paths.batch(batch.batch_id)}
@@ -118,25 +169,43 @@ function History({ eventId }: { eventId: string }) {
 
 function Detail({ eventId }: { eventId: string }) {
   const { id = '' } = useParams();
-  const { revision, teams, refresh } = useEvent();
+  const { dashboard, dashboardError, revision, teams, refresh } = useEvent();
   const navigate = useNavigate();
   const [deleted, setDeleted] = useState<{ batch: string; name: string }>();
   const result = useAsync(() => api<BatchDetails>(paths.batch(id)), [id, revision]);
   const detail = result.data?.batch.batch_id === id ? result.data : undefined;
   const links = new Map((detail?.teams ?? []).map((link) => [link.team, link]));
+  const current = new Map(dashboard?.teams.flatMap(team => team.submission ? [[team.submission.id, team.submission.state] as const] : []));
+  const jobs = new Map<string, BatchJob>();
+  for (const [team, link] of links) {
+    const job = link.review_job;
+    if (!job) continue;
+    const state = link.submission_id ? current.get(link.submission_id) : undefined;
+    const isCurrent = job.state === 'queued' || job.state === 'running' || (job.state === 'done' && state === 'ownership');
+    jobs.set(team, { state: isCurrent ? state ?? job.state : job.state, submissionId: link.submission_id });
+  }
   const teamIds = new Set((detail?.files ?? []).flatMap((file) => file.team ? [file.team] : []));
   for (const team of links.keys()) teamIds.add(team);
-  const pending = detail?.files.some((file) => file.state === 'unassigned' || (file.team && !links.has(file.team)))
-    || detail?.teams?.some(({ review_job }) => review_job?.state === 'queued' || review_job?.state === 'running');
+  const batchState = dashboard?.batches.find(item => item.id === id)?.state;
+  const preparing = batchState === 'preparing';
+  const reviewJobs = [...jobs.values()];
+  const trackingJobs = reviewJobs.some(job => job.submissionId && busyStates.has(current.get(job.submissionId) ?? ''));
+  const unresolvedFiles = detail?.files.some(file => file.state === 'unassigned' || (file.team && !links.has(file.team)));
   const conflicted = detail?.batch.status === 'conflict' || detail?.batch.status === 'conflict_reviewed';
-  usePolling(Boolean(detail?.batch.event_id === eventId && !conflicted && !result.error && pending), result.reload, 3000);
-  if (result.error || !detail) return <Notice error={result.error} onRetry={result.reload} />;
+  usePolling(Boolean(detail?.batch.event_id === eventId && !conflicted && !result.error && !preparing && !trackingJobs
+    && (unresolvedFiles || reviewJobs.some(job => busyStates.has(job.state)))), result.reload, 3000);
+  if (!detail) return <Notice error={result.error} onRetry={result.reload} />;
   const { batch, files } = detail;
   const targetName = batch.team_name && teamLabel({ name: batch.team_name, rep: batch.team_rep, intake_number: batch.intake_number });
   if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 첨부번호가 아닙니다." />;
   return (
     <div className="flex flex-col gap-4">
       <Feedback message={deleted?.batch === id ? deleted.name + ' 원본을 삭제했습니다.' : ''} />
+      {result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted && (
+        dashboardError && !jobs.size ? <Notice error={dashboardError} onRetry={refresh} /> :
+        <BatchReviewStatus preparing={preparing} jobs={reviewJobs}
+          needsAssignment={batchState === 'review' || files.some(file => file.state === 'unassigned') || reviewJobs.some(job => job.state === 'blocked')} />
+      )}
       <section className={card}>
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold">첨부 상세</h2>
@@ -178,7 +247,7 @@ function Detail({ eventId }: { eventId: string }) {
                   </div>
                   {job ? (
                     <div className="min-w-0 sm:text-right">
-                      <StateBadge state={job.state} />
+                      <StateBadge state={jobs.get(id)?.state ?? job.state} />
                       {job.verdict && <p className="mt-1 text-sm font-semibold">{job.verdict}</p>}
                       <p className="mt-1 break-all font-mono text-xs text-subtle">작업 {job.review_job_id}</p>
                     </div>
@@ -306,13 +375,22 @@ function ServiceDetail() {
   const { id = '' } = useParams();
   const { dashboard, revision, refresh } = useEvent();
   const result = useAsync(() => getBatch(id), [id, revision]);
-  usePolling(result.data?.state === 'preparing', result.reload, 3000);
-  if (!result.data) return <Notice error={result.error} onRetry={result.reload} />;
-  const b = result.data;
+  const trackingPreparation = dashboard?.batches.some(batch => batch.id === id && batch.state === 'preparing');
+  const detail = result.data?.id === id ? result.data : undefined;
+  usePolling(detail?.state === 'preparing' && !trackingPreparation && !result.error, result.reload, 3000);
+  if (!detail) return <Notice error={result.error} onRetry={result.reload} />;
+  const b = detail;
   const teamName = (tid?: string | null) => dashboard?.teams.find((t) => t.id === tid)?.name ?? '';
   const pending = b.files.filter((f) => !isFileProcessed(f)).length;
+  const jobs = b.teams.flatMap(team => {
+    const submission = dashboard?.teams.find(entry => entry.submission?.id === team.submission_id)?.submission;
+    return submission ? [{ state: submission.state, submissionId: submission.id }] : [];
+  });
+  const conflicted = b.state === 'conflict' || b.state === 'conflict_reviewed';
   return (
     <div className="flex flex-col gap-4">
+      {result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted &&
+        <BatchReviewStatus preparing={b.state === 'preparing'} needsAssignment={pending > 0} jobs={jobs} />}
       <section className={card}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xl font-extrabold">첨부 상세</h2>
@@ -326,7 +404,6 @@ function ServiceDetail() {
           <dt className="text-muted">지정 팀</dt>
           <dd>{b.target ? teamName(b.target) : '미지정 · 여러 팀 서류 첨부'}{b.base && ' · 보완 서류 첨부'}</dd>
         </dl>
-        {b.state === 'preparing' && <p className="text-sm text-muted">원본을 PDF로 바꾸고 본문을 읽는 중입니다. 화면이 자동으로 새로고침됩니다.</p>}
         {b.state === 'conflict' && <CorrectionNotice id={b.id} current={dashboard?.teams.find((t) => t.id === b.target)?.current} onSaved={result.reload} />}
         {pending > 0 && b.state !== 'conflict' && b.state !== 'conflict_reviewed' && (
           <Link to="/assign" className={cx(buttonStyles.outline, 'self-start')}>

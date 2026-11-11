@@ -5,6 +5,7 @@ import { ArrowRight, Check, ChevronDown, CircleAlert, FileUp } from 'lucide-reac
 import type { Verdict } from '../api/service';
 import { Page } from '../components/Layout';
 import { Notice, PageHeader, buttonStyles } from '../components/ui';
+import WorkflowProgress from '../components/WorkflowProgress';
 import { useWorkspaceOverview } from '../context/WorkspaceOverviewContext';
 import { queueGroups, reviewStages } from '../hooks/reviewQueue';
 import { workspaceTasks, type WorkspaceTask as Alert } from '../hooks/workspaceTasks';
@@ -29,9 +30,17 @@ export default function Dashboard() {
     }
   }, [dashboard, search]);
   const queued = list.flatMap(row => row.submission?.state === 'queued' ? [row.submission.received ?? row.submission.created] : []);
+  const preparing = dashboard?.batches.filter(batch => batch.state === 'preparing').length ?? 0;
+  const processing = groups.processing.length;
   return <Page tone="gray">
     <PageHeader title="업무 현황" side={<Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />파일 첨부하기</Link>} />
     {!dashboard ? <Notice error={error} onRetry={refresh} /> : <>
+      {(preparing > 0 || processing > 0) && <WorkflowProgress
+        title="서류 자동 처리 중"
+        description={[preparing > 0 && `파일 판독 ${preparing}건`, processing > 0 && `자동 검토 대기·진행 ${processing}팀`].filter(Boolean).join(' · ')}
+        tone="working"
+        action={<Link to={processing ? '/review?filter=processing' : '/intake/batches'} className={buttonStyles.secondary}>진행 상태 보기</Link>}
+      />}
       <div className="overview-panels"><ActionQueue alerts={alerts} /><VerdictSummary rows={list} /></div>
       <section aria-label="업무 진행 요약" className="surface flex flex-col gap-4 p-[22px]">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="panel-title">단계별 현황</h2>
@@ -46,7 +55,6 @@ export default function Dashboard() {
         <span>Studio {dashboard.connected ? `연결됨 · 설정 ${dashboard.config}` : '연결 대기'}</span>
         {dashboard.gmail_account ? <Link to="/gmail" className="font-semibold text-brand-strong underline underline-offset-2">담당자 Gmail {dashboard.mail_ready ? '연결됨' : '인증 대기'}</Link> : <span>메일 {dashboard.smtp ? 'SMTP' : '로컬 메일함'}</span>}
         {queued.length > 0 && <span>대기 {queued.length}팀 · 최초 첨부 {new Date(Math.min(...queued) * 1000).toLocaleString('ko-KR')}</span>}
-        {groups.processing.length > 0 && <span>처리 중 {groups.processing.length}팀 · 자동 새로고침</span>}
       </p>
     </>}
   </Page>;
