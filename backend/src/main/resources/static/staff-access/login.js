@@ -24,7 +24,7 @@ function showError(message, invalidFields = []) {
 
 for (const field of fields) {
   field.addEventListener('input', () => {
-    if (field.getAttribute('aria-invalid') === 'true') clearError();
+    if (field.getAttribute('aria-describedby') === errorMessage.id) clearError();
   });
 }
 
@@ -69,7 +69,8 @@ form.addEventListener('submit', async event => {
   if (response?.status === 401) {
     if (username.value !== values.get('username') || password.value !== values.get('password')) return;
     password.value = '';
-    showError('아이디 또는 비밀번호를 확인해 주세요.', fields);
+    showError('아이디 또는 비밀번호를 확인해 주세요.', [password]);
+    username.setAttribute('aria-describedby', errorMessage.id);
     password.focus();
     return;
   }

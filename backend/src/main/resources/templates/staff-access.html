@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f7f7f7">
   <title th:text="${leaving ? '로그아웃 | SW·AX 문서 자동화' : '담당자 로그인 | SW·AX 문서 자동화'}">담당자 로그인 | SW·AX 문서 자동화</title>
   <link rel="stylesheet" th:href="@{/staff-access/login.css(v=4)}">
-  <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=3)}"></script>
+  <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=5)}"></script>
 </head>
 <body>
   <main class="access-shell">
@@ -32,7 +32,7 @@
           <div class="field">
             <label for="username">아이디</label>
             <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required
-                   th:attr="aria-describedby=${loginError ? 'login-error' : null},aria-invalid=${loginError ? 'true' : null}">
+                   th:attr="aria-describedby=${loginError ? 'login-error' : null}">
             <p id="login-error" class="login-error" role="alert"
                th:text="${loginError ? '아이디 또는 비밀번호를 확인해 주세요.' : ''}"></p>
           </div>

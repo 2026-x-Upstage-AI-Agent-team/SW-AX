@@ -43,7 +43,7 @@ test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테�
       await page.getByText('아이디 또는 비밀번호를 확인해 주세요.', { exact: true }).waitFor();
       assert.equal(attempts, 1);
       assert.equal(await error.evaluate(message => getComputedStyle(message).color), errorColor);
-      assert.equal(await borderColor(username), errorColor);
+      assert.notEqual(await borderColor(username), errorColor);
       assert.equal(await borderColor(password), errorColor);
       assert.deepEqual(await inputBoxes(), before, 'Invalid credentials must not move either input.');
       const errorBox = await error.boundingBox();
