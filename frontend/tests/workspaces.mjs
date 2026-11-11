@@ -17,6 +17,8 @@ test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테�
       const submit = page.getByRole('button', { name: '로그인', exact: true });
       const error = page.getByRole('alert');
       const inputBoxes = () => Promise.all([username.boundingBox(), password.boundingBox()]);
+      const borderColor = input => input.evaluate(field => getComputedStyle(field).borderTopColor);
+      const errorColor = 'rgb(180, 35, 24)';
       const before = await inputBoxes();
       let attempts = 0;
       page.on('request', request => {
@@ -25,18 +27,24 @@ test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테�
       await submit.click();
       await page.getByText('아이디를 입력해 주세요.', { exact: true }).waitFor();
       assert.equal(await username.evaluate(input => input === document.activeElement), true);
+      assert.equal(await borderColor(username), errorColor);
+      assert.notEqual(await borderColor(password), errorColor);
       const attemptedUsername = width === 1280 ? process.env.INTAKE_TEST_LOGIN_A : 'missing-ui-test-user';
       await username.fill(attemptedUsername);
       await submit.click();
       await page.getByText('비밀번호를 입력해 주세요.', { exact: true }).waitFor();
       assert.equal(await password.evaluate(input => input === document.activeElement), true);
+      assert.equal(await borderColor(password), errorColor);
+      assert.notEqual(await borderColor(username), errorColor);
       assert.equal(attempts, 0);
       assert.deepEqual(await inputBoxes(), before);
       await password.fill('incorrect-test-password');
       await submit.click();
       await page.getByText('아이디 또는 비밀번호를 확인해 주세요.', { exact: true }).waitFor();
       assert.equal(attempts, 1);
-      assert.equal(await error.evaluate(message => getComputedStyle(message).color), 'rgb(180, 35, 24)');
+      assert.equal(await error.evaluate(message => getComputedStyle(message).color), errorColor);
+      assert.equal(await borderColor(username), errorColor);
+      assert.equal(await borderColor(password), errorColor);
       assert.deepEqual(await inputBoxes(), before, 'Invalid credentials must not move either input.');
       const errorBox = await error.boundingBox();
       assert.ok(errorBox.y >= before[0].y + before[0].height && errorBox.y + errorBox.height <= before[1].y);
@@ -47,6 +55,8 @@ test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테�
       await username.fill(process.env.INTAKE_TEST_LOGIN_A);
       await password.fill(process.env.INTAKE_TEST_PASSWORD_A);
       assert.equal(await error.textContent(), '');
+      assert.notEqual(await borderColor(username), errorColor);
+      assert.notEqual(await borderColor(password), errorColor);
       await submit.click();
       await page.waitForURL(baseURL + '/#/');
       await page.getByRole('heading', { name: '문서 업무', exact: true }).waitFor();

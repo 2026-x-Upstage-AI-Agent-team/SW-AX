@@ -7,6 +7,7 @@
   --forest: #174d38;
   --action: #226649;
   --muted: #54635a;
+  --error: #b42318;
 }
 
 * { box-sizing: border-box; }
@@ -79,6 +80,11 @@ input {
   font-size: 1rem;
 }
 input:focus { border-color: var(--action); }
+input[aria-invalid="true"] {
+  border-color: var(--error);
+  background: #fff4f2;
+}
+input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
 .password-field { position: relative; }
 .password-field:has(.visibility:not([hidden])) input { padding-inline-end: 4.5rem; }
 .password-field:has(.visibility:not([hidden])) input::-ms-reveal { display: none; }
@@ -111,7 +117,7 @@ input:focus { border-color: var(--action); }
 .back-link { justify-self: center; padding: .5rem; color: var(--action); font-weight: 600; text-underline-offset: .2em; }
 .login-error {
   min-block-size: 1lh;
-  color: #b42318;
+  color: var(--error);
   font-size: .85rem;
   font-weight: 650;
   line-height: 1.45;
