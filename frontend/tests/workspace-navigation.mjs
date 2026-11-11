@@ -81,6 +81,50 @@ test('워크스페이스 검색은 팀과 원본 파일을 찾아 해당 제출�
   await dialog.getByText('일치하는 팀·파일·메뉴가 없습니다.').waitFor();
 });
 
+test('워크스페이스 선택 목록은 현재 공간을 표시하고 키보드와 모바일 메뉴에서 전환한다', async t => {
+  const page = await pageFor(t);
+  await page.addInitScript(() => localStorage.setItem('swax.workspace-tour.v1.intake.nav-other', 'done'));
+  const other = { ...event, id: 'nav-other', name: '2026 웨이브' };
+  await page.route('**/api/events', route => route.fulfill({ json: [event, other] }));
+  await page.route('**/api/events/nav-other/teams', route => route.fulfill({ json: [] }));
+  await page.route('**/api/dashboard?*', route => {
+    const switched = new URL(route.request().url()).searchParams.get('event') === other.id;
+    return route.fulfill({ json: switched ? { ...dashboard, event: other.id, events: [event, other], teams: [], batches: [] } : dashboard });
+  });
+  await page.goto(root + '/review');
+  const picker = page.getByRole('button', { name: '워크스페이스 선택' });
+  const list = page.getByRole('list', { name: '전환할 워크스페이스' });
+  await picker.press('ArrowDown');
+  await list.waitFor();
+  const current = list.getByRole('button', { name: event.name });
+  assert.equal(await current.getAttribute('aria-current'), 'true');
+  assert.equal(await list.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(30, 41, 59)');
+  if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-picker-desktop.png' });
+  await page.getByRole('heading', { name: '팀별 검토', exact: true }).click();
+  await list.waitFor({ state: 'hidden' });
+  await picker.press('ArrowDown');
+  await current.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.waitForURL('**/workspaces/nav-other');
+  await picker.getByText(other.name, { exact: true }).waitFor();
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.getByRole('button', { name: '메뉴 열기' }).click();
+  const menu = page.getByRole('dialog', { name: '작업 메뉴' });
+  await picker.click();
+  await list.waitFor();
+  if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-picker-mobile.png' });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.keyboard.press('Escape');
+  await list.waitFor({ state: 'hidden' });
+  assert.equal(await menu.isVisible(), true);
+  assert.equal(await picker.evaluate(element => element === document.activeElement), true);
+  await picker.click();
+  await list.getByRole('button', { name: event.name }).click();
+  await page.waitForURL('**/workspaces/nav-test');
+  await menu.waitFor({ state: 'hidden' });
+});
+
 test('파일 검색 실패를 빈 결과로 숨기지 않고 다시 조회한다', async t => {
   const page = await pageFor(t);
   let fail = true;

@@ -79,15 +79,6 @@
   .mobile-bar .brand-lockup { min-width: 0; max-width: calc(100% - 3.2rem); }
   .brand-mark, .icon-button { flex: none; }
   .event-field { display: grid; gap: .45rem; margin: 2rem 0 1.3rem; color: var(--color-muted); font-size: .76rem; font-weight: 650; }
-  .event-picker { position: relative; display: flex; align-items: center; min-width: 0; }
-  .event-picker svg { position: absolute; pointer-events: none; left: .75rem; }
-  .event-picker svg:last-child { left: auto; right: .65rem; }
-  .event-picker select {
-    width: 100%; min-height: 2.75rem; appearance: none; text-overflow: ellipsis;
-    border: 1px solid var(--color-line-2); border-radius: .72rem; background: #fff;
-    color: var(--color-ink); padding: .5rem 1.85rem .5rem 2.35rem; font-size: .86rem; font-weight: 600;
-  }
-  .event-picker select:disabled { color: var(--color-subtle); }
   .workspace-nav { display: grid; gap: .26rem; }
   .nav-item { min-height: 2.8rem; display: flex; align-items: center; gap: .78rem; padding: .5rem .8rem; border-radius: .7rem; color: var(--color-ink); font-size: .92rem; font-weight: 500; }
   .nav-item svg { flex: none; stroke-width: 1.75; color: var(--color-brand-strong); }

@@ -155,7 +155,8 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     assert.equal(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isDisabled(), true);
     await page.reload();
     await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
-    assert.equal(await page.getByRole('combobox', { name: '워크스페이스 선택', exact: true }).inputValue(), workspace.id);
+    const picker = page.getByRole('button', { name: '워크스페이스 선택', exact: true });
+    await picker.getByText(name, { exact: true }).waitFor();
 
     const otherResponse = await request.post('/api/events', { headers, data: { name: name + ' 두 번째', category_id: 'awards' } });
     assert.equal(otherResponse.status(), 200);
@@ -167,7 +168,7 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     // This changes the remembered workspace, but must never change the first tab's target.
     await page.reload();
     await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
-    assert.equal(await page.getByRole('combobox', { name: '워크스페이스 선택', exact: true }).inputValue(), workspace.id);
+    await picker.getByText(name, { exact: true }).waitFor();
     assert.equal(new URL(page.url()).hash, '#' + root + '/intake');
     await page.getByRole('link', { name: '워크스페이스 목록', exact: true }).click();
     await page.getByRole('heading', { name, exact: true }).waitFor();

@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link as PortalLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from 'react-router';
-import { AtSign, CalendarDays, ChevronDown, FolderOpen, Inbox, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2, UserRound } from 'lucide-react';
+import { AtSign, ChevronDown, FolderOpen, Inbox, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2, UserRound } from 'lucide-react';
 import { backend, isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { isLeaderMail, isMailDraft } from '../api/service';
@@ -15,6 +15,7 @@ import { buttonStyles, cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
 import { WorkspaceTourProvider, useWorkspaceTour } from './WorkspaceTour';
 import WorkspaceHelp from './WorkspaceHelp';
+import WorkspacePicker from './WorkspacePicker';
 import BrandMark from './BrandMark';
 import WorkspaceSearch from './WorkspaceSearch';
 
@@ -36,7 +37,6 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
   const { categoryId = 'awards' } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const pickerId = useId();
   const section = workspaceSection(pathname);
   const workspaces = events?.filter(item => (item.category_id ?? 'awards') === categoryId);
   const drafts = dashboard?.mail.filter(m => isLeaderMail(m) && isMailDraft(m)).length ?? 0;
@@ -57,13 +57,9 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
   return <>
     {control.compact ? <PortalLink to={categoryPath(categoryId)} onClick={onNavigate} className="nav-item my-4 justify-center" aria-label="워크스페이스 목록" title={event?.name}><FolderOpen size={19} aria-hidden="true" /></PortalLink>
       : <div className="event-field">
-        <div className="flex items-center justify-between gap-2"><label htmlFor={pickerId}>워크스페이스</label><PortalLink to={categoryPath(categoryId)} onClick={onNavigate} aria-label="워크스페이스 목록" className="text-brand-strong hover:underline">목록</PortalLink></div>
-        <span className="event-picker"><CalendarDays size={17} aria-hidden="true" />
-          <select id={pickerId} aria-label="워크스페이스 선택" value={event?.id ?? ''} disabled={!workspaces?.length} title={eventsError ?? event?.name}
-            onChange={event => { onNavigate?.(); navigate(workspacePath(event.target.value, '/', categoryId)); }}>
-            {!workspaces?.length && <option value="">워크스페이스 없음</option>}
-            {workspaces?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select><ChevronDown size={15} aria-hidden="true" /></span>
+        <div className="flex items-center justify-between gap-2"><span>워크스페이스</span><PortalLink to={categoryPath(categoryId)} onClick={onNavigate} aria-label="워크스페이스 목록" className="text-brand-strong hover:underline">목록</PortalLink></div>
+        <WorkspacePicker workspaces={workspaces} current={event} error={eventsError}
+          onSelect={id => { onNavigate?.(); navigate(workspacePath(id, '/', categoryId)); }} />
       </div>}
     <nav aria-label="주 메뉴" className="workspace-nav">
       {!control.compact && <p className="rail-label">메뉴</p>}
