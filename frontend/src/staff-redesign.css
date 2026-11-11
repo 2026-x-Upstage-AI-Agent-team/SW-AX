@@ -111,6 +111,61 @@
   .workspace[data-rail-collapsed='true'] .workspace-rail .rail-worker { padding-inline: .2rem; }
   .mobile-menu::backdrop { background: rgb(15 23 42 / 48%); }
 
+  .account-menu { position: relative; min-width: 0; }
+  .account-menu-panel {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: calc(100% + .5rem);
+    inset-inline-end: 0;
+    width: 12rem;
+    max-width: calc(100vw - 4rem);
+    padding: .35rem;
+    border-radius: .9rem;
+    box-shadow: 0 .55rem 1.5rem rgb(15 23 42 / 14%);
+    color: var(--color-ink);
+  }
+  .account-menu--drawer .account-menu-panel {
+    inset-block: auto calc(100% + .5rem);
+    --account-menu-offset: .375rem;
+  }
+  .account-menu-login {
+    overflow: hidden;
+    margin-block-end: .25rem;
+    padding: .4rem .65rem .5rem;
+    border-bottom: 1px solid var(--color-line);
+    color: var(--color-muted);
+    font-size: .78rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .account-menu-item {
+    display: flex;
+    align-items: center;
+    min-height: 2.5rem;
+    gap: .55rem;
+    padding: .4rem .65rem;
+    border-radius: .55rem;
+    font-size: .85rem;
+    font-weight: 600;
+  }
+  .account-menu-item svg { color: var(--color-muted); }
+  .account-menu-item:hover, .account-menu-item:focus-visible {
+    background: var(--color-brand-tint);
+    color: var(--color-brand-strong);
+  }
+  .account-menu-item:hover svg, .account-menu-item:focus-visible svg { color: inherit; }
+  .account-menu-chevron { flex: none; color: var(--color-muted); }
+  .toolbar-account[aria-expanded='true'] .account-menu-chevron { rotate: 180deg; }
+  @media (prefers-reduced-motion: no-preference) {
+    .account-menu-panel:not([hidden]) { animation: account-menu-in var(--motion-enter) var(--motion-ease); }
+    .account-menu-chevron { transition: rotate var(--motion-fast) ease-out; }
+  }
+  @keyframes account-menu-in {
+    from { opacity: 0; translate: 0 var(--account-menu-offset, -.375rem); }
+    to { opacity: 1; translate: 0 0; }
+  }
+
   @media (hover: hover) {
     :is(.workspace-rail, .mobile-menu-body) :is(.nav-item:not(.is-current), .icon-button):hover { background: #1e293b; }
   }
@@ -156,9 +211,10 @@
       font-size: .7rem;
       white-space: nowrap;
     }
-    .toolbar-account { display: flex; align-items: center; gap: .55rem; font-size: .875rem; font-weight: 600; }
+    .toolbar-account { display: flex; max-width: 15rem; align-items: center; gap: .55rem; font-size: .875rem; font-weight: 600; }
     .toolbar-avatar {
       display: grid;
+      flex: none;
       place-items: center;
       width: 2.25rem;
       height: 2.25rem;

@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link as PortalLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from 'react-router';
-import { AtSign, ChevronDown, FolderOpen, Inbox, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2, UserRound } from 'lucide-react';
+import { AtSign, ChevronDown, FolderOpen, Inbox, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2 } from 'lucide-react';
 import { backend, isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { isLeaderMail, isMailDraft } from '../api/service';
@@ -11,17 +11,18 @@ import { queueGroups } from '../hooks/reviewQueue';
 import { workspaceTasks } from '../hooks/workspaceTasks';
 import { Link, NavLink } from './workspaceNavigation';
 import { currentMenu, documentMenu, primaryMenu, workspaceSection } from './workspaceMenu';
-import { buttonStyles, cx } from './ui';
+import { cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
 import { WorkspaceTourProvider, useWorkspaceTour } from './WorkspaceTour';
 import WorkspaceHelp from './WorkspaceHelp';
 import WorkspacePicker from './WorkspacePicker';
 import BrandMark from './BrandMark';
 import WorkspaceSearch from './WorkspaceSearch';
+import AccountMenu from './AccountMenu';
 
 type NavigationControl = {
   compact: boolean; documentsOpen: boolean; toggleDocuments: () => void;
-  search: () => void; account: () => void; toggleRail: () => void;
+  search: () => void; toggleRail: () => void;
 };
 
 function Brand({ subtitle, compact = false, onNavigate }: { subtitle: string; compact?: boolean; onNavigate?: () => void }) {
@@ -31,7 +32,7 @@ function Brand({ subtitle, compact = false, onNavigate }: { subtitle: string; co
   </PortalLink>;
 }
 
-function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<typeof useWorkerControl>; control: NavigationControl; onNavigate?: () => void }) {
+function WorkspaceNav({ worker, control, onNavigate, account }: { worker: ReturnType<typeof useWorkerControl>; control: NavigationControl; onNavigate?: () => void; account?: ReactNode }) {
   const { events, eventsError, event, dashboard } = useEvent();
   const { rows } = useWorkspaceOverview();
   const { categoryId = 'awards' } = useParams();
@@ -87,9 +88,9 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
       <NavLink to="/gmail" onClick={onNavigate} aria-label="Gmail 연결" title="Gmail 연결" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><AtSign size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>Gmail 연결</span></NavLink>
       <NavLink to="/manage" onClick={onNavigate} aria-label="워크스페이스 설정" title="워크스페이스 설정" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><Settings2 size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>워크스페이스 설정</span></NavLink>
       <div className={cx('flex items-center justify-between', control.compact && 'flex-col')}>
-        <button type="button" className="icon-button min-[60rem]:hidden" onClick={() => { onNavigate?.(); control.search(); }} aria-label="현재 워크스페이스 검색" title="검색 · Ctrl+K"><Search size={20} aria-hidden="true" /></button>
+        <button type="button" className="icon-button min-[60rem]:hidden" onClick={control.search} aria-label="현재 워크스페이스 검색" title="검색 · Ctrl+K"><Search size={20} aria-hidden="true" /></button>
         <button type="button" className="icon-button hidden min-[60rem]:grid" onClick={control.toggleRail} aria-label={control.compact ? '사이드바 펼치기' : '사이드바 접기'} title={control.compact ? '사이드바 펼치기' : '사이드바 접기'}>{control.compact ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}</button>
-        <button type="button" className="icon-button min-[60rem]:hidden" onClick={() => { onNavigate?.(); control.account(); }} aria-label="계정 메뉴" title="계정 메뉴"><UserRound size={20} aria-hidden="true" /></button>
+        {account}
       </div>
       <WorkerStatus control={worker} />
     </div>
@@ -102,7 +103,7 @@ export default function Layout() {
 
 function WorkspaceLayout() {
   const worker = useWorkerControl();
-  const { active, start, menuDialog, openMenu, closeMenu: close } = useWorkspaceTour();
+  const { active, start, menuDialog, openMenu, closeMenu } = useWorkspaceTour();
   const { event } = useEvent();
   const { categoryId = 'awards' } = useParams();
   const categories = useApi<Category[]>('/api/categories');
@@ -113,15 +114,26 @@ function WorkspaceLayout() {
   const navigation = useNavigationType();
   const previousPath = useRef(pathname);
   const railKey = 'swax.main-sidebar-collapsed.' + backend;
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(railKey) === 'true'; } catch { return false; } });
-  const [documentsOpen, setDocumentsOpen] = useState(() => /\/(intake|assign)(\/|$)/.test(pathname));
+  const [collapsed, setCollapsed] = useState(() => {
+    if (active) return false;
+    try { return localStorage.getItem(railKey) === 'true'; } catch { return false; }
+  });
+  const [documentsOpen, setDocumentsOpen] = useState(() => active || /\/(intake|assign)(\/|$)/.test(pathname));
   const [searchOpen, setSearchOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const accountDialog = useRef<HTMLDialogElement>(null);
+  const [accountOpen, setAccountOpen] = useState<'toolbar' | 'drawer' | null>(null);
   const session = useApi<{ login: string | null }>(isDemoBackend ? null : '/api/auth/session');
-  const startGuide = () => { setCollapsed(false); setDocumentsOpen(true); start(); };
+  const login = session.data?.login ?? '담당자';
+  const close = useCallback(() => {
+    closeMenu();
+    setAccountOpen(null);
+  }, [closeMenu]);
+  const openSearch = useCallback(() => {
+    close();
+    setSearchOpen(true);
+  }, [close]);
+  const startGuide = () => { setCollapsed(false); setDocumentsOpen(true); setAccountOpen(null); start(); };
   useEffect(() => { try { localStorage.setItem(railKey, String(collapsed)); } catch { /* Optional preference. */ } }, [collapsed, railKey]);
-  useEffect(() => { if (active) { setCollapsed(false); setDocumentsOpen(true); } }, [active]);
+  useLayoutEffect(() => { if (active) { setCollapsed(false); setDocumentsOpen(true); } }, [active]);
   useEffect(() => { document.title = `${event?.name ?? '워크스페이스'} | SW·AX`; }, [event?.name]);
   useEffect(() => {
     if (previousPath.current === pathname) return;
@@ -132,27 +144,33 @@ function WorkspaceLayout() {
   }, [pathname, navigation, close]);
   useEffect(() => {
     const desktop = window.matchMedia('(min-width: 60rem)');
-    const onResize = () => { if (desktop.matches) close(); };
+    const onResize = () => {
+      setAccountOpen(null);
+      if (desktop.matches) closeMenu();
+    };
     desktop.addEventListener('change', onResize);
     return () => desktop.removeEventListener('change', onResize);
-  }, [close]);
+  }, [closeMenu]);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); close(); setAccountOpen(false); setSearchOpen(true); } };
+    const onKey = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); openSearch(); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [close]);
-  useEffect(() => { if (accountOpen) accountDialog.current?.showModal(); else accountDialog.current?.close(); }, [accountOpen]);
+  }, [openSearch]);
   const control: NavigationControl = {
     compact: collapsed, documentsOpen,
     toggleDocuments: () => { if (collapsed) { setCollapsed(false); setDocumentsOpen(true); } else setDocumentsOpen(value => !value); },
-    search: () => setSearchOpen(true), account: () => setAccountOpen(true), toggleRail: () => setCollapsed(value => !value),
+    search: openSearch, toggleRail: () => setCollapsed(value => !value),
   };
   return <div className="workspace" data-rail-collapsed={collapsed} data-tour-active={active}>
     <a className="skip-link" href="#workspace-content" onClick={event => { event.preventDefault(); document.getElementById('workspace-content')?.focus(); }}>본문으로 바로가기</a>
     <aside className="workspace-rail" aria-label="작업 공간"><Brand subtitle={brandSubtitle} compact={collapsed} /><WorkspaceNav worker={worker} control={control} /></aside>
     <header className="mobile-bar"><Brand subtitle={brandSubtitle} /><button type="button" className="icon-button" aria-label="메뉴 열기" aria-haspopup="dialog" data-tour="menu-open" aria-controls="workspace-menu" onClick={openMenu}><Menu size={22} aria-hidden="true" /></button></header>
     <dialog ref={menuDialog} id="workspace-menu" className="mobile-menu" aria-label="작업 메뉴" onClose={close} onClick={event => { if (event.target === event.currentTarget) close(); }}>
-      <div className="mobile-menu-body"><div className="flex items-center justify-between gap-2"><Brand subtitle={brandSubtitle} onNavigate={close} /><button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus><PanelLeftClose size={20} aria-hidden="true" /></button></div><WorkspaceNav worker={worker} control={{ ...control, compact: false }} onNavigate={close} /></div>
+      <div className="mobile-menu-body">
+        <div className="flex items-center justify-between gap-2"><Brand subtitle={brandSubtitle} onNavigate={close} /><button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus><PanelLeftClose size={20} aria-hidden="true" /></button></div>
+        <WorkspaceNav worker={worker} control={{ ...control, compact: false }} onNavigate={close}
+          account={<AccountMenu compact login={login} open={accountOpen === 'drawer'} onOpenChange={open => setAccountOpen(open ? 'drawer' : null)} />} />
+      </div>
     </dialog>
     <div className="workspace-body">
       <header className="workspace-toolbar">
@@ -161,22 +179,12 @@ function WorkspaceLayout() {
           <span>팀·파일·메뉴 검색</span>
           <kbd aria-hidden="true">Ctrl K</kbd>
         </button>
-        <button type="button" className="toolbar-account" aria-label="계정 메뉴" onClick={control.account}>
-          <span className="toolbar-avatar"><UserRound size={17} aria-hidden="true" /></span>
-          <span>{session.data?.login ?? '담당자'}</span>
-        </button>
+        <AccountMenu login={login} open={accountOpen === 'toolbar'} onOpenChange={open => setAccountOpen(open ? 'toolbar' : null)} />
       </header>
       <Outlet />
     </div>
     {!active && <WorkspaceHelp onStartGuide={startGuide} />}
     <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
-    <dialog ref={accountDialog} className="deletion-dialog" aria-label="계정 메뉴" onClose={() => setAccountOpen(false)} onCancel={() => setAccountOpen(false)}>
-      <div className="flex flex-col gap-4 p-6"><h2 className="panel-title">계정</h2><p className="text-sm">{session.data?.login ?? '담당자'}</p>
-        <PortalLink to="/" className={buttonStyles.secondary} onClick={() => setAccountOpen(false)}>업무 선택</PortalLink>
-        {!isDemoBackend && <a href="/logout" className={buttonStyles.outline}><LogOut size={16} aria-hidden="true" />로그아웃</a>}
-        <button type="button" className={buttonStyles.text} onClick={() => setAccountOpen(false)}>닫기</button>
-      </div>
-    </dialog>
   </div>;
 }
 

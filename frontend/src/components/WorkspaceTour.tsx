@@ -39,7 +39,10 @@ const steps = [
 ];
 
 type Rect = { top: number; left: number; width: number; height: number };
-type Placement = { rect: Rect | null; target: HTMLElement | null; width: number; height: number; pending: boolean; busy: boolean };
+type Placement = {
+  name: string; rect: Rect | null; lastRect: Rect | null; target: HTMLElement | null;
+  width: number; height: number; pending: boolean; busy: boolean;
+};
 
 function visibleTarget(name: string) {
   return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${name}"]`)).find(element => {
@@ -129,48 +132,67 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
   const item = steps[step];
   const card = useRef<HTMLDivElement>(null);
   const [cardHeight, setCardHeight] = useState(290);
-  const [placement, setPlacement] = useState<Placement>({ rect: null, target: null, width: document.documentElement.clientWidth, height: window.innerHeight, pending: false, busy: false });
+  const [placement, setPlacement] = useState<Placement>({
+    name: '', rect: null, lastRect: null, target: null,
+    width: document.documentElement.clientWidth, height: window.innerHeight, pending: false, busy: false,
+  });
   const mobileNav = item.target.startsWith('nav-') && !window.matchMedia('(min-width: 60rem)').matches;
   const needsMenu = mobileNav && !menuOpen;
   const targetName = needsMenu ? 'menu-open' : item.target;
+  const target = placement.name === targetName && placement.rect ? placement.target : null;
 
   useLayoutEffect(() => {
     let frame = 0;
-    let scrolled: HTMLElement | null = null;
+    let checked: HTMLElement | null = null;
     const measure = () => {
       const target = visibleTarget(targetName);
       const upload = document.querySelector<HTMLElement>('[data-tour="upload-form"]');
+      const width = document.documentElement.clientWidth;
+      const height = window.innerHeight;
       let bounds = target?.getBoundingClientRect();
-      const outside = bounds && bounds.height <= window.innerHeight && (bounds.top < 0 || bounds.bottom > window.innerHeight);
-      if (target && (scrolled !== target || outside)) {
-        scrolled = target;
-        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
-        bounds = target.getBoundingClientRect();
+      if (target && bounds && checked !== target) {
+        checked = target;
+        const body = target.closest('.workspace-body');
+        const topEdge = body
+          ? Math.max(body.querySelector('.workspace-toolbar')?.getBoundingClientRect().bottom ?? 0,
+            document.querySelector('.mobile-bar')?.getBoundingClientRect().bottom ?? 0)
+          : 0;
+        if (bounds.top < topEdge || bounds.bottom > height) {
+          target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+          bounds = target.getBoundingClientRect();
+        }
       }
-      const rect = bounds ? { top: bounds.top, left: bounds.left, width: bounds.width, height: bounds.height } : null;
-      const next = { rect, target, width: document.documentElement.clientWidth, height: window.innerHeight, pending: upload?.dataset.tourPending === 'true', busy: upload?.dataset.tourBusy === 'true' };
-      setPlacement(current => current.target === next.target && current.width === next.width && current.height === next.height
-        && current.pending === next.pending && current.busy === next.busy && JSON.stringify(current.rect) === JSON.stringify(rect) ? current : next);
+      const rect = bounds && bounds.right > 4 && bounds.left < width - 4 && bounds.bottom > 4 && bounds.top < height - 4
+        ? { top: bounds.top, left: bounds.left, width: bounds.width, height: bounds.height } : null;
+      const pending = upload?.dataset.tourPending === 'true';
+      const busy = upload?.dataset.tourBusy === 'true';
+      setPlacement(current => current.name === targetName && current.target === target && current.width === width && current.height === height
+        && current.pending === pending && current.busy === busy && JSON.stringify(current.rect) === JSON.stringify(rect)
+        ? current : { name: targetName, rect, lastRect: rect ?? current.lastRect, target, width, height, pending, busy });
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
+    const onResize = () => { checked = null; schedule(); };
     measure();
-    window.addEventListener('resize', schedule);
+    window.addEventListener('resize', onResize);
     window.addEventListener('scroll', schedule, true);
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'inert', 'data-tour-pending', 'data-tour-busy'] });
-    const resize = new ResizeObserver(schedule);
+    const resize = new ResizeObserver(onResize);
     resize.observe(document.body);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); observer.disconnect(); resize.disconnect(); };
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', onResize); window.removeEventListener('scroll', schedule, true); observer.disconnect(); resize.disconnect(); };
   }, [targetName, menuOpen]);
 
   useLayoutEffect(() => {
     const element = card.current;
     if (!element) return;
     element.focus({ preventScroll: true });
-    const resize = new ResizeObserver(() => {
-      const copy = element.querySelector<HTMLElement>('.tour-copy');
+    const copy = element.querySelector<HTMLElement>('.tour-copy');
+    if (copy) copy.scrollTop = 0;
+    const measureCard = () => {
       setCardHeight(Math.ceil(element.scrollHeight + Math.max(0, (copy?.scrollHeight ?? 0) - (copy?.clientHeight ?? 0)) + 2));
-    });
+    };
+    measureCard();
+    const resize = new ResizeObserver(measureCard);
     resize.observe(element);
     return () => resize.disconnect();
   }, [step, menuOpen]);
@@ -180,7 +202,6 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(); }
       if (event.key !== 'Tab') return;
       const controls = Array.from(card.current?.querySelectorAll<HTMLElement>('button:not(:disabled), .tour-copy[tabindex]') ?? []);
-      const target = placement.target;
       if (target?.matches('a[href], button:not(:disabled), select:not(:disabled)')) controls.unshift(target);
       if (!controls.length) return;
       const current = controls.indexOf(document.activeElement as HTMLElement);
@@ -190,40 +211,44 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [finish, placement.target]);
+  }, [finish, target]);
 
-  const { rect, width, height, pending, busy } = placement;
+  const { width, height, pending, busy } = placement;
   const gap = 12;
-  const hole = rect ? {
-    left: Math.max(4, rect.left - 6), top: Math.max(4, rect.top - 6),
-    right: Math.min(width - 4, rect.left + rect.width + 6), bottom: Math.min(height - 4, rect.top + rect.height + 6),
-  } : null;
+  const clampEdge = (value: number, size: number) => Math.max(4, Math.min(value, size - 4));
+  const paddedRect = (rect: Rect) => ({
+    left: clampEdge(rect.left - 6, width), top: clampEdge(rect.top - 6, height),
+    right: clampEdge(rect.left + rect.width + 6, width), bottom: clampEdge(rect.top + rect.height + 6, height),
+  });
+  const hole = target && placement.rect ? paddedRect(placement.rect) : null;
+  // Preserve the card's anchor while a route is loading its next target.
+  const anchor = hole ?? (placement.lastRect ? paddedRect(placement.lastRect) : null);
   const cardWidth = Math.min(360, width - 24);
   let left = (width - cardWidth) / 2;
   let top = Math.max(gap, (height - cardHeight) / 2);
   let maxCardHeight = height - gap * 2;
   let side = 'center';
-  if (hole) {
-    const centerX = (hole.left + hole.right) / 2;
-    const centerY = (hole.top + hole.bottom) / 2;
-    if (width - hole.right >= cardWidth + gap * 2) {
-      left = hole.right + gap;
+  if (anchor) {
+    const centerX = (anchor.left + anchor.right) / 2;
+    const centerY = (anchor.top + anchor.bottom) / 2;
+    if (width - anchor.right >= cardWidth + gap * 2) {
+      left = anchor.right + gap;
       top = centerY - Math.min(cardHeight, maxCardHeight) / 2;
       side = 'right';
     }
-    else if (hole.left >= cardWidth + gap * 2) {
-      left = hole.left - cardWidth - gap;
+    else if (anchor.left >= cardWidth + gap * 2) {
+      left = anchor.left - cardWidth - gap;
       top = centerY - Math.min(cardHeight, maxCardHeight) / 2;
       side = 'left';
     }
     else {
       // Above/below bubbles follow the target horizontally, including right-aligned buttons.
       left = centerX - cardWidth / 2;
-      const above = hole.top - gap * 2;
-      const below = height - hole.bottom - gap * 2;
+      const above = anchor.top - gap * 2;
+      const below = height - anchor.bottom - gap * 2;
       side = above >= cardHeight || (below < cardHeight && above > below) ? 'above' : 'below';
       maxCardHeight = Math.max(196, side === 'above' ? above : below);
-      top = side === 'above' ? hole.top - Math.min(cardHeight, maxCardHeight) - gap : hole.bottom + gap;
+      top = side === 'above' ? anchor.top - Math.min(cardHeight, maxCardHeight) - gap : anchor.bottom + gap;
     }
     left = Math.max(gap, Math.min(left, width - cardWidth - gap));
     top = Math.max(gap, Math.min(top, height - Math.min(cardHeight, maxCardHeight) - gap));
@@ -244,9 +269,9 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
       <div className="tour-shade" style={{ top: hole.bottom, bottom: 0, left: 0, right: 0 }} />
       <div className="tour-shade" style={{ top: hole.top, height: hole.bottom - hole.top, left: 0, width: hole.left }} />
       <div className="tour-shade" style={{ top: hole.top, height: hole.bottom - hole.top, left: hole.right, right: 0 }} />
-      <div className="tour-spotlight" data-target={targetName} style={{ top: hole.top, left: hole.left, width: hole.right - hole.left, height: hole.bottom - hole.top }} />
+      <div key={targetName} className="tour-spotlight" data-target={targetName} style={{ top: hole.top, left: hole.left, width: hole.right - hole.left, height: hole.bottom - hole.top }} />
     </> : <div className="tour-shade" style={{ inset: 0 }} />}
-    {hole && <div className="tour-arrow" aria-hidden="true" style={side === 'right' || side === 'left'
+    {hole && <div key={targetName} className="tour-arrow" aria-hidden="true" style={side === 'right' || side === 'left'
       ? { left: side === 'right' ? left - 6 : left + cardWidth - 6, top: Math.max(top + 24, Math.min(hole.top + (hole.bottom - hole.top) / 2 - 6, top + Math.min(cardHeight, maxCardHeight) - 24)) }
       : { left: Math.max(left + 24, Math.min(hole.left + (hole.right - hole.left) / 2 - 6, left + cardWidth - 24)), top: side === 'above' ? top + Math.min(cardHeight, maxCardHeight) - 6 : top - 6 }} />}
     <div ref={card} className="tour-card" role="dialog" aria-label="워크스페이스 시작 가이드" aria-describedby="tour-description" tabIndex={-1}
@@ -255,9 +280,11 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
         <button type="button" onClick={finish} className="tour-exit">가이드 종료<X size={14} aria-hidden="true" /></button></div>
       <div className="tour-progress" aria-hidden="true">{steps.map((_, index) => <span key={index} className={index <= step ? 'is-visited' : ''} />)}</div>
       <div className="tour-copy" role="region" aria-label="현재 단계 안내" tabIndex={0}>
-        <h2>{needsMenu ? '오른쪽 위 메뉴를 열어 주세요.' : item.title}</h2>
-        <p id="tour-description">{needsMenu ? '작업 메뉴를 열면 다음에 눌러야 할 버튼을 강조해 드릴게요.' : item.text}</p>
-        <p className="tour-hint">{guard ? '선택한 파일이 있어요. 첨부를 마친 뒤 계속하거나 가이드를 종료하고 작업을 이어가세요.' : item.hint}</p>
+        <div key={step + ':' + targetName} className="tour-copy-content">
+          <h2>{needsMenu ? '오른쪽 위 메뉴를 열어 주세요.' : item.title}</h2>
+          <p id="tour-description">{needsMenu ? '작업 메뉴를 열면 다음에 눌러야 할 버튼을 강조해 드릴게요.' : item.text}</p>
+          <p className="tour-hint">{guard ? '선택한 파일이 있어요. 첨부를 마친 뒤 계속하거나 가이드를 종료하고 작업을 이어가세요.' : item.hint}</p>
+        </div>
       </div>
       <footer>
         <button type="button" className={buttonStyles.text} onClick={() => move(step - 1)} disabled={step === 0 || previousBlocked}><ArrowLeft size={15} aria-hidden="true" />이전</button>

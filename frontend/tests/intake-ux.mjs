@@ -121,6 +121,34 @@ test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화
   assert.deepEqual(writes, [], 'The tour must never submit files, approve mail, or generate reports.');
 });
 
+test('가이드의 새 안내와 말풍선 전환은 실제 메뉴 이동과 함께 작동한다', async t => {
+  const page = await newPage(t, 1440, true);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/#/categories/awards/workspaces/test/');
+  await assertGuideAttached(page, 'nav-upload');
+  await page.evaluate(() => {
+    document.addEventListener('animationstart', event => {
+      if (event.target.matches('.workspace-tour[data-tour-step="2"] .tour-copy-content')) {
+        event.target.dataset.entered = 'true';
+      }
+    });
+    document.addEventListener('transitionend', event => {
+      if (event.propertyName === 'left' && event.target.matches('.workspace-tour[data-tour-step="2"] .tour-card')) {
+        event.target.dataset.moved = 'true';
+      }
+    });
+  });
+  await page.locator('.workspace-rail').getByRole('link', { name: '파일 첨부', exact: true }).click();
+  const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
+  await guide.getByRole('heading', { name: '한 팀의 서류를 함께 선택하세요.' }).waitFor();
+  await guide.locator('.tour-copy-content[data-entered="true"]').waitFor();
+  await page.locator('.tour-card[data-moved="true"]').waitFor();
+  await assertGuideAttached(page, 'file-picker');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await guide.evaluate(node => getComputedStyle(node).transitionDuration), '0s');
+  assert.equal(await guide.locator('.tour-copy-content').evaluate(node => getComputedStyle(node).animationName), 'none');
+});
+
 test('320px 가이드는 메뉴를 열고 실제 파일 첨부 버튼을 누를 수 있으며 종료를 기억한다', async t => {
   const page = await newPage(t, 320, true);
   await page.goto('/#/categories/awards/workspaces/test/');

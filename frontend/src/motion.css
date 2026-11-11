@@ -48,7 +48,7 @@
       transition-delay: 0s, 0s, var(--motion-enter);
     }
 
-    :is(.motion-results, .deletion-dialog[open], .preview-dialog[open], .workspace-help-panel:popover-open, .tour-card),
+    :is(.motion-results, .deletion-dialog[open], .preview-dialog[open], .workspace-help-panel:popover-open, .tour-copy-content),
     details[open] > :not(summary) {
       animation: motion-rise-in var(--motion-enter) var(--motion-ease);
     }
@@ -60,6 +60,11 @@
     .workspace:not([data-tour-active="true"]) .mobile-menu[open] > .mobile-menu-body {
       animation: motion-drawer-in var(--motion-expand) var(--motion-ease);
     }
+    .tour-card, .tour-arrow {
+      transition: top var(--motion-expand) var(--motion-ease), left var(--motion-expand) var(--motion-ease);
+    }
+    .tour-card, .tour-spotlight { animation: motion-fade-in var(--motion-enter) ease-out; }
+    .tour-arrow { animation: motion-fade-in var(--motion-fast) ease-out 80ms backwards; }
     :is(.toolbar-search, .toolbar-account, .workspace-help-button, .tour-progress span) {
       transition: background-color var(--motion-fast) ease-out, border-color var(--motion-fast) ease-out;
     }

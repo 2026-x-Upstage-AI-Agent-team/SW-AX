@@ -268,14 +268,45 @@ test('팀장 안내의 메일 목록과 초안 검토는 정렬되고 좁은 화
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 });
 
-test('확인할 일 배지는 현황의 같은 목록으로 이동하고 계정에는 실제 로그인명을 표시한다', async t => {
+test('확인할 일 배지는 현황의 같은 목록으로 이동하고 계정 메뉴는 프로필에 붙는다', async t => {
   const page = await pageFor(t);
   await page.goto(root + '/review');
   await page.getByRole('link', { name: '확인할 일 1건', exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.id === 'queue-heading');
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/nav-test/?focus=tasks');
-  await page.getByRole('button', { name: '계정 메뉴', exact: true }).click();
-  await page.getByRole('dialog', { name: '계정 메뉴', exact: true }).getByText('staff-nav', { exact: true }).waitFor();
+  const trigger = page.getByRole('button', { name: '계정 메뉴', exact: true });
+  const account = page.getByRole('group', { name: '계정 메뉴', exact: true });
+  await trigger.click();
+  await account.getByText('staff-nav', { exact: true }).waitFor();
+  const [buttonBox, panelBox] = await Promise.all([trigger.boundingBox(), account.boundingBox()]);
+  assert.ok(buttonBox && panelBox);
+  assert.ok(panelBox.y >= buttonBox.y + buttonBox.height && panelBox.y - buttonBox.y - buttonBox.height < 16);
+  assert.ok(Math.abs(panelBox.x + panelBox.width - buttonBox.x - buttonBox.width) < 1);
+  assert.equal(await account.getByRole('link', { name: '로그아웃' }).getAttribute('href'), '/logout');
+  await page.keyboard.press('Tab');
+  assert.ok(await account.getByRole('link', { name: '업무 선택' }).evaluate(link => link === document.activeElement));
+  await page.keyboard.press('Escape');
+  await account.waitFor({ state: 'hidden' });
+  assert.ok(await trigger.evaluate(button => button === document.activeElement));
+  await trigger.click();
+  await page.getByRole('heading', { name: '업무 현황', exact: true }).click();
+  await account.waitFor({ state: 'hidden' });
+  await trigger.click();
+  await page.keyboard.press('Control+k');
+  const search = page.getByRole('dialog', { name: '현재 워크스페이스 검색' });
+  await search.waitFor();
+  await account.waitFor({ state: 'hidden' });
+  await page.keyboard.press('Escape');
+  await search.waitFor({ state: 'hidden' });
+
+  await page.setViewportSize({ width: 320, height: 1000 });
+  await page.getByRole('button', { name: '메뉴 열기', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: '작업 메뉴' });
+  await drawer.getByRole('button', { name: '계정 메뉴' }).click();
+  await drawer.getByRole('group', { name: '계정 메뉴' }).getByRole('link', { name: '업무 선택' }).waitFor();
+  await page.keyboard.press('Escape');
+  await account.waitFor({ state: 'hidden' });
+  assert.ok(await drawer.isVisible());
 });
 
 test('업무 현황은 판정 분포와 진행 요약을 보여주고 검토 작업으로 연결한다', async t => {
