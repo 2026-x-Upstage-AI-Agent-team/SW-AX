@@ -62,8 +62,8 @@ export default function WorkspacePicker({ workspaces, current, error, onSelect }
       <span id={listId + '-current'} className="truncate">{current?.name ?? '워크스페이스 없음'}</span>
       <ChevronDown size={15} className="event-picker-chevron" aria-hidden="true" />
     </button>
-    <ul id={listId} ref={list} className="event-picker-list" aria-label="전환할 워크스페이스" hidden={!open}>
-      {open && workspaces?.map(item => <li key={item.id}>
+    <ul id={listId} ref={list} className="event-picker-list" aria-label="전환할 워크스페이스" aria-hidden={!open} inert={!open}>
+      {workspaces?.map(item => <li key={item.id}>
         <button type="button" className="event-picker-option" aria-current={item.id === current?.id ? 'true' : undefined}
           onClick={() => {
             close();

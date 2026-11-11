@@ -67,22 +67,22 @@ export default function WorkspaceSearch({ open, onClose }: { open: boolean; onCl
     <p className="px-5 pt-3 text-xs text-muted">{dashboard?.events.find(event => event.id === dashboard.event)?.name ?? '현재 워크스페이스'} 안에서 검색</p>
     <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4" aria-live="polite" aria-busy={loading}>
       {!dashboard && <p className="py-3 text-sm text-muted">자료를 불러오고 있습니다. 잠시 후 다시 검색해 주세요.</p>}
-      {teams.length > 0 && <section aria-label="팀 검색 결과"><h2 className="text-sm font-bold">팀 <span>{teams.length}</span></h2>
+      {teams.length > 0 && <section key={'teams:' + text} className="motion-results" aria-label="팀 검색 결과"><h2 className="text-sm font-bold">팀 <span>{teams.length}</span></h2>
         {teams.slice(0, 8).map(team => <Link key={team.id} to={team.current ? '/teams/' + team.current : '/review?filter=all&team=' + encodeURIComponent(team.id)} className="file-download mt-2" onClick={onClose}>
           <Users size={18} aria-hidden="true" /><span><strong>{receiptName(team.name, team.intake_number)}</strong><small>{team.current ? '팀별 검토 열기' : '아직 제출본 없음'}</small></span><ArrowUpRight size={16} aria-hidden="true" />
         </Link>)}
         {teams.length > 8 && <p className="py-3 text-sm text-muted">{teams.length}팀 중 8팀 표시 · 검색어를 더 입력해 주세요.</p>}
       </section>}
-      {matchingFiles.length > 0 && <section aria-label="파일 검색 결과"><h2 className="text-sm font-bold">첨부 파일 <span>{matchingFiles.length}</span></h2>
+      {matchingFiles.length > 0 && <section key={'files:' + text} className="motion-results" aria-label="파일 검색 결과"><h2 className="text-sm font-bold">첨부 파일 <span>{matchingFiles.length}</span></h2>
         {matchingFiles.slice(0, 8).map(file => <Link key={file.id} to={'/intake/batches/' + file.batch} className="file-download mt-2" onClick={onClose}>
           <FileText size={18} aria-hidden="true" /><span><strong>{file.name}</strong><small>첨부 내역에서 원본 확인</small></span><ArrowUpRight size={16} aria-hidden="true" />
         </Link>)}
         {matchingFiles.length > 8 && <p className="py-3 text-sm text-muted">{matchingFiles.length}개 중 8개 표시 · 검색어를 더 입력해 주세요.</p>}
       </section>}
-      {pages.length > 0 && <section aria-label="메뉴 검색 결과"><h2 className="text-sm font-bold">바로가기</h2>{pages.map(item => <Link key={item.to} to={item.to} className="file-download mt-2" onClick={onClose}><ArrowUpRight size={18} aria-hidden="true" /><strong>{item.label}</strong></Link>)}</section>}
+      {pages.length > 0 && <section key={'menus:' + text} className="motion-results" aria-label="메뉴 검색 결과"><h2 className="text-sm font-bold">바로가기</h2>{pages.map(item => <Link key={item.to} to={item.to} className="file-download mt-2" onClick={onClose}><ArrowUpRight size={18} aria-hidden="true" /><strong>{item.label}</strong></Link>)}</section>}
       {loading && <p className="py-3 text-sm text-muted" role="status">첨부 파일을 찾고 있습니다…</p>}
       {failed && <p className="py-3 text-sm text-muted" role="alert">일부 첨부 파일을 불러오지 못했습니다. <button type="button" className={buttonStyles.text} onClick={() => setRetry(value => value + 1)}>다시 시도</button></p>}
-      {text && !loading && !failed && dashboard && !teams.length && !matchingFiles.length && !pages.length && <p className="py-3 text-sm text-muted">일치하는 팀·파일·메뉴가 없습니다.</p>}
+      {text && !loading && !failed && dashboard && !teams.length && !matchingFiles.length && !pages.length && <p className="motion-results py-3 text-sm text-muted">일치하는 팀·파일·메뉴가 없습니다.</p>}
     </div>
     <footer className="border-t border-line px-5 py-3 text-xs text-muted">Tab으로 이동 · Enter로 열기 · Esc로 닫기</footer>
   </dialog>;

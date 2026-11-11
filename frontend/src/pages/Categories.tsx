@@ -40,7 +40,7 @@ export default function Categories() {
       <p className="page-lead">처리할 문서 업무를 선택하세요.</p>
     </div>
     {!categories.data ? <Notice error={categories.error} onRetry={() => setRevision(v => v + 1)} />
-      : <ul aria-label="업무 카테고리" className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,18.75rem),1fr))]">
+      : <ul aria-label="업무 카테고리" className="motion-results grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,18.75rem),1fr))]">
         {categories.data.map(category => {
           const Icon = categoryIcons[category.id] ?? FileText;
           return <li key={category.id} aria-disabled={!category.enabled || undefined} aria-labelledby={'category-' + category.id}

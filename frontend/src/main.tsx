@@ -7,6 +7,7 @@ import './workspace-additions.css';
 import './staff-redesign.css';
 import './dashboard-redesign.css';
 import './pages/team-review-redesign.css';
+import './motion.css';
 import App from './App';
 
 createRoot(document.getElementById('root')!).render(

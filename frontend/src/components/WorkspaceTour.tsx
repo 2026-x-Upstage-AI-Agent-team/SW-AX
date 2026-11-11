@@ -43,6 +43,7 @@ type Placement = { rect: Rect | null; target: HTMLElement | null; width: number;
 
 function visibleTarget(name: string) {
   return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${name}"]`)).find(element => {
+    if (element.closest('[inert]')) return false;
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0;
   }) ?? null;
@@ -156,7 +157,7 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
     window.addEventListener('resize', schedule);
     window.addEventListener('scroll', schedule, true);
     const observer = new MutationObserver(schedule);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'data-tour-pending', 'data-tour-busy'] });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'inert', 'data-tour-pending', 'data-tour-busy'] });
     const resize = new ResizeObserver(schedule);
     resize.observe(document.body);
     return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); observer.disconnect(); resize.disconnect(); };

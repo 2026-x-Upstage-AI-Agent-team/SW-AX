@@ -85,7 +85,7 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
       ) : !teams ? (
         <Notice error={teamsError} onRetry={refresh} />
       ) : view === 'upload' ? (
-        <div className="grid min-w-0 items-start gap-5 min-[1180px]:grid-cols-[minmax(0,3fr)_minmax(17rem,2fr)]">
+        <div className="motion-results grid min-w-0 items-start gap-5 min-[1180px]:grid-cols-[minmax(0,3fr)_minmax(17rem,2fr)]">
           {baseId ? <BaseUpload sid={baseId} /> : <Upload key={event.id} event={event} teams={teams} />}
           <UploadOverview />
         </div>
@@ -118,7 +118,7 @@ function History({ eventId }: { eventId: string }) {
   const preparing = new Set(dashboard?.batches.filter(batch => batch.state === 'preparing').map(batch => batch.id));
   if (!result.data) return <Notice error={result.error} onRetry={refresh} />;
   return (
-    <section className={card}>
+    <section className={cx(card, 'motion-results')}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">
           첨부 목록 <em className="ml-1 text-base not-italic text-brand-strong">{result.data.length}</em>
@@ -202,7 +202,7 @@ function Detail({ eventId }: { eventId: string }) {
   const targetName = batch.team_name && teamLabel({ name: batch.team_name, rep: batch.team_rep, intake_number: batch.intake_number });
   if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 첨부번호가 아닙니다." />;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="motion-results flex flex-col gap-4">
       <Feedback message={deleted?.batch === id ? deleted.name + ' 원본을 삭제했습니다.' : ''} />
       {result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted && (
         dashboardError && !jobs.size ? <Notice error={dashboardError} onRetry={refresh} /> :
@@ -304,7 +304,7 @@ function ServiceHistory() {
   if (!dashboard) return <Notice onRetry={refresh} />;
   const batches = dashboard.batches;
   return (
-    <section className={card}>
+    <section className={cx(card, 'motion-results')}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">
           첨부 목록 <em className="ml-1 text-base not-italic text-brand-strong">{batches.length}</em>
@@ -391,7 +391,7 @@ function ServiceDetail() {
   });
   const conflicted = b.state === 'conflict' || b.state === 'conflict_reviewed';
   return (
-    <div className="flex flex-col gap-4">
+    <div className="motion-results flex flex-col gap-4">
       {result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted &&
         <BatchReviewStatus preparing={b.state === 'preparing'} needsAssignment={pending > 0} jobs={jobs} />}
       <section className={card}>

@@ -66,11 +66,11 @@ export default function Mail() {
               </div>
 
               {list.length === 0 ? (
-                <p className="surface px-6 py-8 text-center text-sm text-muted">
+                <p key={tab} className="motion-results surface px-6 py-8 text-center text-sm text-muted">
                   {tab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}
                 </p>
               ) : (
-                <ul aria-label={tab === 'drafts' ? '승인 대기 메일' : '팀장 안내 메일'} className="surface flex flex-col gap-1 p-2">
+                <ul key={tab} aria-label={tab === 'drafts' ? '승인 대기 메일' : '팀장 안내 메일'} className="motion-results surface flex flex-col gap-1 p-2">
                   {list.map((m) => (
                     <li key={m.id}>
                       <button type="button" aria-current={selected?.id === m.id ? 'true' : undefined}
@@ -102,7 +102,7 @@ export default function Mail() {
               ) : (
                 <>
                   <h2 id="draft-h" className="panel-title">초안 검토</h2>
-                  <p className="text-sm text-muted">왼쪽 목록에서 메일을 고르면 내용이 여기에 표시됩니다.</p>
+                  <p className="motion-results text-sm text-muted">왼쪽 목록에서 메일을 고르면 내용이 여기에 표시됩니다.</p>
                 </>
               )}
             </section>
@@ -170,7 +170,7 @@ function MailDetail({ m, hasEmailForm, onSaved, onApproved }: {
       {!view ? (
         error ? <Feedback error={error} /> : <p role="status" className="text-sm text-muted">불러오는 중…</p>
       ) : (
-        <>
+        <div className="motion-results flex flex-col gap-3.5">
           <p className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 text-sm">
             받는 사람<strong className="break-all">{view.recipient || view.sent_to || '주소 확인 필요'}</strong>
             {m.state === 'recipient_check' && hasEmailForm && <a href="#missing-h" className="font-medium text-brand-strong underline underline-offset-2">수신 주소 확인</a>}
@@ -202,7 +202,7 @@ function MailDetail({ m, hasEmailForm, onSaved, onApproved }: {
               {view.approved_by && <p className="mt-2 text-xs text-muted">발송 승인 · {view.approved_by} · {when(view.approved_at)}</p>}
             </div>
           )}
-        </>
+        </div>
       )}
       {(m.state === 'failed' || m.state === 'uncertain') && (
         <div className="flex flex-wrap items-center gap-3">

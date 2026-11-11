@@ -49,12 +49,12 @@ function WorkspaceList({ categoryId }: { categoryId: string }) {
       <h1 className="page-title">워크스페이스</h1>
       <p className="page-lead">작업할 대회를 선택하거나 새로운 작업 공간을 만드세요.<br />각 공간에서 파일 첨부부터 검토, 보고서 작성까지 이어집니다.</p>
     </section>
-    <div className="grid items-start gap-5 md:[grid-template-columns:minmax(0,1fr)_minmax(17rem,22rem)]">
+    <div className="motion-results grid items-start gap-5 md:[grid-template-columns:minmax(0,1fr)_minmax(17rem,22rem)]">
       <section aria-labelledby="workspace-list-heading" className="flex min-w-0 flex-col gap-4">
         <h2 id="workspace-list-heading" className="panel-title">내 워크스페이스 <span className="heading-count">{workspaces.data?.length ?? 0}</span></h2>
         {!workspaces.data ? <Notice error={workspaces.error} onRetry={refresh} />
           : workspaces.data.length === 0 ? <div className="surface flex flex-col items-center gap-3 px-6 py-10 text-center text-sm text-muted"><FolderOpen size={34} strokeWidth={1.5} aria-hidden="true" /><h3>첫 워크스페이스를 만들어 보세요.</h3><p>대회 이름을 입력하면 서류를 첨부할 작업 공간이 만들어집니다.</p></div>
-          : workspaces.data.map(workspace => <Link key={workspace.id} to={workspacePath(workspace.id, '/', categoryId)} className="file-download">
+          : workspaces.data.map(workspace => <Link key={workspace.id} to={workspacePath(workspace.id, '/', categoryId)} className="motion-feedback file-download">
             <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-tint text-brand-strong"><FolderOpen size={23} aria-hidden="true" /></span>
             <div className="min-w-0 flex-1"><h3 className="text-sm font-bold">{workspace.name}</h3><p className="mt-1 text-xs text-muted">{category.name}</p></div>
             <ArrowRight size={19} aria-hidden="true" />

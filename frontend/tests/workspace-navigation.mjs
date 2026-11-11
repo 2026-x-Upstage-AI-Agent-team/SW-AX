@@ -125,6 +125,61 @@ test('워크스페이스 선택 목록은 현재 공간을 표시하고 키보�
   await menu.waitFor({ state: 'hidden' });
 });
 
+test('서류 메뉴와 워크스페이스 목록 및 검색은 동작 줄이기 설정을 반영한다', async t => {
+  const page = await pageFor(t);
+  for (const reducedMotion of ['no-preference', 'reduce']) {
+    await page.emulateMedia({ reducedMotion });
+    await page.goto(root + '/review');
+    const assertMotion = async (target, label) => {
+      const animated = await target.evaluate(element => {
+        const style = getComputedStyle(element);
+        return [style.animationDuration, style.transitionDuration].some(durations =>
+          durations.split(',').some(duration => parseFloat(duration) > 0)
+        );
+      });
+      assert.equal(animated, reducedMotion === 'no-preference', label);
+    };
+
+    const rail = page.getByRole('complementary', { name: '작업 공간' });
+    const documents = rail.getByRole('button', { name: '서류 관리', exact: true });
+    const submenu = rail.locator('.workspace-submenu');
+    const attachment = rail.getByRole('link', { name: '파일 첨부', exact: true });
+    await submenu.evaluate(element => element.addEventListener('transitionend', event => {
+      if (event.propertyName === 'grid-template-rows') element.dataset.expandedMotionFinished = 'true';
+    }));
+    await documents.click();
+    await attachment.waitFor();
+    await assertMotion(submenu, '서류 관리 하위 메뉴');
+    if (reducedMotion === 'no-preference') {
+      await rail.locator('.workspace-submenu[data-expanded-motion-finished="true"]').waitFor();
+    }
+    await documents.click();
+    await attachment.waitFor({ state: 'hidden' });
+    assert.equal(await submenu.getAttribute('aria-hidden'), 'true');
+
+    const picker = rail.getByRole('button', { name: '워크스페이스 선택', exact: true });
+    const workspaces = rail.getByRole('list', { name: '전환할 워크스페이스' });
+    await picker.press('ArrowDown');
+    await workspaces.getByRole('button', { name: event.name, exact: true }).waitFor();
+    await assertMotion(workspaces, '워크스페이스 목록');
+    await page.keyboard.press('Escape');
+    await workspaces.waitFor({ state: 'hidden' });
+    assert.equal(await picker.evaluate(element => element === document.activeElement), true);
+
+    await page.getByRole('button', { name: '현재 워크스페이스 검색', exact: true }).click();
+    const search = page.getByRole('dialog', { name: '현재 워크스페이스 검색' });
+    await assertMotion(search, '워크스페이스 검색창');
+    const input = search.getByRole('searchbox');
+    await input.fill('가온');
+    const result = search.getByRole('region', { name: '팀 검색 결과' });
+    await assertMotion(result, '팀 검색 결과');
+    assert.match(await result.getByRole('link').getAttribute('href'), /\/teams\/submission-1$/);
+    assert.equal(await input.evaluate(element => element === document.activeElement), true);
+    await page.keyboard.press('Escape');
+    await search.waitFor({ state: 'hidden' });
+  }
+});
+
 test('파일 검색 실패를 빈 결과로 숨기지 않고 다시 조회한다', async t => {
   const page = await pageFor(t);
   let fail = true;

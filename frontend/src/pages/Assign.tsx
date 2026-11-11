@@ -95,7 +95,7 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
 
   return (
     <>
-      <dl aria-label="배정 요약" className="surface grid grid-cols-3 divide-x divide-line py-3">
+      <dl aria-label="배정 요약" className="motion-results surface grid grid-cols-3 divide-x divide-line py-3">
         <Stat label="확인 필요" value={pending.length} warn={pending.length > 0} />
         <Stat label="최근 첨부 파일" value={items.length} />
         <Stat label="첨부 묶음" value={dashboard.batches.length} />
@@ -105,14 +105,14 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
       {selected && !picked && <Feedback error="선택한 파일이 현재 워크스페이스의 최근 첨부 목록에 없습니다. 목록에서 파일을 다시 선택하세요." />}
 
       {items.length === 0 ? (
-        <p className="rounded-[22px] bg-white px-6 py-10 text-center text-sm text-muted">
+        <p className="motion-results rounded-[22px] bg-white px-6 py-10 text-center text-sm text-muted">
           첨부된 원본이 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">
             파일 첨부
           </Link>
         </p>
       ) : (
-        <div className="assignment-workspace" data-detail-open={!!picked}>
+        <div className="motion-results assignment-workspace" data-detail-open={!!picked}>
           <section aria-labelledby="queue-h" className="assignment-queue surface overflow-hidden">
             <h2 id="queue-h" tabIndex={-1} className="px-[22px] pb-2.5 pt-[18px] text-base font-extrabold">
               확인할 파일 {pending.length}
@@ -128,13 +128,15 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
                 <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone} className="w-full border-t border-line px-[22px] py-3 text-left text-sm font-bold text-ink-2">
                   배정·처리된 파일 {processed.length} {showDone ? '접기' : '보기'}
                 </button>
-                {showDone && (
-                  <ul>
-                    {processed.map((i) => (
-                      <FileRow key={i.file.id} item={i} active={current?.file.id === i.file.id} onClick={() => openFile(i.file.id)} teamName={teamName} />
-                    ))}
-                  </ul>
-                )}
+                <div className="motion-disclosure" aria-hidden={!showDone} inert={!showDone}>
+                  <div className="motion-disclosure-clip">
+                    <ul>
+                      {processed.map((i) => (
+                        <FileRow key={i.file.id} item={i} active={current?.file.id === i.file.id} onClick={() => openFile(i.file.id)} teamName={teamName} />
+                      ))}
+                    </ul>
+                  </div>
+                </div>
               </>
             )}
           </section>

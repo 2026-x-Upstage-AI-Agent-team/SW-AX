@@ -15,7 +15,7 @@ export default function WorkflowProgress({ title, description, tone, action }: {
   action?: ReactNode;
 }) {
   const Icon = tone === 'working' ? LoaderCircle : tone === 'complete' ? CircleCheck : CircleAlert;
-  return <section className="surface grid gap-3 p-[clamp(16px,2.5vw,22px)]">
+  return <section className="motion-feedback surface grid gap-3 p-[clamp(16px,2.5vw,22px)]">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div role="status" className="flex min-w-0 flex-[1_1_16rem] items-start gap-3">
         <span className={cx('grid size-10 shrink-0 place-items-center rounded-xl', tone === 'attention' ? 'bg-caution-tint text-caution' : 'bg-brand-tint text-brand-strong')}>

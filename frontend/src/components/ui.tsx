@@ -94,7 +94,7 @@ export function CheckIcon({ state }: { state: CheckState }) {
 
 export function Notice({ error, onRetry }: { error?: string; onRetry?: () => void }) {
   return (
-    <div role={error ? 'alert' : 'status'} className={cx('flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm', error ? 'bg-alert-soft text-alert-strong' : 'bg-canvas text-muted')}>
+    <div role={error ? 'alert' : 'status'} className={cx('motion-feedback flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm', error ? 'bg-alert-soft text-alert-strong' : 'bg-canvas text-muted')}>
       <p className="flex items-center gap-2 font-medium">
         {error ? <CircleAlert size={18} className="shrink-0" aria-hidden="true" /> : <LoaderCircle size={18} className="shrink-0 motion-safe:animate-spin" aria-hidden="true" />}
         {error ?? '불러오는 중…'}
@@ -112,13 +112,13 @@ export function Notice({ error, onRetry }: { error?: string; onRetry?: () => voi
 export function Feedback({ error, message }: { error?: string; message?: string }) {
   if (error)
     return (
-      <p role="alert" className="rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">
+      <p role="alert" className="motion-feedback rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">
         {error}
       </p>
     );
   if (message)
     return (
-      <p role="status" className="rounded-xl bg-brand-tint px-4 py-3 text-sm text-brand-deep">
+      <p role="status" className="motion-feedback rounded-xl bg-brand-tint px-4 py-3 text-sm text-brand-deep">
         {message}
       </p>
     );

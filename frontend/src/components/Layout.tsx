@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link as PortalLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from 'react-router';
 import { AtSign, ChevronDown, FolderOpen, Inbox, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2, UserRound } from 'lucide-react';
 import { backend, isDemoBackend } from '../api/backend';
@@ -37,6 +37,8 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
   const { categoryId = 'awards' } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const documentsId = useId();
+  const documentsExpanded = control.documentsOpen && !control.compact;
   const section = workspaceSection(pathname);
   const workspaces = events?.filter(item => (item.category_id ?? 'awards') === categoryId);
   const drafts = dashboard?.mail.filter(m => isLeaderMail(m) && isMailDraft(m)).length ?? 0;
@@ -64,14 +66,20 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
     <nav aria-label="주 메뉴" className="workspace-nav">
       {!control.compact && <p className="rail-label">메뉴</p>}
       {renderMenu(primaryMenu[0])}
-      <button type="button" onClick={control.toggleDocuments} aria-label="서류 관리" title="서류 관리" aria-expanded={control.documentsOpen && !control.compact}
-        aria-current={documentActive && (!control.documentsOpen || control.compact) ? 'page' : undefined}
-        className={cx('nav-item w-full', documentActive && 'is-current', control.compact && 'justify-center')}>
-        <Inbox size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>서류 관리</span>{!control.compact && <ChevronDown size={15} className={cx('ml-auto', control.documentsOpen && 'rotate-180')} aria-hidden="true" />}
-      </button>
-      {control.documentsOpen && !control.compact && <div className="ml-3 grid gap-1 border-l border-line pl-2">{documentMenu.map(item =>
-        <Link key={item.to} to={item.to} onClick={onNavigate} data-tour={item.tour} aria-label={item.label}
-          aria-current={currentMenu(item.to, section) ? 'page' : undefined} className={cx('nav-item text-[.85rem]', currentMenu(item.to, section) && 'is-current')}>{item.label}</Link>)}</div>}
+      <div>
+        <button type="button" onClick={control.toggleDocuments} aria-label="서류 관리" title="서류 관리" aria-expanded={documentsExpanded}
+          aria-controls={control.compact ? undefined : documentsId} aria-current={documentActive && !documentsExpanded ? 'page' : undefined}
+          className={cx('nav-item w-full', documentActive && 'is-current', control.compact && 'justify-center')}>
+          <Inbox size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>서류 관리</span>{!control.compact && <ChevronDown size={15} className="workspace-submenu-chevron ml-auto" aria-hidden="true" />}
+        </button>
+        {!control.compact && <div id={documentsId} className="workspace-submenu motion-disclosure" aria-hidden={!documentsExpanded} inert={!documentsExpanded}>
+          <div className="motion-disclosure-clip">
+            <div className="workspace-submenu-links">{documentMenu.map(item =>
+              <Link key={item.to} to={item.to} onClick={onNavigate} data-tour={item.tour} aria-label={item.label}
+                aria-current={documentsExpanded && currentMenu(item.to, section) ? 'page' : undefined} className={cx('nav-item text-[.85rem]', currentMenu(item.to, section) && 'is-current')}>{item.label}</Link>)}</div>
+          </div>
+        </div>}
+      </div>
       {primaryMenu.slice(1).map(renderMenu)}
     </nav>
     <div className="sidebar-foot">
@@ -139,7 +147,7 @@ function WorkspaceLayout() {
     toggleDocuments: () => { if (collapsed) { setCollapsed(false); setDocumentsOpen(true); } else setDocumentsOpen(value => !value); },
     search: () => setSearchOpen(true), account: () => setAccountOpen(true), toggleRail: () => setCollapsed(value => !value),
   };
-  return <div className="workspace" data-rail-collapsed={collapsed}>
+  return <div className="workspace" data-rail-collapsed={collapsed} data-tour-active={active}>
     <a className="skip-link" href="#workspace-content" onClick={event => { event.preventDefault(); document.getElementById('workspace-content')?.focus(); }}>본문으로 바로가기</a>
     <aside className="workspace-rail" aria-label="작업 공간"><Brand subtitle={brandSubtitle} compact={collapsed} /><WorkspaceNav worker={worker} control={control} /></aside>
     <header className="mobile-bar"><Brand subtitle={brandSubtitle} /><button type="button" className="icon-button" aria-label="메뉴 열기" aria-haspopup="dialog" data-tour="menu-open" aria-controls="workspace-menu" onClick={openMenu}><Menu size={22} aria-hidden="true" /></button></header>
