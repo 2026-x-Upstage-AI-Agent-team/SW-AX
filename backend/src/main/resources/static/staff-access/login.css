@@ -5,10 +5,10 @@
   color: #0f172a;
   background: #f8fafc;
   --ink: #0f172a;
-  --action: #4f46e5;
-  --action-hover: #4338ca;
-  --action-active: #3730a3;
-  --accent-surface: #eef2ff;
+  --action: #047857;
+  --action-hover: #065f46;
+  --action-active: #064e3b;
+  --accent-surface: #ecfdf5;
   --muted: #475569;
   --line: #e2e8f0;
   --error: #b42318;
@@ -62,7 +62,7 @@ button { cursor: pointer; }
   background: var(--action);
   color: #fff;
 }
-.brand-mark svg { width: 1.4rem; height: 1.4rem; }
+.brand-mark svg { width: 1.6875rem; height: 1.6875rem; }
 .product-name { font-size: .85rem; font-weight: 600; }
 .form-panel { display: grid; align-items: center; padding: 2.5rem clamp(1.375rem, 6vw, 2.5rem); }
 .form-content { width: 100%; max-width: 23rem; margin-inline: auto; }
@@ -149,7 +149,7 @@ input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
   .visibility:hover { background: var(--accent-surface); }
 }
 .primary:active { background: var(--action-active); transform: scale(.99); }
-.visibility:active { background: #e0e7ff; }
+.visibility:active { background: #d1fae5; }
 @media (min-width: 48rem) {
   .access-shell {
     display: grid;
@@ -161,7 +161,7 @@ input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
     display: block;
     padding: clamp(2rem, 3.7vw, 3.5rem);
     background-color: var(--ink);
-    background-image: linear-gradient(155deg, rgb(15 23 42 / 78%), rgb(49 46 129 / 32%)), url("folio.webp");
+    background-image: linear-gradient(155deg, rgb(15 23 42 / 78%), rgb(4 120 87 / 32%)), url("folio.webp");
     background-blend-mode: normal, luminosity;
     background-position: center;
     background-size: cover;

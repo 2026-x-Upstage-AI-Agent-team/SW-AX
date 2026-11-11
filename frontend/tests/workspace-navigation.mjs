@@ -98,7 +98,8 @@ test('워크스페이스 선택 목록은 현재 공간을 표시하고 키보�
   await list.waitFor();
   const current = list.getByRole('button', { name: event.name });
   assert.equal(await current.getAttribute('aria-current'), 'true');
-  assert.equal(await list.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(30, 41, 59)');
+  assert.equal(await list.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(255, 255, 255)');
+  assert.equal(await current.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(236, 253, 245)');
   if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-picker-desktop.png' });
   await page.getByRole('heading', { name: '팀별 검토', exact: true }).click();
   await list.waitFor({ state: 'hidden' });
@@ -321,11 +322,16 @@ test('업무 현황은 판정 분포와 진행 요약을 보여주고 검토 작
   const ring = page.locator('.verdict-ring');
   const ringStyle = await ring.evaluate(node => {
     const style = getComputedStyle(node);
-    return { radius: style.borderTopLeftRadius, thickness: parseFloat(style.paddingTop) };
+    return { radius: style.borderTopLeftRadius, thickness: parseFloat(style.paddingTop), colors: style.backgroundImage };
   });
   assert.equal(ringStyle.radius, '50%');
   assert.ok(ringStyle.thickness > 0, 'The chart ring must stay visible after the shared style reset.');
-  assert.ok(await page.locator('.workspace-rail').evaluate(node => parseFloat(getComputedStyle(node).paddingInlineStart) > 0));
+  assert.match(ringStyle.colors, /rgb\(6, 95, 70\)/);
+  const rail = page.getByRole('complementary', { name: '작업 공간' });
+  assert.equal(await rail.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
+  assert.equal(await rail.locator('.brand-mark path[d="M15.6 27L21.5 32.9L34 19.5"]').evaluate(node => getComputedStyle(node).stroke), 'rgb(5, 150, 105)');
+  assert.equal(await rail.getByRole('link', { name: '업무 현황', exact: true }).evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(15, 23, 42)');
+  assert.equal(await page.getByRole('link', { name: '파일 첨부하기', exact: true }).evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(4, 120, 87)');
   if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-dashboard.png', fullPage: true });
   assert.equal(await page.getByRole('group', { name: '검토 작업 필터' }).count(), 0);
   assert.equal(await page.getByRole('region', { name: '팀별 판정 표' }).count(), 0);

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
+import { Check as CheckMark, ChevronDown } from 'lucide-react';
 import { Link } from '../components/workspaceNavigation';
 import { useAsync, usePolling } from '../api/client';
 import { receiptName } from '../api/intake';
@@ -245,7 +246,11 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                 </section>;
               })}
               {evidence.passed.length > 0 && <details className="team-review-check-group">
-                <summary className="team-review-passed-summary">통과한 항목 {evidence.passed.length}개</summary>
+                <summary className="team-review-passed-summary">
+                  <span className="team-review-check-icon"><CheckMark size={14} aria-hidden="true" /></span>
+                  통과한 항목 {evidence.passed.length}개
+                  <ChevronDown size={15} aria-hidden="true" />
+                </summary>
                 {renderChecks(evidence.passed)}
               </details>}
             </>}

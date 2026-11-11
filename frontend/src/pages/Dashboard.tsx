@@ -1,7 +1,7 @@
 import { Link } from '../components/workspaceNavigation';
 import { useEffect, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
-import { ArrowRight, Check, ChevronDown, CircleAlert, FileCheck, FileUp, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, CircleAlert, FileUp, Sparkles } from 'lucide-react';
 import type { Verdict } from '../api/service';
 import { Page } from '../components/Layout';
 import { Notice, PageHeader, buttonStyles } from '../components/ui';
@@ -40,7 +40,7 @@ export default function Dashboard() {
     />
     {!dashboard ? <Notice error={error} onRetry={refresh} /> : <>
       <div className="dashboard-metrics">
-        <MetricCard label="담당자 조치 필요" count={alerts.length} unit="건" priority
+        <MetricCard label="담당자 조치 필요" count={alerts.length} unit="건" tone="priority"
           icon={<CircleAlert size={18} aria-hidden="true" />}
           detail={<Link to="/?focus=tasks" className="dashboard-metric-link">확인 목록 보기 <ArrowRight size={16} aria-hidden="true" /></Link>}
         />
@@ -52,8 +52,8 @@ export default function Dashboard() {
           icon={<Sparkles size={18} aria-hidden="true" />}
           detail={`대기 ${queued.length} · 처리 중 ${Math.max(0, processing - queued.length)}`}
         />
-        <MetricCard label="보고서 확정" count={dashboard.reports.filter(report => report.state === 'confirmed').length} unit="건"
-          icon={<FileCheck size={18} aria-hidden="true" />}
+        <MetricCard label="보고서 확정" count={dashboard.reports.filter(report => report.state === 'confirmed').length} unit="건" tone="complete"
+          icon={<Check size={18} aria-hidden="true" />}
           detail="HWPX · PDF"
         />
       </div>
@@ -93,15 +93,15 @@ export default function Dashboard() {
   </Page>;
 }
 
-function MetricCard({ label, count, unit, detail, icon, priority = false }: {
+function MetricCard({ label, count, unit, detail, icon, tone }: {
   label: string;
   count: number;
   unit: string;
   detail: ReactNode;
   icon: ReactNode;
-  priority?: boolean;
+  tone?: 'priority' | 'complete';
 }) {
-  return <dl className={priority ? 'surface dashboard-metric dashboard-metric-priority' : 'surface dashboard-metric'}>
+  return <dl className={'surface dashboard-metric' + (tone ? ' dashboard-metric-' + tone : '')}>
     <dt>{label}<span className="dashboard-metric-icon">{icon}</span></dt>
     <dd className="dashboard-metric-value">{count}<span>{unit}</span></dd>
     <dd className="dashboard-caption">{detail}</dd>

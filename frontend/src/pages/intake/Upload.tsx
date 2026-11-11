@@ -31,12 +31,12 @@ export function UploadOverview() {
 
   return (
     <aside aria-label="파일 첨부 안내" className="grid min-w-0 gap-5">
-      <section className="rounded-[20px] bg-[#0f172a] p-[clamp(18px,2.5vw,24px)] text-white">
+      <section className="rounded-[20px] bg-ink p-[clamp(18px,2.5vw,24px)] text-white">
         <h2 className="text-lg font-semibold">첨부 뒤 진행 순서</h2>
         <ol className="mt-4 grid gap-3.5">
           {receiptSteps.map(([title, description], index) => (
             <li key={title} className="flex min-w-0 items-start gap-3">
-              <span aria-hidden="true" className={cx('grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold', index === 0 ? 'bg-[#6366f1] text-white' : 'bg-[#1e293b] text-[#e2e8f0]')}>
+              <span aria-hidden="true" className={cx('grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold', index === 0 ? 'bg-brand-accent text-[#022c22]' : 'bg-[#1e293b] text-line')}>
                 {index + 1}
               </span>
               <div className="min-w-0">
@@ -307,7 +307,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           onClick={() => picker.current?.click()}
           className={cx(
             'mt-3 grid w-full place-items-center gap-2 rounded-[20px] border-2 border-dashed px-4 py-7 text-center sm:px-6 sm:py-9',
-            dragging ? 'border-brand-strong bg-brand-tint ring-2 ring-brand-strong' : 'border-[#a5b4fc] bg-brand-tint hover:border-brand-strong',
+            dragging ? 'border-brand-strong bg-brand-tint ring-2 ring-brand-strong' : 'border-brand-bright bg-brand-tint hover:border-brand-strong',
           )}
         >
           <span aria-hidden="true" className="mb-1 grid size-14 place-items-center rounded-full bg-brand-strong text-white">
@@ -315,7 +315,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           </span>
           <strong className="text-base font-semibold text-ink sm:text-lg">화면 어디에나 파일을 끌어다 놓거나 선택하세요</strong>
           <span id="upload-limits" className="text-[13px] leading-relaxed text-muted">00 지급내역서 제외 · 최대 100개 · 파일당 40 MiB · 합계 300 MiB</span>
-          <span aria-hidden="true" className="mt-1.5 inline-flex min-h-11 items-center rounded-full bg-[#0f172a] px-5 text-sm font-semibold text-white">파일 선택</span>
+          <span aria-hidden="true" className="mt-1.5 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-sm font-semibold text-white">파일 선택</span>
         </button>
         {fileError && <p id="upload-file-error" role="alert" className="rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">{fileError}</p>}
         {files.length > 0 && (
@@ -324,7 +324,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
             <ol className="grid gap-2.5">
               {files.map(({ id, file }, index) => (
                 <li key={id} className="flex min-w-0 items-center gap-2.5 rounded-2xl border border-line py-1.5 pr-1.5 pl-3 text-sm">
-                  <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full bg-[#0f172a] text-xs font-semibold text-white">{index + 1}</span>
+                  <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-xs font-semibold text-white">{index + 1}</span>
                   <div className="min-w-0 flex-1">
                     <span className="file-name block font-semibold">{file.name}</span>
                     <small className="text-xs text-muted">{bytes(file.size)}</small>
