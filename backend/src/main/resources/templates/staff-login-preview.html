@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<body>
+  <aside class="login-preview" th:fragment="preview" aria-labelledby="login-preview-title">
+    <svg class="preview-watermark" viewBox="0 0 48 48" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      <defs>
+        <mask id="preview-logo-cutout" x="-20%" y="-20%" width="140%" height="140%">
+          <rect width="48" height="48" fill="#fff" />
+          <path d="M21.5 32.9L34 19.5" stroke="#000" stroke-width="8.4" stroke-linecap="butt" />
+        </mask>
+        <symbol id="preview-check" viewBox="0 0 16 16">
+          <path d="m3.5 8 2.9 3L12.5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+      </defs>
+      <path d="M15.6 27L21.5 32.9L34 19.5" stroke="#065f46" />
+      <path d="M10 39L24 9l14 30" stroke="#1e293b" mask="url(#preview-logo-cutout)" />
+    </svg>
+
+    <div class="preview-intro">
+      <h2 id="login-preview-title">SW중심대학 <span>문서 자동화</span></h2>
+      <p>신청서·동의서·증빙을 팀별로 대조하고, 지급내역 보고서까지 한 번에 편철합니다.</p>
+      <ul class="preview-documents" aria-label="검토 서류" role="list">
+        <li>01 신청서</li>
+        <li>02 동의서</li>
+        <li>03 신분증·통장 사본</li>
+      </ul>
+    </div>
+
+    <div class="preview-stage">
+      <article class="preview-verdict" aria-label="서류 검토 결과 예시">
+        <p class="preview-completion">
+          <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#preview-check" /></svg>
+          Studio 판정 완료
+        </p>
+        <header class="preview-verdict-header">
+          <p><strong>접수 3팀</strong> · 가상검토팀03 <span class="preview-sample">예시</span></p>
+          <span class="preview-return">재제출요청</span>
+        </header>
+        <ul class="preview-verdict-list" role="list">
+          <li>
+            <span class="preview-result-icon" aria-hidden="true">
+              <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+            </span>
+            <span>02 동의서</span>
+            <strong class="preview-pass">모두 통과</strong>
+          </li>
+          <li>
+            <span class="preview-result-icon preview-result-icon--warning" aria-hidden="true">!</span>
+            <span>01 신청서·03 통장 사본</span>
+            <strong class="preview-issue">계좌번호 불일치</strong>
+          </li>
+        </ul>
+        <p class="preview-evidence">
+          원문 근거
+          <span class="preview-evidence-tag preview-evidence-tag--active">01·1쪽·3행</span>
+          <span class="preview-evidence-tag">03·2쪽</span>
+        </p>
+      </article>
+
+      <section class="preview-workflow" aria-labelledby="preview-workflow-title">
+        <h3 id="preview-workflow-title">접수부터 보고서까지</h3>
+        <ol class="preview-steps" role="list">
+          <li class="is-complete">
+            <span class="preview-step-icon" aria-hidden="true"><svg width="13" height="13" focusable="false"><use href="#preview-check" /></svg></span>
+            <span>파일 첨부</span>
+          </li>
+          <li class="is-complete">
+            <span class="preview-step-icon" aria-hidden="true"><svg width="13" height="13" focusable="false"><use href="#preview-check" /></svg></span>
+            <span>Studio 판정</span>
+          </li>
+          <li class="is-complete">
+            <span class="preview-step-icon" aria-hidden="true"><svg width="13" height="13" focusable="false"><use href="#preview-check" /></svg></span>
+            <span>담당자 검토</span>
+          </li>
+          <li>
+            <span class="preview-step-icon" aria-hidden="true"></span>
+            <span>HWPX·PDF</span>
+          </li>
+        </ol>
+      </section>
+    </div>
+  </aside>
+</body>
+</html>

@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f8fafc">
+  <meta name="theme-color" content="#ffffff">
   <title th:text="${leaving ? '로그아웃 | SW·AX 문서 자동화' : '담당자 로그인 | SW·AX 문서 자동화'}">담당자 로그인 | SW·AX 문서 자동화</title>
-  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=7)}">
-  <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=5)}"></script>
+  <link rel="icon" type="image/svg+xml" th:href="@{/sw-ax.svg}">
+  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=8)}">
+  <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=6)}"></script>
 </head>
 <body>
   <main class="access-shell">
-    <div class="identity">
+    <div class="form-panel">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
@@ -18,45 +19,58 @@
               <rect width="48" height="48" fill="#fff"/>
               <path d="M21.5 32.9L34 19.5" stroke="#000" stroke-width="8.4" stroke-linecap="butt"/>
             </mask>
-            <path d="M15.6 27L21.5 32.9L34 19.5" stroke="#6ee7b7"/>
+            <path d="M15.6 27L21.5 32.9L34 19.5" stroke="#059669"/>
             <path d="M10 39L24 9l14 30" stroke="currentColor" mask="url(#staff-logo-cutout)"/>
           </svg>
         </span>
         <strong>SW-AX</strong>
       </div>
-      <p class="product-name">SW중심대학 <span>문서 자동화</span></p>
-    </div>
-
-    <div class="form-panel">
       <section class="form-content" aria-labelledby="page-title">
+        <p class="staff-badge" th:unless="${leaving}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+          SW중심대학사업단 담당자 전용
+        </p>
         <h1 id="page-title" th:text="${leaving ? '로그아웃할까요?' : '담당자 로그인'}">담당자 로그인</h1>
         <p class="lead" th:text="${leaving ? '이 브라우저의 담당자 세션을 종료합니다.' : '발급받은 담당자 계정으로 접속하세요.'}">발급받은 담당자 계정으로 접속하세요.</p>
 
         <form th:unless="${leaving}" id="staff-login" th:action="@{/login}" method="post">
           <div class="field">
             <label for="username">아이디</label>
-            <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required
-                   th:attr="aria-describedby=${loginError ? 'login-error' : null}">
+            <div class="input-frame">
+              <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/></svg>
+              <input id="username" name="username" type="text" placeholder="예: staff01" autocomplete="username" autocapitalize="none" spellcheck="false" required
+                     th:attr="aria-describedby=${loginError ? 'login-error' : null}">
+            </div>
             <p id="login-error" class="login-error" role="alert"
                th:text="${loginError ? '아이디 또는 비밀번호를 확인해 주세요.' : ''}"></p>
           </div>
           <div class="field">
             <label for="password">비밀번호</label>
-            <div class="password-field">
+            <div class="input-frame password-field">
+              <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3"/></svg>
               <input id="password" name="password" type="password" autocomplete="current-password" required
                      th:attr="aria-describedby=${loginError ? 'login-error' : null},aria-invalid=${loginError ? 'true' : null}">
               <button type="button" class="visibility" id="password-visibility" aria-controls="password" aria-label="비밀번호 보기" hidden>보기</button>
             </div>
           </div>
-          <button class="primary" type="submit">로그인</button>
+          <button class="primary" type="submit">
+            <span id="login-submit-label">로그인</span>
+            <svg class="submit-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+          </button>
         </form>
 
         <form th:if="${leaving}" th:action="@{/logout}" method="post">
           <button class="primary" type="submit">로그아웃</button>
           <a class="back-link" th:href="@{/} + '#/'">업무 선택으로 돌아가기</a>
         </form>
+        <ul class="staff-note" th:unless="${leaving}">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>30분 동안 사용하지 않으면 자동으로 로그아웃됩니다.</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>계정이 없으면 사업단 운영자에게 발급을 요청하세요.</li>
+        </ul>
       </section>
+      <p class="access-footer">SW-AX · 시상금 증빙 자동화</p>
     </div>
+    <aside th:replace="~{staff-login-preview :: preview}"></aside>
   </main>
   <dialog th:if="${loggedOut}" id="logout-notice" class="logout-notice" aria-labelledby="logout-notice-title">
     <p id="logout-notice-title">로그아웃했습니다.</p>

@@ -4,6 +4,7 @@ const password = document.getElementById('password');
 const visibility = document.getElementById('password-visibility');
 const errorMessage = document.getElementById('login-error');
 const submit = form.querySelector('button[type="submit"]');
+const submitLabel = document.getElementById('login-submit-label');
 const fields = [username, password];
 
 function clearError() {
@@ -47,7 +48,7 @@ form.addEventListener('submit', async event => {
 
   const values = new FormData(form);
   submit.disabled = true;
-  submit.textContent = '로그인 중…';
+  submitLabel.textContent = '로그인 중…';
   let response;
   try {
     response = await fetch(form.action, {
@@ -65,7 +66,7 @@ form.addEventListener('submit', async event => {
   }
 
   submit.disabled = false;
-  submit.textContent = '로그인';
+  submitLabel.textContent = '로그인';
   if (response?.status === 401) {
     if (username.value !== values.get('username') || password.value !== values.get('password')) return;
     password.value = '';

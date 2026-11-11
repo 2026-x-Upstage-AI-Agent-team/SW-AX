@@ -12,6 +12,21 @@ test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테�
       const context = await browser.newContext({ baseURL, viewport: { width, height: 850 } });
       const page = await context.newPage();
       await page.goto('/login#' + previous);
+      await page.evaluate(async () => { await document.fonts.ready; });
+      const formBox = await page.locator('#staff-login').boundingBox();
+      const preview = page.locator('.login-preview');
+      const previewBox = await preview.isVisible() ? await preview.boundingBox() : null;
+      assert.ok(formBox && formBox.x >= 0 && formBox.x + formBox.width <= width);
+      assert.equal(await page.evaluate(() => {
+        const { scrollWidth, clientWidth } = document.documentElement;
+        return scrollWidth - clientWidth;
+      }), 0);
+      if (width === 1280) {
+        assert.ok(previewBox && formBox.x + formBox.width <= previewBox.x);
+        assert.ok(previewBox.y <= formBox.y && previewBox.y + previewBox.height >= formBox.y + formBox.height);
+      } else if (previewBox) {
+        assert.ok(previewBox.y >= formBox.y + formBox.height);
+      }
       const username = page.getByLabel('아이디', { exact: true });
       const password = page.getByLabel('비밀번호', { exact: true });
       const submit = page.getByRole('button', { name: '로그인', exact: true });
