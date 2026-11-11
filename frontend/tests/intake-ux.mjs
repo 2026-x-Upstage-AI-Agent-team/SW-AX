@@ -111,7 +111,8 @@ test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
   await page.goto('/#/categories/awards/workspaces/test/');
   assert.equal(await guide.count(), 0);
-  await page.locator('.workspace-rail').getByRole('button', { name: '시작 가이드', exact: true }).click();
+  await page.getByRole('button', { name: '도움말 열기', exact: true }).click();
+  await page.getByRole('button', { name: '시작 가이드', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
   await page.keyboard.press('Tab');
   assert.ok(await page.evaluate(() => document.activeElement?.matches('[data-tour="nav-upload"], .tour-card button')));
@@ -149,8 +150,13 @@ test('320px 가이드는 메뉴를 열고 실제 파일 첨부 버튼을 누를 
   await page.goto('/#/categories/awards/workspaces/test/');
   await page.reload();
   assert.equal(await guide.count(), 0);
-  await page.getByRole('button', { name: '메뉴 열기', exact: true }).click();
-  await page.getByRole('dialog', { name: '작업 메뉴', exact: true }).getByRole('button', { name: '시작 가이드', exact: true }).click();
+  await page.setViewportSize({ width: 320, height: 850 });
+  await page.getByRole('button', { name: '도움말 열기', exact: true }).click();
+  const help = page.getByRole('group', { name: '도움말', exact: true });
+  await help.waitFor();
+  const bounds = await help.boundingBox();
+  assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320);
+  await help.getByRole('button', { name: '시작 가이드', exact: true }).click();
   await guide.getByRole('button', { name: '메뉴 열기', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
   await page.keyboard.press('Escape');
@@ -173,7 +179,8 @@ test('가이드는 선택한 서류를 버리고 이동하지 않으며 종료 �
   await guide.getByRole('button', { name: '가이드 종료' }).click();
   await page.getByText('01_가이드시험.hwpx', { exact: true }).waitFor();
   assert.ok(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isEnabled());
-  await page.locator('.workspace-rail').getByRole('button', { name: '시작 가이드', exact: true }).click();
+  await page.getByRole('button', { name: '도움말 열기', exact: true }).click();
+  await page.getByRole('button', { name: '시작 가이드', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
   await page.getByText('01_가이드시험.hwpx', { exact: true }).waitFor();
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');

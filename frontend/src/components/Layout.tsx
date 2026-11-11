@@ -13,12 +13,13 @@ import { Link, NavLink } from './workspaceNavigation';
 import { currentMenu, documentMenu, primaryMenu, workspaceSection } from './workspaceMenu';
 import { buttonStyles, cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
-import WorkspaceGuideStart, { WorkspaceTourProvider, useWorkspaceTour } from './WorkspaceTour';
+import { WorkspaceTourProvider, useWorkspaceTour } from './WorkspaceTour';
+import WorkspaceHelp from './WorkspaceHelp';
 import WorkspaceSearch from './WorkspaceSearch';
 
 type NavigationControl = {
   compact: boolean; documentsOpen: boolean; toggleDocuments: () => void;
-  search: () => void; account: () => void; toggleRail: () => void; prepareGuide: () => void;
+  search: () => void; account: () => void; toggleRail: () => void;
 };
 
 function Brand({ subtitle, compact = false, onNavigate }: { subtitle: string; compact?: boolean; onNavigate?: () => void }) {
@@ -81,7 +82,6 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
       <NavLink to="/manage" onClick={onNavigate} aria-label="워크스페이스 설정" title="워크스페이스 설정" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><Settings2 size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>워크스페이스 설정</span></NavLink>
       <div className={cx('flex items-center justify-between', control.compact && 'flex-col')}>
         <button type="button" className="icon-button" onClick={() => { onNavigate?.(); control.search(); }} aria-label="현재 워크스페이스 검색" title="검색 · Ctrl+K"><Search size={20} aria-hidden="true" /></button>
-        <WorkspaceGuideStart compact onBeforeStart={control.prepareGuide} />
         <button type="button" className="icon-button hidden min-[60rem]:grid" onClick={control.toggleRail} aria-label={control.compact ? '사이드바 펼치기' : '사이드바 접기'} title={control.compact ? '사이드바 펼치기' : '사이드바 접기'}>{control.compact ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}</button>
         <button type="button" className="icon-button" onClick={() => { onNavigate?.(); control.account(); }} aria-label="계정 메뉴" title="계정 메뉴"><UserRound size={20} aria-hidden="true" /></button>
       </div>
@@ -95,7 +95,7 @@ export default function Layout() {
 
 function WorkspaceLayout() {
   const worker = useWorkerControl();
-  const { active, menuDialog, openMenu, closeMenu: close } = useWorkspaceTour();
+  const { active, start, menuDialog, openMenu, closeMenu: close } = useWorkspaceTour();
   const { event } = useEvent();
   const { categoryId = 'awards' } = useParams();
   const categories = useApi<Category[]>('/api/categories');
@@ -112,7 +112,7 @@ function WorkspaceLayout() {
   const [accountOpen, setAccountOpen] = useState(false);
   const accountDialog = useRef<HTMLDialogElement>(null);
   const session = useApi<{ login: string | null }>(isDemoBackend ? null : '/api/auth/session');
-  const prepareGuide = () => { setCollapsed(false); setDocumentsOpen(true); close(); };
+  const startGuide = () => { setCollapsed(false); setDocumentsOpen(true); start(); };
   useEffect(() => { try { localStorage.setItem(railKey, String(collapsed)); } catch { /* Optional preference. */ } }, [collapsed, railKey]);
   useEffect(() => { if (active) { setCollapsed(false); setDocumentsOpen(true); } }, [active]);
   useEffect(() => { document.title = `${event?.name ?? '워크스페이스'} | SW·AX`; }, [event?.name]);
@@ -136,7 +136,7 @@ function WorkspaceLayout() {
   }, [close]);
   useEffect(() => { if (accountOpen) accountDialog.current?.showModal(); else accountDialog.current?.close(); }, [accountOpen]);
   const control: NavigationControl = {
-    compact: collapsed, documentsOpen, prepareGuide,
+    compact: collapsed, documentsOpen,
     toggleDocuments: () => { if (collapsed) { setCollapsed(false); setDocumentsOpen(true); } else setDocumentsOpen(value => !value); },
     search: () => setSearchOpen(true), account: () => setAccountOpen(true), toggleRail: () => setCollapsed(value => !value),
   };
@@ -148,6 +148,7 @@ function WorkspaceLayout() {
       <div className="mobile-menu-body"><div className="flex items-center justify-between gap-2"><Brand subtitle={brandSubtitle} onNavigate={close} /><button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus><PanelLeftClose size={20} aria-hidden="true" /></button></div><WorkspaceNav worker={worker} control={{ ...control, compact: false }} onNavigate={close} /></div>
     </dialog>
     <div className="workspace-body"><Outlet /></div>
+    {!active && <WorkspaceHelp onStartGuide={startGuide} />}
     <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     <dialog ref={accountDialog} className="deletion-dialog" aria-label="계정 메뉴" onClose={() => setAccountOpen(false)} onCancel={() => setAccountOpen(false)}>
       <div className="flex flex-col gap-4 p-6"><h2 className="panel-title">계정</h2><p className="text-sm">{session.data?.login ?? '담당자'}</p>

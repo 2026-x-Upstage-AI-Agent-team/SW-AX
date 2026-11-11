@@ -268,8 +268,3 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
   </div>;
   return createPortal(content, menuOpen && menuDialog.current ? menuDialog.current : document.body);
 }
-
-export default function WorkspaceGuideStart({ compact = false, onBeforeStart }: { compact?: boolean; onBeforeStart?: () => void } = {}) {
-  const { start } = useWorkspaceTour();
-  return <button type="button" onClick={() => { onBeforeStart?.(); start(); }} className={compact ? 'icon-button' : buttonStyles.text} aria-label="시작 가이드" title="시작 가이드"><BookOpen size={compact ? 20 : 16} aria-hidden="true" />{!compact && '시작 가이드'}</button>;
-}

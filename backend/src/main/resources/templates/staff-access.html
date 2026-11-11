@@ -29,18 +29,18 @@
         <p class="lead" th:text="${leaving ? '이 브라우저의 담당자 세션을 종료합니다.' : '발급받은 담당자 계정으로 접속하세요.'}">발급받은 담당자 계정으로 접속하세요.</p>
 
         <form th:unless="${leaving}" id="staff-login" th:action="@{/login}" method="post">
-          <p th:if="${loginError}" id="login-error" class="notice error" role="alert">아이디 또는 비밀번호를 확인해 주세요.</p>
-          <p th:if="${loggedOut}" class="notice success" role="status">로그아웃했습니다.</p>
           <div class="field">
             <label for="username">아이디</label>
             <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required
-                   th:attr="aria-describedby=${loginError ? 'login-error' : null}">
+                   th:attr="aria-describedby=${loginError ? 'login-error' : null},aria-invalid=${loginError ? 'true' : null}">
+            <p id="login-error" class="login-error" th:classappend="${loginError ? '' : 'is-hidden'}"
+               th:attr="role=${loginError ? 'alert' : null}">아이디 또는 비밀번호를 확인해 주세요.</p>
           </div>
           <div class="field">
             <label for="password">비밀번호</label>
             <div class="password-field">
               <input id="password" name="password" type="password" autocomplete="current-password" required
-                     th:attr="aria-describedby=${loginError ? 'login-error' : null}">
+                     th:attr="aria-describedby=${loginError ? 'login-error' : null},aria-invalid=${loginError ? 'true' : null}">
               <button type="button" class="visibility" id="password-visibility" aria-controls="password" aria-label="비밀번호 보기" hidden>보기</button>
             </div>
           </div>
@@ -54,5 +54,11 @@
       </section>
     </div>
   </main>
+  <dialog th:if="${loggedOut}" id="logout-notice" class="logout-notice" aria-labelledby="logout-notice-title">
+    <p id="logout-notice-title">로그아웃했습니다.</p>
+    <form method="dialog">
+      <button class="primary" type="submit" autofocus>확인</button>
+    </form>
+  </dialog>
 </body>
 </html>

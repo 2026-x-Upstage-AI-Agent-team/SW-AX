@@ -17,3 +17,12 @@ visibility.addEventListener('click', () => {
   visibility.textContent = reveal ? '숨기기' : '보기';
   visibility.setAttribute('aria-label', reveal ? '비밀번호 숨기기' : '비밀번호 보기');
 });
+
+const logoutNotice = document.getElementById('logout-notice');
+if (logoutNotice) {
+  logoutNotice.showModal();
+  logoutNotice.addEventListener('close', () => document.getElementById('username').focus());
+  const url = new URL(location.href);
+  url.searchParams.delete('logout');
+  history.replaceState(history.state, '', url);
+}

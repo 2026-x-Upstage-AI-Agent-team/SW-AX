@@ -11,6 +11,35 @@
     .workspace[data-rail-collapsed="true"] .rail-worker-state { font-size: 0; gap: 0; }
     .workspace[data-rail-collapsed="true"] .rail-worker button { font-size: .65rem; padding-inline: .2rem; }
   }
+  .workspace-help-button {
+    position: fixed;
+    inset-inline-end: max(1.25rem, env(safe-area-inset-right));
+    inset-block-end: max(1.25rem, env(safe-area-inset-bottom));
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    background: var(--color-brand-strong);
+    color: white;
+    font-size: 1.5rem;
+    font-weight: 700;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+  }
+  .workspace-help-button:hover { background: var(--color-brand-deep); }
+  .workspace-help-panel {
+    position: fixed;
+    inset: auto max(1.25rem, env(safe-area-inset-right)) calc(max(1.25rem, env(safe-area-inset-bottom)) + 3.75rem) auto;
+    width: min(17rem, calc(100vw - 2.5rem));
+    margin: 0;
+    padding: .4rem;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 15%);
+  }
+  @media (max-width: 59.999rem) {
+    .workspace-body { padding-bottom: 3.5rem; }
+  }
   .workspace-tour { position: fixed; inset: 0; z-index: 1000; pointer-events: none; }
   .tour-shade { position: fixed; background: rgb(0 0 0 / 45%); pointer-events: auto; }
   .tour-spotlight { position: fixed; border: 2px solid #8fe3b4; border-radius: .72rem; box-shadow: 0 0 0 4px rgb(143 227 180 / 22%), 0 0 24px rgb(143 227 180 / 45%); pointer-events: none; }

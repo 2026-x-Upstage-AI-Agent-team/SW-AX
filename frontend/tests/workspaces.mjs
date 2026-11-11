@@ -8,21 +8,38 @@ assert.ok(baseURL && ['127.0.0.1', 'localhost'].includes(new URL(baseURL).hostna
 test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테고리 선택에서 시작한다', { timeout: 60000 }, async () => {
   const browser = await chromium.launch({ channel: 'chrome', executablePath: process.env.CHROME_EXECUTABLE });
   try {
-    for (const previous of ['/intake', '/categories/awards/workspaces/old-workspace/intake']) {
-      const context = await browser.newContext({ baseURL });
+    for (const [previous, width] of [['/intake', 1280], ['/categories/awards/workspaces/old-workspace/intake', 320]]) {
+      const context = await browser.newContext({ baseURL, viewport: { width, height: 850 } });
       const page = await context.newPage();
       await page.goto('/login#' + previous);
-      await page.getByLabel('아이디', { exact: true }).fill(process.env.INTAKE_TEST_LOGIN_A);
-      await page.getByLabel('비밀번호', { exact: true }).fill('incorrect-test-password');
+      const username = page.getByLabel('아이디', { exact: true });
+      const password = page.getByLabel('비밀번호', { exact: true });
+      const inputBoxes = () => Promise.all([username.boundingBox(), password.boundingBox()]);
+      const before = await inputBoxes();
+      await username.fill(width === 1280 ? process.env.INTAKE_TEST_LOGIN_A : 'missing-ui-test-user');
+      await password.fill('incorrect-test-password');
       await page.getByRole('button', { name: '로그인', exact: true }).click();
-      await page.getByRole('alert').waitFor();
+      const error = page.getByRole('alert');
+      await error.waitFor();
+      assert.deepEqual(await inputBoxes(), before, 'Invalid credentials must not move either input.');
+      const errorBox = await error.boundingBox();
+      assert.ok(errorBox.y >= before[0].y + before[0].height && errorBox.y + errorBox.height <= before[1].y);
+      assert.equal(await username.getAttribute('aria-describedby'), 'login-error');
       assert.equal(new URL(page.url()).hash, '#/');
-      await page.getByLabel('아이디', { exact: true }).fill(process.env.INTAKE_TEST_LOGIN_A);
-      await page.getByLabel('비밀번호', { exact: true }).fill(process.env.INTAKE_TEST_PASSWORD_A);
+      await username.fill(process.env.INTAKE_TEST_LOGIN_A);
+      await password.fill(process.env.INTAKE_TEST_PASSWORD_A);
       await page.getByRole('button', { name: '로그인', exact: true }).click();
       await page.waitForURL(baseURL + '/#/');
       await page.getByRole('heading', { name: '문서 업무', exact: true }).waitFor();
       assert.equal(await page.getByRole('navigation', { name: '주 메뉴' }).count(), 0);
+      await page.getByRole('link', { name: '로그아웃', exact: true }).click();
+      await page.getByRole('button', { name: '로그아웃', exact: true }).click();
+      const notice = page.getByRole('dialog', { name: '로그아웃했습니다.' });
+      await notice.waitFor();
+      assert.deepEqual(await inputBoxes(), before, 'The logout notice must not move either input.');
+      await notice.getByRole('button', { name: '확인', exact: true }).click();
+      await notice.waitFor({ state: 'hidden' });
+      assert.equal(await username.evaluate(input => input === document.activeElement), true);
       await context.close();
     }
     // The server must clear the inherited hash even when the login script does not run.
