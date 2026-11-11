@@ -75,7 +75,7 @@ function DeletionDialog({ kind, name, path, onDeleted, onClose }: Props & { onCl
       {!impact && !error && <p role="status">삭제할 자료를 조회하고 있습니다.</p>}
       {impact && <>
         <p>{kind === '워크스페이스' && <>등록 팀 {impact.team_count}개 · </>}첨부 묶음 {impact.batch_count}건 · 파일 {impact.file_count}개 삭제</p>
-        {kind === '원본' && impact.batch_count > 0 && <p className="font-semibold">마지막 원본이므로 이 첨부 내역도 삭제됩니다.</p>}
+        {kind === '원본' && impact.batch_count > 0 && <p className="font-semibold">마지막 원본이므로 이 서류 묶음도 삭제됩니다.</p>}
         <section>
           <h3 className="font-bold">팀별 판정 {impact.reviews.length}건</h3>
           {impact.reviews.length ? <ul className="mt-1 divide-y divide-line-soft">

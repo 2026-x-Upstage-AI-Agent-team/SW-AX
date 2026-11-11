@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, BookOpen, X } from 'lucide-react';
 import { backend } from '../api/backend';
 import { workspacePath } from '../api/workspaces';
 import { buttonStyles } from './ui';
+import { workflowLabels } from './workspaceMenu';
 
 type TourControl = {
   active: boolean;
@@ -22,21 +23,20 @@ export function useWorkspaceTour() {
 }
 
 const steps = [
-  { path: '/', target: 'nav-upload', title: '먼저, 파일 첨부를 눌러 주세요.',
-    text: '여기에서 한 팀의 서류를 함께 올릴 수 있어요. 강조된 메뉴를 누르면 다음 안내로 이어져요.', hint: '파일 없이도 ‘다음 단계’로 사용 순서를 둘러볼 수 있어요.' },
-  { path: '/intake', target: 'file-picker', title: '한 팀의 서류를 함께 선택하세요.',
-    text: '이 영역을 눌러 신청서(01), 개인정보 동의서(02), 대표 증빙(03)을 선택하세요. 파일을 끌어 놓아도 돼요.', hint: 'HWP·HWPX를 지원해요. 00 지급내역서는 첨부하지 않아요.' },
-  { path: '/intake', target: 'upload-submit', title: '선택한 파일을 확인하고 첨부하세요.',
-    text: '목록을 확인한 뒤 ‘파일 첨부하기’를 누르면 서류 판독과 자동 검토가 시작돼요. 다음 팀도 같은 순서로 올리면 돼요.', hint: '아직 파일을 고르지 않았다면 ‘다음 단계’로 나머지 화면을 둘러보세요.' },
-  { path: '/intake/batches', target: 'upload-history', title: '첨부한 서류의 처리 상태를 확인하세요.',
-    text: '‘첨부 내역’에서 첨부번호를 누르면 판독·검토 진행 상태를 볼 수 있어요. 소속 팀을 확인할 파일이 있으면 ‘팀 배정 확인’을 이용하세요.', hint: '판독 중에는 같은 서류를 다시 첨부하지 않아도 돼요.' },
-  { path: '/review', target: 'nav-review', title: '검토가 끝나면 결과를 확인하세요.',
-    text: '‘팀별 검토’에서 확인할 팀을 선택하세요. 원문과 근거를 대조한 뒤 승인 또는 보완 필요를 선택하고 ‘결론 기록’을 눌러요.', hint: '작업 단계로 필터하거나 팀명·대표자로 검색할 수 있어요. 보완 서류는 해당 팀의 검토 화면에서 첨부하세요.' },
-  { path: '/mail', target: 'nav-mail', title: '필요한 팀장 안내를 확인하세요.',
-    text: '목록에서 메일을 선택해 오른쪽에서 수신자와 내용을 확인하세요. 수정했다면 ‘초안 저장’을 누르고, 준비가 되면 ‘승인 후 발송’으로 안내해요.', hint: '안내가 필요한 경우 진행해요. 실제 Gmail 발송은 ‘Gmail 연결’이 필요해요.' },
-  { path: '/report', target: 'nav-report', title: '마지막으로 보고서를 만들어요.',
-    text: '승인한 팀의 지급 정보를 저장하고 ‘미리보기 생성’을 누르세요. 내용을 확인해 ‘이 버전으로 확정’하면 HWPX·PDF를 내려받을 수 있어요.', hint: '사용 순서를 모두 살펴봤어요. 이제 첫 팀의 파일 첨부부터 시작해 보세요.' },
-];
+  { phase: 1, path: '/', target: 'nav-upload', title: '한 팀의 서류를 올려 보세요.',
+    text: `왼쪽 메뉴의 ‘${workflowLabels.upload}’를 누르세요. 한 팀씩 올리면 서류가 같은 팀으로 묶여요.`, hint: '파일 없이도 ‘다음 안내’로 사용 순서를 둘러볼 수 있어요.' },
+  { phase: 1, path: '/intake', target: 'file-picker', title: '한 팀의 서류를 함께 선택하세요.',
+    text: `‘${workflowLabels.choose}’을 눌러 신청서(01), 개인정보 동의서(02), 대표 증빙(03)을 함께 선택하세요. 파일을 끌어 놓아도 돼요.`, hint: 'HWP·HWPX 파일을 올릴 수 있어요. 00 지급내역서는 제외해 주세요.' },
+  { phase: 1, path: '/intake', target: 'upload-submit', title: '선택한 서류를 올려 보세요.',
+    text: `목록을 확인한 뒤 ‘${workflowLabels.submit}’를 누르세요. 서류를 저장하고 검토를 시작해요.`, hint: '파일을 고르지 않았다면 ‘다음 단계’로 진행 화면을 먼저 살펴볼 수 있어요.' },
+  { phase: 2, path: '/intake/batches', target: 'upload-history', title: '서류가 어디까지 검토됐는지 확인하세요.',
+    text: `‘${workflowLabels.progress}’에서 올린 서류의 상태를 확인하세요. 올린 직후에는 ‘${workflowLabels.progressAction}’로 해당 묶음의 상세를 열 수 있어요.`, hint: `검토가 끝나면 ‘${workflowLabels.review}’ 버튼이 나타나요. 소속 팀 확인이 필요한 파일은 ‘팀 배정 확인’에 표시돼요.` },
+  { phase: 3, path: '/review', target: 'nav-review', title: '팀별 검토 결과를 확인하세요.',
+    text: `‘${workflowLabels.review}’에서 팀을 고르세요. 원문을 확인하고 ‘서류 승인’ 또는 ‘보완 필요’를 선택한 뒤 ‘${workflowLabels.saveReview}’을 누르세요.`, hint: `보완이 필요한 팀은 상세 화면의 ‘${workflowLabels.mailAction}’에서 팀장에게 보낼 내용을 확인할 수 있어요.` },
+  { phase: 4, path: '/report', target: 'nav-report', title: '지급 보고서를 만들어 보세요.',
+    text: `‘${workflowLabels.report}’에서 승인한 팀의 지급 정보를 입력하고 ‘${workflowLabels.reportAction}’를 누르세요. 미리보기를 확인한 뒤 확정하면 HWPX·PDF를 내려받을 수 있어요.`, hint: '사용 순서를 모두 살펴봤어요. 첫 팀의 서류를 올려 보세요.' },
+] as const;
+const phaseCount = steps.at(-1)!.phase;
 
 type Rect = { top: number; left: number; width: number; height: number };
 type Placement = {
@@ -63,11 +63,13 @@ export function WorkspaceTourProvider({ children }: { children: ReactNode }) {
     try {
       const stored = localStorage.getItem(storageKey);
       if (stored === 'done') return null;
-      if (stored !== null && /^\d+$/.test(stored) && Number(stored) < steps.length) {
-        const index = Number(stored);
+      if (stored !== null && /^[0-6]$/.test(stored)) {
+        // The previous guide had a separate mail step before the report.
+        const index = Number(stored) === 6 ? steps.length - 1 : Number(stored);
         const expected = workspacePath(workspaceId, steps[index].path, categoryId);
         if (pathname.replace(/\/$/, '') === expected.replace(/\/$/, '')
-          || (index === 3 && pathname.startsWith(expected + '/'))) return index;
+          || (index === 3 && pathname.startsWith(expected + '/'))
+          || (index === 4 && pathname.startsWith(workspacePath(workspaceId, '/teams/', categoryId)))) return index;
       }
     } catch { /* A tour can also run without browser storage. */ }
     return pathname.replace(/\/$/, '') === root.replace(/\/$/, '') ? 0 : null;
@@ -107,6 +109,8 @@ export function WorkspaceTourProvider({ children }: { children: ReactNode }) {
     observedPath.current = pathname;
     if (step === 0 && pathname === workspacePath(workspaceId, '/intake', categoryId)) setStep(1);
     if ((step === 1 || step === 2) && pathname.startsWith(workspacePath(workspaceId, '/intake/batches/', categoryId))) setStep(3);
+    if (step === 3 && (pathname === workspacePath(workspaceId, '/review', categoryId)
+      || pathname.startsWith(workspacePath(workspaceId, '/teams/', categoryId)))) setStep(4);
     if ((step === 1 || step === 2) && pathname.replace(/\/$/, '') === root.replace(/\/$/, '')) setStep(0);
   }, [step, pathname, workspaceId, categoryId, root]);
 
@@ -130,6 +134,7 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
   menuDialog: RefObject<HTMLDialogElement | null>; openMenu: () => void; complete: () => void;
 }) {
   const item = steps[step];
+  const location = useLocation();
   const card = useRef<HTMLDivElement>(null);
   const [cardHeight, setCardHeight] = useState(290);
   const [placement, setPlacement] = useState<Placement>({
@@ -139,13 +144,18 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
   const mobileNav = item.target.startsWith('nav-') && !window.matchMedia('(min-width: 60rem)').matches;
   const needsMenu = mobileNav && !menuOpen;
   const targetName = needsMenu ? 'menu-open' : item.target;
-  const target = placement.name === targetName && placement.rect ? placement.target : null;
+  const receipt = item.phase === 2 && Boolean(location.state?.uploaded);
+  const matchesTarget = placement.name === targetName || (receipt && placement.name === 'upload-receipt');
+  const target = matchesTarget && placement.rect ? placement.target : null;
+  const displayedTarget = target ? placement.name : targetName;
 
   useLayoutEffect(() => {
     let frame = 0;
     let checked: HTMLElement | null = null;
     const measure = () => {
-      const target = visibleTarget(targetName);
+      const receiptAction = receipt ? visibleTarget('upload-receipt') : null;
+      const name = receiptAction ? 'upload-receipt' : targetName;
+      const target = receiptAction ?? visibleTarget(targetName);
       const upload = document.querySelector<HTMLElement>('[data-tour="upload-form"]');
       const width = document.documentElement.clientWidth;
       const height = window.innerHeight;
@@ -166,9 +176,9 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
         ? { top: bounds.top, left: bounds.left, width: bounds.width, height: bounds.height } : null;
       const pending = upload?.dataset.tourPending === 'true';
       const busy = upload?.dataset.tourBusy === 'true';
-      setPlacement(current => current.name === targetName && current.target === target && current.width === width && current.height === height
+      setPlacement(current => current.name === name && current.target === target && current.width === width && current.height === height
         && current.pending === pending && current.busy === busy && JSON.stringify(current.rect) === JSON.stringify(rect)
-        ? current : { name: targetName, rect, lastRect: rect ?? current.lastRect, target, width, height, pending, busy });
+        ? current : { name, rect, lastRect: rect ?? current.lastRect, target, width, height, pending, busy });
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     const onResize = () => { checked = null; schedule(); };
@@ -180,7 +190,7 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
     const resize = new ResizeObserver(onResize);
     resize.observe(document.body);
     return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', onResize); window.removeEventListener('scroll', schedule, true); observer.disconnect(); resize.disconnect(); };
-  }, [targetName, menuOpen]);
+  }, [targetName, menuOpen, receipt]);
 
   useLayoutEffect(() => {
     const element = card.current;
@@ -263,22 +273,22 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
     move(step + 1);
   }
 
-  const content = <div className="workspace-tour" data-tour-step={step + 1}>
+  const content = <div className="workspace-tour" data-tour-step={item.phase} data-tour-target={displayedTarget}>
     {hole ? <>
       <div className="tour-shade" style={{ inset: `0 0 ${height - hole.top}px 0` }} />
       <div className="tour-shade" style={{ top: hole.bottom, bottom: 0, left: 0, right: 0 }} />
       <div className="tour-shade" style={{ top: hole.top, height: hole.bottom - hole.top, left: 0, width: hole.left }} />
       <div className="tour-shade" style={{ top: hole.top, height: hole.bottom - hole.top, left: hole.right, right: 0 }} />
-      <div key={targetName} className="tour-spotlight" data-target={targetName} style={{ top: hole.top, left: hole.left, width: hole.right - hole.left, height: hole.bottom - hole.top }} />
+      <div key={displayedTarget} className="tour-spotlight" data-target={displayedTarget} style={{ top: hole.top, left: hole.left, width: hole.right - hole.left, height: hole.bottom - hole.top }} />
     </> : <div className="tour-shade" style={{ inset: 0 }} />}
-    {hole && <div key={targetName} className="tour-arrow" aria-hidden="true" style={side === 'right' || side === 'left'
+    {hole && <div key={displayedTarget} className="tour-arrow" aria-hidden="true" style={side === 'right' || side === 'left'
       ? { left: side === 'right' ? left - 6 : left + cardWidth - 6, top: Math.max(top + 24, Math.min(hole.top + (hole.bottom - hole.top) / 2 - 6, top + Math.min(cardHeight, maxCardHeight) - 24)) }
       : { left: Math.max(left + 24, Math.min(hole.left + (hole.right - hole.left) / 2 - 6, left + cardWidth - 24)), top: side === 'above' ? top + Math.min(cardHeight, maxCardHeight) - 6 : top - 6 }} />}
     <div ref={card} className="tour-card" role="dialog" aria-label="워크스페이스 시작 가이드" aria-describedby="tour-description" tabIndex={-1}
       data-side={side} style={{ top, left, width: cardWidth, maxHeight: maxCardHeight }}>
-      <div className="tour-topline"><span><BookOpen size={14} aria-hidden="true" />시작 가이드 · {step + 1} / {steps.length}</span>
+      <div className="tour-topline"><span><BookOpen size={14} aria-hidden="true" />시작 가이드 · {item.phase} / {phaseCount}</span>
         <button type="button" onClick={finish} className="tour-exit">가이드 종료<X size={14} aria-hidden="true" /></button></div>
-      <div className="tour-progress" aria-hidden="true">{steps.map((_, index) => <span key={index} className={index <= step ? 'is-visited' : ''} />)}</div>
+      <div className="tour-progress" aria-hidden="true">{Array.from({ length: phaseCount }, (_, index) => <span key={index} className={index < item.phase ? 'is-visited' : ''} />)}</div>
       <div className="tour-copy" role="region" aria-label="현재 단계 안내" tabIndex={0}>
         <div key={step + ':' + targetName} className="tour-copy-content">
           <h2>{needsMenu ? '오른쪽 위 메뉴를 열어 주세요.' : item.title}</h2>
@@ -289,7 +299,7 @@ function TourOverlay({ step, move, finish, menuOpen, menuDialog, openMenu, compl
       <footer>
         <button type="button" className={buttonStyles.text} onClick={() => move(step - 1)} disabled={step === 0 || previousBlocked}><ArrowLeft size={15} aria-hidden="true" />이전</button>
         <button type="button" className={buttonStyles.primary} onClick={next} disabled={nextBlocked}>
-          {needsMenu ? '메뉴 열기' : step === steps.length - 1 ? '파일 첨부 시작하기' : '다음 단계'}<ArrowRight size={15} aria-hidden="true" />
+          {needsMenu ? '메뉴 열기' : step === steps.length - 1 ? '서류 올리기 시작' : steps[step + 1].phase === item.phase ? '다음 안내' : '다음 단계'}<ArrowRight size={15} aria-hidden="true" />
         </button>
       </footer>
     </div>

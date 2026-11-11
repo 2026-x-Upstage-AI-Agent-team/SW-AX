@@ -1,17 +1,17 @@
 import { NavLink } from './workspaceNavigation';
+import { teamAssignmentMenu, workflowLabels } from './workspaceMenu';
 import { useEvent } from '../context/EventContext';
 
-/** 파일 첨부 화면의 세 갈래: 파일 첨부하기 · 팀 배정 확인 · 첨부 내역 */
 export default function IntakeTabs() {
   const { dashboard } = useEvent();
   const pending = dashboard?.batches.reduce((n, b) => n + (b.pending ?? 0), 0) ?? 0;
   const tabs: Array<[string, string, boolean]> = [
-    ['/intake', '파일 첨부', true],
-    ['/assign', '팀 배정 확인', false],
-    ['/intake/batches', '첨부 내역', false],
+    ['/intake', workflowLabels.upload, true],
+    ['/intake/batches', workflowLabels.progress, false],
+    [teamAssignmentMenu.to, teamAssignmentMenu.label, false],
   ];
   return (
-    <nav aria-label="파일 첨부" className="segments self-start">
+    <nav aria-label="서류 올리기와 검토 진행" className="segments self-start">
       {tabs.map(([to, label, end]) => (
         <NavLink key={to} to={to} end={end} className="segment" data-tour={to === '/intake/batches' ? 'upload-history' : undefined}>
           {label}

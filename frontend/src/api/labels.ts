@@ -36,7 +36,7 @@ export const stateLabels: Record<string, string> = {
   local: '로컬 수신',
   sending: '발송 중',
   obsolete: '이전 버전',
-  received: '파일 첨부 완료',
+  received: '서류 저장 완료',
 };
 
 export const stateLabel = (state?: string | null) => (state ? stateLabels[state] ?? state : '—');

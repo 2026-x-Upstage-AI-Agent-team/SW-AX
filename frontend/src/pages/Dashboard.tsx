@@ -6,6 +6,7 @@ import type { Verdict } from '../api/service';
 import { Page } from '../components/Layout';
 import { Notice, PageHeader, buttonStyles } from '../components/ui';
 import WorkflowProgress from '../components/WorkflowProgress';
+import { workflowLabels } from '../components/workspaceMenu';
 import { useWorkspaceOverview } from '../context/WorkspaceOverviewContext';
 import { queueGroups, reviewStages } from '../hooks/reviewQueue';
 import { workspaceTasks, type WorkspaceTask as Alert } from '../hooks/workspaceTasks';
@@ -35,8 +36,8 @@ export default function Dashboard() {
   return <Page tone="gray">
     <PageHeader
       title="업무 현황"
-      lead="서류 접수부터 검토와 보고서 확정까지 확인하세요."
-      side={<Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />파일 첨부하기</Link>}
+      lead="서류를 올리고 AI 검토가 끝나면 팀별 결과를 확인하세요."
+      side={<Link to="/intake" className={buttonStyles.primary}><FileUp size={17} aria-hidden="true" />한 팀의 서류 올리기</Link>}
     />
     {!dashboard ? <Notice error={error} onRetry={refresh} /> : <>
       <div className="dashboard-metrics">
@@ -44,7 +45,7 @@ export default function Dashboard() {
           icon={<CircleAlert size={18} aria-hidden="true" />}
           detail={<Link to="/?focus=tasks" className="dashboard-metric-link">확인 목록 보기 <ArrowRight size={16} aria-hidden="true" /></Link>}
         />
-        <MetricCard label="첨부한 팀" count={list.length} unit="팀"
+        <MetricCard label="서류를 올린 팀" count={list.length} unit="팀"
           icon={<FileUp size={18} aria-hidden="true" />}
           detail={`원본 ${dashboard.batches.reduce((total, batch) => total + (batch.count ?? 0), 0)}개`}
         />
@@ -61,7 +62,7 @@ export default function Dashboard() {
         title="서류 자동 처리 중"
         description={[preparing > 0 && `파일 판독 ${preparing}건`, processing > 0 && `자동 검토 대기·진행 ${processing}팀`].filter(Boolean).join(' · ')}
         tone="working"
-        action={<Link to={processing ? '/review?filter=processing' : '/intake/batches'} className={buttonStyles.secondary}>진행 상태 보기</Link>}
+        action={<Link to="/intake/batches" className={buttonStyles.secondary}>{workflowLabels.progressAction}</Link>}
       />}
       <div className="dashboard-analysis">
         <section aria-label="업무 진행 요약" className="surface dashboard-stages">
@@ -79,7 +80,7 @@ export default function Dashboard() {
               <span className="dashboard-stage-count">{count}팀<ArrowRight size={15} aria-hidden="true" /></span>
             </Link>;
           })}</div>
-          <p className="dashboard-caption">AI 판정과 담당자의 서류 승인은 별도 단계입니다. 팀별 검토에서 원문을 대조하고 후속 작업을 진행하세요.</p>
+          <p className="dashboard-caption">AI 검토가 끝나면 ‘{workflowLabels.review}’에서 원문을 대조하고 서류를 승인하거나 보완이 필요한 항목을 기록하세요.</p>
         </section>
         <VerdictSummary rows={list} />
       </div>

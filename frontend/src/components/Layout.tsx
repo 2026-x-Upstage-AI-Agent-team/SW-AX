@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link as PortalLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from 'react-router';
-import { AtSign, ChevronDown, FolderOpen, Inbox, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2 } from 'lucide-react';
+import { AtSign, FolderOpen, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2 } from 'lucide-react';
 import { backend, isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { isLeaderMail, isMailDraft } from '../api/service';
@@ -10,7 +10,7 @@ import { WorkspaceOverviewProvider, useWorkspaceOverview } from '../context/Work
 import { queueGroups } from '../hooks/reviewQueue';
 import { workspaceTasks } from '../hooks/workspaceTasks';
 import { Link, NavLink } from './workspaceNavigation';
-import { currentMenu, documentMenu, primaryMenu, workspaceSection } from './workspaceMenu';
+import { currentMenu, dashboardMenu, mailMenu, workflowMenu, workspaceSection } from './workspaceMenu';
 import { cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
 import { WorkspaceTourProvider, useWorkspaceTour } from './WorkspaceTour';
@@ -21,7 +21,7 @@ import WorkspaceSearch from './WorkspaceSearch';
 import AccountMenu from './AccountMenu';
 
 type NavigationControl = {
-  compact: boolean; documentsOpen: boolean; toggleDocuments: () => void;
+  compact: boolean;
   search: () => void; toggleRail: () => void;
 };
 
@@ -38,21 +38,19 @@ function WorkspaceNav({ worker, control, onNavigate, account }: { worker: Return
   const { categoryId = 'awards' } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const documentsId = useId();
-  const documentsExpanded = control.documentsOpen && !control.compact;
   const section = workspaceSection(pathname);
   const workspaces = events?.filter(item => (item.category_id ?? 'awards') === categoryId);
   const drafts = dashboard?.mail.filter(m => isLeaderMail(m) && isMailDraft(m)).length ?? 0;
   const reviewCount = queueGroups(rows ?? []).review.length;
   const tasks = workspaceTasks(dashboard, rows).length;
-  const documentActive = section === '/assign' || section.startsWith('/intake');
-  const renderMenu = (item: typeof primaryMenu[number]) => {
+  const renderMenu = (item: typeof workflowMenu[number] | typeof dashboardMenu | typeof mailMenu, step?: number) => {
     const count = item.to === '/mail' ? drafts : item.to === '/review' ? reviewCount : item.to === '/' ? tasks : 0;
     const link = <Link key={item.to} to={item.to} onClick={onNavigate} aria-label={item.label}
       aria-current={currentMenu(item.to, section) ? 'page' : undefined} data-tour={item.tour}
       title={item.label + (count ? ` · 확인할 일 ${count}건` : '')}
       className={cx('nav-item', currentMenu(item.to, section) && 'is-current', control.compact && 'justify-center')}>
-      <item.Icon size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>{item.label}</span>
+      {step && !control.compact ? <span className="workflow-step-number" aria-hidden="true">{step}</span> : <item.Icon size={19} aria-hidden="true" />}
+      <span className={control.compact ? 'sr-only' : undefined}>{item.label}</span>
       {!control.compact && count > 0 && item.to !== '/' && <span className="nav-count">{count}</span>}
     </Link>;
     return item.to === '/' ? <div key={item.to} className="relative">{link}{!control.compact && count > 0 && <Link to="/?focus=tasks" onClick={onNavigate} aria-label={`확인할 일 ${count}건`} title={`확인할 일 ${count}건`} className="nav-count absolute right-3 top-1/2 -translate-y-1/2">{count}</Link>}</div> : link;
@@ -65,23 +63,12 @@ function WorkspaceNav({ worker, control, onNavigate, account }: { worker: Return
           onSelect={id => { onNavigate?.(); navigate(workspacePath(id, '/', categoryId)); }} />
       </div>}
     <nav aria-label="주 메뉴" className="workspace-nav">
-      {!control.compact && <p className="rail-label">메뉴</p>}
-      {renderMenu(primaryMenu[0])}
-      <div>
-        <button type="button" onClick={control.toggleDocuments} aria-label="서류 관리" title="서류 관리" aria-expanded={documentsExpanded}
-          aria-controls={control.compact ? undefined : documentsId} aria-current={documentActive && !documentsExpanded ? 'page' : undefined}
-          className={cx('nav-item w-full', documentActive && 'is-current', control.compact && 'justify-center')}>
-          <Inbox size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>서류 관리</span>{!control.compact && <ChevronDown size={15} className="workspace-submenu-chevron ml-auto" aria-hidden="true" />}
-        </button>
-        {!control.compact && <div id={documentsId} className="workspace-submenu motion-disclosure" aria-hidden={!documentsExpanded} inert={!documentsExpanded}>
-          <div className="motion-disclosure-clip">
-            <div className="workspace-submenu-links">{documentMenu.map(item =>
-              <Link key={item.to} to={item.to} onClick={onNavigate} data-tour={item.tour} aria-label={item.label}
-                aria-current={documentsExpanded && currentMenu(item.to, section) ? 'page' : undefined} className={cx('nav-item text-[.85rem]', currentMenu(item.to, section) && 'is-current')}>{item.label}</Link>)}</div>
-          </div>
-        </div>}
-      </div>
-      {primaryMenu.slice(1).map(renderMenu)}
+      {renderMenu(dashboardMenu)}
+      {!control.compact && <p className="rail-label">업무 순서</p>}
+      <ol className="workspace-nav" aria-label="업무 순서" role="list">
+        {workflowMenu.map((item, index) => <li key={item.to}>{renderMenu(item, index + 1)}</li>)}
+      </ol>
+      {renderMenu(mailMenu)}
     </nav>
     <div className="sidebar-foot">
       {!control.compact && <p className="rail-label">설정</p>}
@@ -118,7 +105,6 @@ function WorkspaceLayout() {
     if (active) return false;
     try { return localStorage.getItem(railKey) === 'true'; } catch { return false; }
   });
-  const [documentsOpen, setDocumentsOpen] = useState(() => active || /\/(intake|assign)(\/|$)/.test(pathname));
   const [searchOpen, setSearchOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState<'toolbar' | 'drawer' | null>(null);
   const session = useApi<{ login: string | null }>(isDemoBackend ? null : '/api/auth/session');
@@ -131,15 +117,14 @@ function WorkspaceLayout() {
     close();
     setSearchOpen(true);
   }, [close]);
-  const startGuide = () => { setCollapsed(false); setDocumentsOpen(true); setAccountOpen(null); start(); };
+  const startGuide = () => { setCollapsed(false); setAccountOpen(null); start(); };
   useEffect(() => { try { localStorage.setItem(railKey, String(collapsed)); } catch { /* Optional preference. */ } }, [collapsed, railKey]);
-  useLayoutEffect(() => { if (active) { setCollapsed(false); setDocumentsOpen(true); } }, [active]);
+  useLayoutEffect(() => { if (active) setCollapsed(false); }, [active]);
   useEffect(() => { document.title = `${event?.name ?? '워크스페이스'} | SW·AX`; }, [event?.name]);
   useEffect(() => {
     if (previousPath.current === pathname) return;
     previousPath.current = pathname;
     close();
-    if (/\/(intake|assign)(\/|$)/.test(pathname)) setDocumentsOpen(true);
     if (navigation !== 'POP') window.scrollTo(0, 0);
   }, [pathname, navigation, close]);
   useEffect(() => {
@@ -157,9 +142,7 @@ function WorkspaceLayout() {
     return () => window.removeEventListener('keydown', onKey);
   }, [openSearch]);
   const control: NavigationControl = {
-    compact: collapsed, documentsOpen,
-    toggleDocuments: () => { if (collapsed) { setCollapsed(false); setDocumentsOpen(true); } else setDocumentsOpen(value => !value); },
-    search: openSearch, toggleRail: () => setCollapsed(value => !value),
+    compact: collapsed, search: openSearch, toggleRail: () => setCollapsed(value => !value),
   };
   return <div className="workspace" data-rail-collapsed={collapsed} data-tour-active={active}>
     <a className="skip-link" href="#workspace-content" onClick={event => { event.preventDefault(); document.getElementById('workspace-content')?.focus(); }}>본문으로 바로가기</a>

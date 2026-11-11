@@ -40,22 +40,30 @@ async function pageFor(t, width = 1440, tour = false) {
   return page;
 }
 
-test('서류 관리 하위 메뉴와 독립된 팀별 검토는 현재 워크스페이스에서 이동한다', async t => {
+test('업무 순서 네 메뉴와 팀장 안내 메일을 현재 워크스페이스에서 열 수 있다', async t => {
   const page = await pageFor(t);
   await page.goto(root + '/review');
   const rail = page.getByRole('complementary', { name: '작업 공간' });
-  await page.getByRole('heading', { name: '팀별 검토', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '팀별 결과 확인', exact: true }).waitFor();
   if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-navigation-desktop.png', fullPage: true });
-  assert.match(await rail.locator('[aria-current=page]').innerText(), /팀별 검토/);
-  await rail.getByRole('button', { name: '서류 관리', exact: true }).click();
-  assert.equal(await rail.getByRole('link', { name: '파일 첨부', exact: true }).isVisible(), true);
-  await rail.getByRole('link', { name: '파일 첨부', exact: true }).click();
-  await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
-  await rail.getByRole('link', { name: '첨부 내역', exact: true }).click();
+  assert.match(await rail.locator('[aria-current=page]').innerText(), /팀별 결과 확인/);
+  const workflow = rail.getByRole('list', { name: '업무 순서', exact: true });
+  assert.deepEqual(await workflow.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))),
+    ['서류 올리기', '검토 진행', '팀별 결과 확인', '지급 보고서']);
+  await workflow.getByRole('link', { name: '서류 올리기', exact: true }).click();
+  await page.getByRole('heading', { level: 1, name: '서류 올리기', exact: true }).waitFor();
+  await workflow.getByRole('link', { name: '검토 진행', exact: true }).click();
   await page.waitForURL('**/workspaces/nav-test/intake/batches');
   assert.equal(await rail.locator('[aria-current=page]').count(), 1);
-  assert.equal(await rail.locator('[aria-current=page]').innerText(), '첨부 내역');
-  await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
+  assert.match(await rail.locator('[aria-current=page]').innerText(), /검토 진행/);
+  await page.getByRole('heading', { name: '검토 진행', exact: true }).waitFor();
+  await page.getByRole('main').getByRole('link', { name: '팀 배정 확인', exact: true }).click();
+  await page.waitForURL('**/workspaces/nav-test/assign');
+  await page.getByRole('heading', { name: '팀 배정 확인', exact: true }).waitFor();
+  await workflow.getByRole('link', { name: '지급 보고서', exact: true }).click();
+  await page.getByRole('heading', { name: '지급 보고서', exact: true }).waitFor();
+  await rail.getByRole('link', { name: '팀장 안내 메일', exact: true }).click();
+  await page.getByRole('heading', { name: '팀장 안내 메일', exact: true }).waitFor();
 });
 
 test('워크스페이스 검색은 팀과 원본 파일을 찾아 해당 제출본과 첨부 내역으로 연결한다', async t => {
@@ -101,7 +109,7 @@ test('워크스페이스 선택 목록은 현재 공간을 표시하고 키보�
   assert.equal(await list.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(255, 255, 255)');
   assert.equal(await current.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(236, 253, 245)');
   if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-picker-desktop.png' });
-  await page.getByRole('heading', { name: '팀별 검토', exact: true }).click();
+  await page.getByRole('heading', { name: '팀별 결과 확인', exact: true }).click();
   await list.waitFor({ state: 'hidden' });
   await picker.press('ArrowDown');
   await current.press('ArrowDown');
@@ -126,7 +134,7 @@ test('워크스페이스 선택 목록은 현재 공간을 표시하고 키보�
   await menu.waitFor({ state: 'hidden' });
 });
 
-test('서류 메뉴와 워크스페이스 목록 및 검색은 동작 줄이기 설정을 반영한다', async t => {
+test('워크스페이스 목록과 검색은 동작 줄이기 설정을 반영한다', async t => {
   const page = await pageFor(t);
   for (const reducedMotion of ['no-preference', 'reduce']) {
     await page.emulateMedia({ reducedMotion });
@@ -142,22 +150,6 @@ test('서류 메뉴와 워크스페이스 목록 및 검색은 동작 줄이기 
     };
 
     const rail = page.getByRole('complementary', { name: '작업 공간' });
-    const documents = rail.getByRole('button', { name: '서류 관리', exact: true });
-    const submenu = rail.locator('.workspace-submenu');
-    const attachment = rail.getByRole('link', { name: '파일 첨부', exact: true });
-    await submenu.evaluate(element => element.addEventListener('transitionend', event => {
-      if (event.propertyName === 'grid-template-rows') element.dataset.expandedMotionFinished = 'true';
-    }));
-    await documents.click();
-    await attachment.waitFor();
-    await assertMotion(submenu, '서류 관리 하위 메뉴');
-    if (reducedMotion === 'no-preference') {
-      await rail.locator('.workspace-submenu[data-expanded-motion-finished="true"]').waitFor();
-    }
-    await documents.click();
-    await attachment.waitFor({ state: 'hidden' });
-    assert.equal(await submenu.getAttribute('aria-hidden'), 'true');
-
     const picker = rail.getByRole('button', { name: '워크스페이스 선택', exact: true });
     const workspaces = rail.getByRole('list', { name: '전환할 워크스페이스' });
     await picker.press('ArrowDown');
@@ -195,15 +187,15 @@ test('파일 검색 실패를 빈 결과로 숨기지 않고 다시 조회한다
   await dialog.getByRole('region', { name: '파일 검색 결과' }).getByRole('link').waitFor();
 });
 
-test('접힌 사이드바를 기억하고 하위 메뉴와 시작 가이드에서 다시 펼친다', async t => {
+test('접힌 사이드바를 기억하고 시작 가이드에서 다시 펼친다', async t => {
   const page = await pageFor(t);
   await page.goto(root + '/review');
   await page.getByRole('button', { name: '사이드바 접기', exact: true }).click();
   await page.reload();
   await page.getByRole('button', { name: '사이드바 펼치기', exact: true }).waitFor();
   const rail = page.getByRole('complementary', { name: '작업 공간' });
-  await rail.getByRole('button', { name: '서류 관리', exact: true }).click();
-  await rail.getByRole('link', { name: '파일 첨부', exact: true }).waitFor();
+  await rail.getByRole('button', { name: '사이드바 펼치기', exact: true }).click();
+  await rail.getByRole('link', { name: '서류 올리기', exact: true }).waitFor();
   await page.getByRole('button', { name: '사이드바 접기', exact: true }).click();
   const helpButton = page.getByRole('button', { name: '도움말 열기', exact: true });
   const help = page.getByRole('group', { name: '도움말', exact: true });
@@ -217,9 +209,9 @@ test('접힌 사이드바를 기억하고 하위 메뉴와 시작 가이드에�
   await help.waitFor({ state: 'hidden' });
   await helpButton.click();
   await help.getByRole('button', { name: '시작 가이드', exact: true }).click();
-  await page.getByRole('heading', { name: '먼저, 파일 첨부를 눌러 주세요.' }).waitFor();
+  await page.getByRole('heading', { name: '한 팀의 서류를 올려 보세요.' }).waitFor();
   await help.waitFor({ state: 'hidden' });
-  assert.equal(await rail.getByRole('link', { name: '파일 첨부', exact: true }).isVisible(), true);
+  assert.equal(await rail.getByRole('link', { name: '서류 올리기', exact: true }).isVisible(), true);
   await page.keyboard.press('Escape');
 });
 
@@ -234,8 +226,8 @@ test('320px 모바일 메뉴에서 설정·Gmail·팀장 안내로 이동하며 
   assert.equal(await menu.isVisible(), false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.getByRole('button', { name: '메뉴 열기', exact: true }).click();
-  await menu.getByRole('link', { name: '팀장 안내', exact: true }).click();
-  await page.getByRole('heading', { name: '팀장 안내', exact: true }).waitFor();
+  await menu.getByRole('link', { name: '팀장 안내 메일', exact: true }).click();
+  await page.getByRole('heading', { name: '팀장 안내 메일', exact: true }).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 });
 
@@ -256,7 +248,7 @@ test('팀장 안내의 메일 목록과 초안 검토는 정렬되고 좁은 화
 
   await list.getByText('승인을 기다리는 메일이 없습니다.').waitFor();
   await checkDesktop();
-  await tabs.getByRole('button', { name: '팀장 안내 0', exact: true }).click();
+  await tabs.getByRole('button', { name: '전체 메일 0', exact: true }).click();
   await list.getByText('아직 만들어진 메일이 없습니다.').waitFor();
   await checkDesktop();
 
@@ -331,7 +323,7 @@ test('업무 현황은 판정 분포와 진행 요약을 보여주고 검토 작
   assert.equal(await rail.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
   assert.equal(await rail.locator('.brand-mark path[d="M15.6 27L21.5 32.9L34 19.5"]').evaluate(node => getComputedStyle(node).stroke), 'rgb(5, 150, 105)');
   assert.equal(await rail.getByRole('link', { name: '업무 현황', exact: true }).evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(15, 23, 42)');
-  assert.equal(await page.getByRole('link', { name: '파일 첨부하기', exact: true }).evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(4, 120, 87)');
+  assert.equal(await page.getByRole('link', { name: '한 팀의 서류 올리기', exact: true }).evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(4, 120, 87)');
   if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-dashboard.png', fullPage: true });
   assert.equal(await page.getByRole('group', { name: '검토 작업 필터' }).count(), 0);
   assert.equal(await page.getByRole('region', { name: '팀별 판정 표' }).count(), 0);
@@ -350,7 +342,7 @@ test('검토 검색과 필터는 원문을 열었다 돌아와도 유지된다',
   await page.getByRole('searchbox', { name: '팀명 또는 대표자 검색' }).fill('가온');
   await page.getByRole('link', { name: '가온팀 원문 대조', exact: true }).click();
   await page.getByRole('heading', { name: '미확인', exact: true }).waitFor();
-  await page.getByRole('link', { name: '← 팀별 검토', exact: true }).click();
+  await page.getByRole('link', { name: '← 팀별 결과 확인', exact: true }).click();
   await page.getByRole('searchbox', { name: '팀명 또는 대표자 검색' }).waitFor();
   assert.equal(await page.getByRole('searchbox', { name: '팀명 또는 대표자 검색' }).inputValue(), '가온');
   assert.equal(await page.getByRole('button', { name: '전체 1', pressed: true }).count(), 1);
@@ -367,9 +359,9 @@ test('보완 진행 팀은 메일 승인과 보완 첨부를, 승인 팀은 지�
   const mail = [{ id: 'draft-mail', submission: 'draft', kind: '팀장 보완 요청', state: 'draft' }, { id: 'sent-mail', submission: 'sent', kind: '팀장 보완 요청', state: 'sent' }];
   await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, mail } }));
   await page.goto(root + '/review?filter=supplement');
-  await page.getByRole('link', { name: '안내팀 보완 안내 검토', exact: true }).waitFor();
-  assert.match(await page.getByRole('link', { name: '안내팀 보완 안내 검토' }).getAttribute('href'), /\/mail\?mail=draft-mail$/);
-  assert.match(await page.getByRole('link', { name: '보완팀 보완 서류 첨부' }).getAttribute('href'), /\/intake\?base=sent$/);
+  await page.getByRole('link', { name: '안내팀 안내 메일 검토', exact: true }).waitFor();
+  assert.match(await page.getByRole('link', { name: '안내팀 안내 메일 검토' }).getAttribute('href'), /\/mail\?mail=draft-mail$/);
+  assert.match(await page.getByRole('link', { name: '보완팀 보완 서류 올리기' }).getAttribute('href'), /\/intake\?base=sent$/);
   for (const width of [1024, 736, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -378,4 +370,41 @@ test('보완 진행 팀은 메일 승인과 보완 첨부를, 승인 팀은 지�
   await page.getByRole('button', { name: '승인 완료 1' }).click();
   assert.match(await page.getByRole('link', { name: '승인팀 지급 정보 입력' }).getAttribute('href'), /\/report$/);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+});
+
+test('보완이 필요한 팀 상세에서 그 팀의 안내 메일을 바로 연다', async t => {
+  const page = await pageFor(t);
+  const matching = { id: 'gaon-mail', submission: submission.id, kind: '팀장 보완 요청', state: 'draft', name: team.name, created: 1, sent_to: null };
+  const other = { ...matching, id: 'other-mail', submission: 'other-submission', name: '다른 팀' };
+  let hasDraft = true;
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: {
+    ...dashboard, mail: hasDraft ? [other, matching] : [other],
+  } }));
+  await page.route('**/api/operations/submissions/submission-1', route => route.fulfill({ json: {
+    ...submission, decision: '보완 필요', mail: hasDraft ? [matching] : [],
+  } }));
+  await page.route('**/api/mail/gaon-mail', route => route.fulfill({ json: {
+    ...matching, subject: '가온팀 보완 요청', body: '보완 서류를 확인해 주세요.', recipient: 'leader@example.test', revision: 1, can_approve: true,
+  } }));
+  const writes = [];
+  page.on('request', request => { if (request.method() !== 'GET') writes.push(request.method()); });
+  const detail = root + '/teams/submission-1';
+  const link = page.getByRole('main').getByRole('link', { name: '안내 메일 검토', exact: true });
+  await page.goto(detail);
+  await link.click();
+  await page.waitForURL('**/mail?mail=gaon-mail');
+  const subject = page.getByRole('textbox', { name: '제목', exact: true });
+  await subject.waitFor();
+  assert.equal(await subject.inputValue(), '가온팀 보완 요청');
+
+  hasDraft = false;
+  await page.goto(detail);
+  await page.reload();
+  await link.click();
+  await page.waitForURL('**/mail?supplement=submission-1');
+  const list = page.getByRole('region', { name: '메일 목록', exact: true });
+  await list.waitFor();
+  assert.equal(await list.getByText('다른 팀', { exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: '승인 후 발송', exact: true }).count(), 0);
+  assert.deepEqual(writes, []);
 });

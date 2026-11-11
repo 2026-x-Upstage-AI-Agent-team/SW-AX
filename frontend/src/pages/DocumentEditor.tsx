@@ -5,6 +5,7 @@ import { createEditor, type RhwpEditor } from '@rhwp/editor';
 import { ApiError } from '../api/client';
 import { exportEditedHwpx, getEditHistory, readVersion, saveVersion, versionName, versionUrl, type EditHistory } from '../api/documentVersions';
 import { buttonStyles, Feedback } from '../components/ui';
+import { workflowLabels } from '../components/workspaceMenu';
 import { workspacePath } from '../api/workspaces';
 
 export default function DocumentEditor() {
@@ -165,7 +166,7 @@ function Editor({ file }: { file: string }) {
           if (locked.current || !(await canLeave())) return;
           if (legacy) window.location.assign(returnUrl);
           else navigate(back);
-        }}><ArrowLeft size={16} />{review || legacyRoute.startsWith('review') ? '팀별 검토' : '팀 배정 확인'}</a>
+        }}><ArrowLeft size={16} />{review || legacyRoute.startsWith('review') ? workflowLabels.review : '팀 배정 확인'}</a>
         <div className="min-w-36 flex-1">
           <h1 className="font-bold text-ink">한글 문서 편집</h1>
           {history && <p className="break-all text-sm text-muted">{history.name}</p>}

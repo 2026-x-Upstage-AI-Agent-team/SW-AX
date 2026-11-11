@@ -5,7 +5,7 @@ import { receiptName } from '../api/intake';
 import { useEvent } from '../context/EventContext';
 import { Link } from './workspaceNavigation';
 import { buttonStyles, inputStyle } from './ui';
-import { documentMenu, primaryMenu } from './workspaceMenu';
+import { primaryMenu, teamAssignmentMenu, workflowLabels } from './workspaceMenu';
 
 type SearchFile = FileInfo & { batch: string };
 
@@ -52,7 +52,7 @@ export default function WorkspaceSearch({ open, onClose }: { open: boolean; onCl
   const matches = (value: string) => value.toLocaleLowerCase().includes(text);
   const teams = dashboard?.teams.filter(team => matches(`${receiptName(team.name, team.intake_number)} ${team.rep}`)) ?? [];
   const matchingFiles = useMemo(() => text ? files.filter(file => file.name.toLocaleLowerCase().includes(text)) : [], [files, text]);
-  const pages = [...primaryMenu, ...documentMenu].filter(item => matches(item.label));
+  const pages = [...primaryMenu, teamAssignmentMenu].filter(item => matches(item.label));
 
   return <dialog ref={dialog} className="deletion-dialog" aria-labelledby="workspace-search-title" onClose={onClose}
     onCancel={event => { event.preventDefault(); onClose(); }}
@@ -69,13 +69,13 @@ export default function WorkspaceSearch({ open, onClose }: { open: boolean; onCl
       {!dashboard && <p className="py-3 text-sm text-muted">자료를 불러오고 있습니다. 잠시 후 다시 검색해 주세요.</p>}
       {teams.length > 0 && <section key={'teams:' + text} className="motion-results" aria-label="팀 검색 결과"><h2 className="text-sm font-bold">팀 <span>{teams.length}</span></h2>
         {teams.slice(0, 8).map(team => <Link key={team.id} to={team.current ? '/teams/' + team.current : '/review?filter=all&team=' + encodeURIComponent(team.id)} className="file-download mt-2" onClick={onClose}>
-          <Users size={18} aria-hidden="true" /><span><strong>{receiptName(team.name, team.intake_number)}</strong><small>{team.current ? '팀별 검토 열기' : '아직 제출본 없음'}</small></span><ArrowUpRight size={16} aria-hidden="true" />
+          <Users size={18} aria-hidden="true" /><span><strong>{receiptName(team.name, team.intake_number)}</strong><small>{team.current ? workflowLabels.review : '아직 제출본 없음'}</small></span><ArrowUpRight size={16} aria-hidden="true" />
         </Link>)}
         {teams.length > 8 && <p className="py-3 text-sm text-muted">{teams.length}팀 중 8팀 표시 · 검색어를 더 입력해 주세요.</p>}
       </section>}
       {matchingFiles.length > 0 && <section key={'files:' + text} className="motion-results" aria-label="파일 검색 결과"><h2 className="text-sm font-bold">첨부 파일 <span>{matchingFiles.length}</span></h2>
         {matchingFiles.slice(0, 8).map(file => <Link key={file.id} to={'/intake/batches/' + file.batch} className="file-download mt-2" onClick={onClose}>
-          <FileText size={18} aria-hidden="true" /><span><strong>{file.name}</strong><small>첨부 내역에서 원본 확인</small></span><ArrowUpRight size={16} aria-hidden="true" />
+          <FileText size={18} aria-hidden="true" /><span><strong>{file.name}</strong><small>검토 진행에서 원본 확인</small></span><ArrowUpRight size={16} aria-hidden="true" />
         </Link>)}
         {matchingFiles.length > 8 && <p className="py-3 text-sm text-muted">{matchingFiles.length}개 중 8개 표시 · 검색어를 더 입력해 주세요.</p>}
       </section>}

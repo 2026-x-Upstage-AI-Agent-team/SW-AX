@@ -72,15 +72,16 @@ async function assertGuideAttached(page, targetName) {
   }, targetName);
 }
 
-test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화면 순서를 둘러본다', async t => {
+test('첫 진입 가이드는 서류 올리기부터 지급 보고서까지 실제 버튼을 4단계로 안내한다', async t => {
   const page = await newPage(t, 1280, true);
   const writes = [];
   page.on('request', request => { if (request.method() !== 'GET') writes.push(request.url()); });
   await page.goto('/#/categories/awards/workspaces/test/');
   const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
-  await guide.getByRole('heading', { name: '먼저, 파일 첨부를 눌러 주세요.' }).waitFor();
+  await guide.getByRole('heading', { name: '한 팀의 서류를 올려 보세요.' }).waitFor();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
-  await page.locator('.workspace-rail').getByRole('link', { name: '파일 첨부', exact: true }).click();
+  assert.match(await guide.locator('.tour-topline').innerText(), /1\s*\/\s*4/);
+  await page.locator('.workspace-rail').getByRole('link', { name: '서류 올리기', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
   await page.reload();
@@ -88,25 +89,28 @@ test('첫 진입 가이드는 실제 메뉴와 파일 버튼을 강조하고 화
   await guide.getByRole('button', { name: '이전', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test');
-  await page.locator('.workspace-rail').getByRole('link', { name: '파일 첨부', exact: true }).click();
+  await page.locator('.workspace-rail').getByRole('link', { name: '서류 올리기', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
   await page.goBack();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
-  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await guide.getByRole('button', { name: '다음 안내' }).click();
   await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
-  await guide.getByRole('button', { name: '다음 단계' }).click();
+  assert.match(await guide.locator('.tour-topline').innerText(), /1\s*\/\s*4/);
+  await guide.getByRole('button', { name: '다음 안내' }).click();
   await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
-  assert.ok(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isDisabled());
+  assert.match(await guide.locator('.tour-topline').innerText(), /1\s*\/\s*4/);
+  assert.ok(await page.getByRole('button', { name: '선택한 서류 올리기', exact: true }).isDisabled());
   for (const [width, height] of [[1280, 850], [1535, 722], [1024, 768]]) {
     await page.setViewportSize({ width, height });
     await assertGuideAttached(page, 'upload-submit');
   }
   await page.setViewportSize({ width: 1280, height: 850 });
-  for (const target of ['upload-history', 'nav-review', 'nav-mail', 'nav-report']) {
+  for (const [target, step] of [['upload-history', 2], ['nav-review', 3], ['nav-report', 4]]) {
     await guide.getByRole('button', { name: '다음 단계' }).click();
     await page.locator(`.tour-spotlight[data-target="${target}"]`).waitFor();
+    assert.match(await guide.locator('.tour-topline').innerText(), new RegExp(`${step}\\s*/\\s*4`));
   }
-  await guide.getByRole('button', { name: '파일 첨부 시작하기' }).click();
+  await guide.getByRole('button', { name: '서류 올리기 시작' }).click();
   await guide.waitFor({ state: 'hidden' });
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake');
   await page.goto('/#/categories/awards/workspaces/test/');
@@ -128,17 +132,17 @@ test('가이드의 새 안내와 말풍선 전환은 실제 메뉴 이동과 함
   await assertGuideAttached(page, 'nav-upload');
   await page.evaluate(() => {
     document.addEventListener('animationstart', event => {
-      if (event.target.matches('.workspace-tour[data-tour-step="2"] .tour-copy-content')) {
+      if (event.target.matches('.tour-copy-content') && event.target.textContent.includes('한 팀의 서류를 함께 선택하세요.')) {
         event.target.dataset.entered = 'true';
       }
     });
     document.addEventListener('transitionend', event => {
-      if (event.propertyName === 'left' && event.target.matches('.workspace-tour[data-tour-step="2"] .tour-card')) {
+      if (event.propertyName === 'left' && event.target.matches('.tour-card') && event.target.textContent.includes('한 팀의 서류를 함께 선택하세요.')) {
         event.target.dataset.moved = 'true';
       }
     });
   });
-  await page.locator('.workspace-rail').getByRole('link', { name: '파일 첨부', exact: true }).click();
+  await page.locator('.workspace-rail').getByRole('link', { name: '서류 올리기', exact: true }).click();
   const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
   await guide.getByRole('heading', { name: '한 팀의 서류를 함께 선택하세요.' }).waitFor();
   await guide.locator('.tour-copy-content[data-entered="true"]').waitFor();
@@ -149,22 +153,22 @@ test('가이드의 새 안내와 말풍선 전환은 실제 메뉴 이동과 함
   assert.equal(await guide.locator('.tour-copy-content').evaluate(node => getComputedStyle(node).animationName), 'none');
 });
 
-test('320px 가이드는 메뉴를 열고 실제 파일 첨부 버튼을 누를 수 있으며 종료를 기억한다', async t => {
+test('320px 가이드는 메뉴를 열고 실제 서류 올리기 버튼을 누를 수 있으며 종료를 기억한다', async t => {
   const page = await newPage(t, 320, true);
   await page.goto('/#/categories/awards/workspaces/test/');
   const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
   await page.locator('.tour-spotlight[data-target="menu-open"]').waitFor();
   await guide.getByRole('button', { name: '메뉴 열기', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="nav-upload"]').waitFor();
-  await page.getByRole('dialog', { name: '작업 메뉴', exact: true }).getByRole('link', { name: '파일 첨부', exact: true }).click();
+  await page.getByRole('dialog', { name: '작업 메뉴', exact: true }).getByRole('link', { name: '서류 올리기', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
   const card = await guide.boundingBox();
-  const target = await page.getByRole('button', { name: '첨부할 서류 파일 선택' }).boundingBox();
+  const target = await page.getByRole('button', { name: '파일 선택', exact: true }).boundingBox();
   assert.ok(card.x >= 0 && card.x + card.width <= 320 && card.y >= 0 && card.y + card.height <= 850);
   assert.ok(card.y + card.height <= target.y || card.y >= target.y + target.height, 'Tooltip must leave the highlighted button uncovered.');
   await assertGuideAttached(page, 'file-picker');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await guide.getByRole('button', { name: '다음 안내' }).click();
   await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
   await assertGuideAttached(page, 'upload-submit');
   await page.setViewportSize({ width: 554, height: 706 });
@@ -196,17 +200,17 @@ test('가이드는 선택한 서류를 버리고 이동하지 않으며 종료 �
   const page = await newPage(t, 1280, true);
   await page.goto('/#/categories/awards/workspaces/test/');
   const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드' });
-  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await guide.getByRole('button', { name: '다음 안내' }).click();
   await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
   await page.locator('input[type=file]').setInputFiles({ name: '01_가이드시험.hwpx', mimeType: 'application/octet-stream', buffer: Buffer.from('tour-selection-only') });
   await page.waitForFunction(() => document.querySelector('[data-tour="upload-form"]')?.dataset.tourPending === 'true');
   assert.ok(await guide.getByRole('button', { name: '이전', exact: true }).isDisabled());
-  await guide.getByRole('button', { name: '다음 단계' }).click();
+  await guide.getByRole('button', { name: '다음 안내' }).click();
   await page.locator('.tour-spotlight[data-target="upload-submit"]').waitFor();
   assert.ok(await guide.getByRole('button', { name: '다음 단계' }).isDisabled());
   await guide.getByRole('button', { name: '가이드 종료' }).click();
   await page.getByText('01_가이드시험.hwpx', { exact: true }).waitFor();
-  assert.ok(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isEnabled());
+  assert.ok(await page.getByRole('button', { name: '선택한 서류 올리기', exact: true }).isEnabled());
   await page.getByRole('button', { name: '도움말 열기', exact: true }).click();
   await page.getByRole('button', { name: '시작 가이드', exact: true }).click();
   await page.locator('.tour-spotlight[data-target="file-picker"]').waitFor();
@@ -537,7 +541,7 @@ test('사이드바 실행 버튼은 한 번만 요청하고 모바일 메뉴와 
   finish();
   await menu.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
   assert.equal(starts, 1);
-  await menu.getByRole('link', { name: '팀장 안내' }).click();
+  await menu.getByRole('link', { name: '팀장 안내 메일', exact: true }).click();
   await page.getByRole('button', { name: '메뉴 열기' }).click();
   await menu.getByRole('status').filter({ hasText: '실행 중' }).waitFor();
   result = null;
@@ -726,6 +730,13 @@ test('조회 실패를 빈 접수로 표시하지 않고 다시 조회하며 배
 
 test('업로드 오류를 파일 선택기에 연결하고 전송이 끝나면 서버 저장 대기를 표시한다', { timeout: 25000 }, async t => {
   const page = await newPage(t, 375);
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: {
+    ...dashboard, batches: [{ ...batch, state: 'preparing', pending: 0 }],
+  } }));
+  await page.route('**/api/intake-batches/batch', route => route.fulfill({ json: {
+    batch: { batch_id: 'batch', event_id: event.id, status: 'received', created_at: '2026-11-09T09:00:00Z', file_count: 1, total_bytes: 9 },
+    files: [], teams: [],
+  } }));
   await page.goto('/#/categories/awards/workspaces/test/intake');
   const picker = page.locator('input[type=file]');
   const sample = { name, mimeType: 'application/octet-stream', buffer: Buffer.from('test-file') };
@@ -733,24 +744,27 @@ test('업로드 오류를 파일 선택기에 연결하고 전송이 끝나면 �
   await picker.setInputFiles({ ...sample, name: '잘못된형식.pdf' });
   const error = page.getByRole('alert');
   await error.waitFor();
-  const choose = page.getByRole('button', { name: '첨부할 서류 파일 선택' });
+  const choose = page.getByRole('button', { name: '파일 선택', exact: true });
   assert.ok((await choose.getAttribute('aria-describedby')).split(' ').includes(await error.getAttribute('id')));
   assert.equal(await page.getByText(name, { exact: true }).count(), 1);
   const received = new Promise(resolve => { receiveUpload = resolve; });
-  await page.getByRole('button', { name: '파일 첨부하기' }).click();
+  await page.getByRole('button', { name: '선택한 서류 올리기', exact: true }).click();
   const response = await received;
   try {
     await page.getByRole('progressbar', { name: '원본 저장 확인' }).waitFor();
-    assert.ok(await page.getByRole('button', { name: '첨부 중…' }).isDisabled());
+    assert.ok(await page.getByRole('button', { name: '서류 올리는 중…' }).isDisabled());
   } finally {
     receiveUpload = undefined;
     response.writeHead(202, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify({ batch_id: 'batch' }));
   }
   await page.waitForURL('**/#/categories/awards/workspaces/test/intake/batches/batch');
+  await page.getByRole('link', { name: '검토 진행 보기', exact: true }).click();
+  await page.locator('dd').filter({ hasText: /^batch$/ }).waitFor();
+  assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake/batches/batch');
 });
 
-test('첨부 상세는 판독·대기·자동 검토를 갱신하고 결과가 나오면 로딩을 멈춘다', async t => {
+test('서류를 올리면 검토 진행을 보여주고 같은 묶음의 검토가 끝나면 팀별 결과로 연결한다', async t => {
   const page = await newPage(t);
   await page.clock.install();
   let state = 'preparing';
@@ -766,7 +780,7 @@ test('첨부 상세는 판독·대기·자동 검토를 갱신하고 결과가 �
       review_job:{review_job_id:'job',state:state === 'paused' ? 'running' : state}}],
   } }));
   await page.goto('/#/categories/awards/workspaces/test/intake');
-  assert.equal(await page.getByLabel('첨부할 팀').inputValue(), 'bundle');
+  assert.equal(await page.getByLabel('서류를 올릴 팀').inputValue(), 'bundle');
   await page.locator('input[type=file]').setInputFiles({ name:'증빙.hwp', mimeType:'application/octet-stream', buffer:Buffer.from('test') });
   const posted = new Promise(resolve => {
     receiveUpload = (res, bytes) => {
@@ -777,12 +791,16 @@ test('첨부 상세는 판독·대기·자동 검토를 갱신하고 결과가 �
     };
   });
   t.after(() => { receiveUpload = undefined; });
-  await page.getByRole('button', {name:'파일 첨부하기'}).click();
+  await page.getByRole('button', { name: '선택한 서류 올리기', exact: true }).click();
   const body = await posted;
   assert.match(body, /name="mode"\r\n\r\nbundle/);
   assert.doesNotMatch(body, /name="target"/);
   await page.waitForURL('**/#/categories/awards/workspaces/test/intake/batches/numbered');
-  await page.locator('dd').filter({hasText:/^1번 팀$/}).waitFor();
+  await page.getByText(/^서류 1개를 올렸어요\./).waitFor();
+  const main = page.getByRole('main');
+  const progress = main.getByRole('link', { name: '검토 진행 보기', exact: true });
+  await progress.waitFor();
+  assert.match(await progress.getAttribute('href'), /\/intake\/batches\/numbered$/);
   await page.getByRole('progressbar', { name: '첨부한 파일을 판독 중이에요' }).waitFor();
   for (const [next, label] of [['queued', '자동 검토를 기다리고 있어요'], ['running', 'AI가 서류를 검토 중이에요']]) {
     state = next;
@@ -792,13 +810,19 @@ test('첨부 상세는 판독·대기·자동 검토를 갱신하고 결과가 �
   await page.setViewportSize({ width: 320, height: 850 });
   state = 'done';
   await page.clock.fastForward(3100);
-  await page.getByText('1번 팀 · 가상검토팀01', {exact:true}).first().waitFor();
   await page.getByRole('heading', { name: 'AI 검토가 완료됐어요' }).waitFor();
   assert.equal(await page.getByRole('progressbar').count(), 0);
-  assert.match(await page.getByRole('link', { name: '검토 결과 보기' }).getAttribute('href'), /\/teams\/submission$/);
+  assert.equal(await progress.count(), 0);
+  const result = main.getByRole('link', { name: '팀별 결과 확인', exact: true });
+  assert.match(await result.getAttribute('href'), /\/teams\/submission$/);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  assert.equal(await page.getByText('1번 팀 · 가상검토팀01', {exact:true}).count(), 2);
   assert.equal(new URL(page.url()).hash, '#/categories/awards/workspaces/test/intake/batches/numbered');
+  await result.click();
+  await page.waitForURL('**/workspaces/test/teams/submission');
+
+  await page.goto('/#/categories/awards/workspaces/test/intake/batches/numbered');
+  await page.getByText('1번 팀 · 가상검토팀01', { exact: true }).first().waitFor();
+  assert.equal(await page.getByText('1번 팀 · 가상검토팀01', { exact: true }).count(), 2);
 
   for (const stopped of ['paused', 'failed']) {
     state = stopped;

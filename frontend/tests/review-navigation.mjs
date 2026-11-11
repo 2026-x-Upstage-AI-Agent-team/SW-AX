@@ -82,7 +82,7 @@ if (mailId) {
     await page.goto('/#/intake/batches/' + conflictId);
     await page.getByText('보완본 담당자 확인', { exact: true }).waitFor();
     assert.ok(await page.locator('a[download]').count());
-    await page.getByRole('link', { name: '최신 제출본에서 보완 서류 첨부' }).click();
+    await page.getByRole('link', { name: '최신 제출본에서 보완 서류 올리기' }).click();
     await page.getByRole('heading', { name: /가상검토팀01 보완본 \(v2/ }).waitFor();
     assert.ok(page.url().endsWith('base=' + batch.current_submission));
     await page.goBack();
@@ -92,7 +92,7 @@ if (mailId) {
     const row = page.getByRole('listitem').filter({ hasText: '01 지급확인서 1쪽 첫째 행에 학번이 없습니다.' }).first();
     await row.getByRole('button', { name: '01 지급확인서 · 1쪽 · 1행' }).click();
     await page.goto('/#/mail');
-    await page.getByRole('button', { name: /^팀장 안내/ }).click();
+    await page.getByRole('button', { name: /^전체 메일/ }).click();
     const mail = page.getByRole('list', { name: '팀장 안내 메일' }).getByRole('listitem').filter({ hasText: '보완 요청' }).filter({ hasText: 'leader@award.test' });
     await mail.getByText(/초안 생성 .* · 발송 /).waitFor();
   });
@@ -100,18 +100,18 @@ if (mailId) {
   test('승인한 팀의 지급액을 보고서 화면에서 저장해야 생성을 시작할 수 있다', async () => {
     await page.addInitScript((id) => localStorage.setItem('swax.event.intake', id), process.env.INTAKE_TEST_PAYOUT_EVENT);
     await page.goto('/#/teams/' + payoutId);
-    const reportLink = page.getByRole('link', { name: '보고서에서 지급 정보 입력' });
+    const reportLink = page.getByRole('link', { name: '지급 보고서에서 지급 정보 입력' });
     await reportLink.waitFor();
     assert.equal(await page.getByRole('textbox', { name: /시상구분|지원액/ }).count(), 0);
     await reportLink.click();
     await page.getByText('지급 정보 입력 대기 · 차인지급액', { exact: true }).waitFor();
-    const generate = page.getByRole('button', { name: '미리보기 생성' });
+    const generate = page.getByRole('button', { name: '보고서 만들기' });
     assert.ok(await generate.isDisabled());
     const net = page.getByRole('textbox', { name: '차인지급액', exact: true });
     await net.fill('100000');
     assert.ok(await generate.isDisabled());
     await page.getByRole('button', { name: '지급 정보 저장' }).click();
-    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent.trim()==='미리보기 생성' && !b.disabled));
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent.trim()==='보고서 만들기' && !b.disabled));
     await net.fill('99000');
     assert.ok(await generate.isDisabled());
     await net.fill('100000');

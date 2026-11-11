@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Link } from '../components/workspaceNavigation';
+import { workflowLabels } from '../components/workspaceMenu';
 import { when } from '../api/labels';
 import {
   getMail,
@@ -18,25 +19,36 @@ import {
 import { Page } from '../components/Layout';
 import { Feedback, Notice, PageHeader, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
+import { isSupplementMail } from '../hooks/reviewQueue';
 
 type Tab = 'drafts' | 'leader';
 const mailPanel = 'surface flex min-h-28 min-w-0 flex-col gap-3.5 p-[clamp(18px,2vw,24px)]';
 
 export default function Mail() {
-  const { dashboard, dashboardError, refresh } = useEvent();
-  const [tab, setTab] = useState<Tab>('drafts');
   const [search] = useSearchParams();
-  const [picked, setPicked] = useState(search.get('mail') ?? '');
+  const requested = search.get('mail');
+  const supplement = search.get('supplement');
+  return <MailWorkspace key={search.toString()} requested={requested} supplement={supplement} />;
+}
+
+function MailWorkspace({ requested, supplement }: { requested: string | null; supplement: string | null }) {
+  const { dashboard, dashboardError, refresh } = useEvent();
+  const [tab, setTab] = useState<Tab>();
+  const [picked, setPicked] = useState('');
   const [message, setMessage] = useState('');
-  const mail = dashboard?.mail.filter(isLeaderMail) ?? [];
+  const mail = dashboard?.mail.filter(m => supplement ? isSupplementMail(m, supplement) : isLeaderMail(m)) ?? [];
   const drafts = mail.filter(isMailDraft);
-  const list = tab === 'drafts' ? drafts : mail;
-  const selected = list.find((m) => m.id === picked) ?? list[0];
-  const noEmail = dashboard?.teams.filter((t) => !t.email && t.submission) ?? [];
+  const requestedMail = requested ? mail.find(m => m.id === requested) : undefined;
+  const showAll = requestedMail ? !isMailDraft(requestedMail) : !!supplement && drafts.length === 0 && mail.length > 0;
+  const activeTab = tab ?? (showAll ? 'leader' : 'drafts');
+  const list = activeTab === 'drafts' ? drafts : mail;
+  const selected = list.find(m => m.id === (picked || requested)) ?? (requested && !tab ? undefined : list[0]);
+  const noEmail = dashboard?.teams.filter(t => !t.email && t.submission && (!supplement || t.submission.id === supplement)) ?? [];
 
   return (
     <Page width="review">
-      <PageHeader title="팀장 안내" lead="판정 결과로 작성된 초안을 확인하세요. 담당자가 수신자와 내용을 확인하고 승인한 메일만 발송됩니다." />
+      <PageHeader title={workflowLabels.mail} lead="팀장에게 보낼 안내의 수신자와 내용을 확인하세요. ‘승인 후 발송’을 누르면 메일을 보냅니다."
+        side={supplement && <Link to="/mail" className={buttonStyles.outline}>전체 팀 메일 보기</Link>} />
 
       {!dashboard ? (
         <Notice error={dashboardError} onRetry={refresh} />
@@ -55,10 +67,10 @@ export default function Mail() {
               {(
                 [
                   ['drafts', `승인 대기 ${drafts.length}`],
-                  ['leader', `팀장 안내 ${mail.length}`],
+                  ['leader', `전체 메일 ${mail.length}`],
                 ] as Array<[Tab, string]>
               ).map(([key, label]) => (
-                <button key={key} type="button" aria-pressed={tab === key} className="segment"
+                <button key={key} type="button" aria-pressed={activeTab === key} className="segment"
                   onClick={() => { setTab(key); setMessage(''); }}>
                   {label}
                 </button>
@@ -70,11 +82,11 @@ export default function Mail() {
                 <section aria-labelledby="mail-list-h" className={mailPanel}>
                   <h2 id="mail-list-h" className="panel-title">메일 목록</h2>
                   {list.length === 0 ? (
-                    <p key={tab} className="motion-results text-sm text-muted">
-                      {tab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}
+                    <p key={activeTab} className="motion-results text-sm text-muted">
+                      {supplement && mail.length === 0 ? '이 제출본의 보완 요청 메일이 아직 준비되지 않았습니다.' : activeTab === 'drafts' ? '승인을 기다리는 메일이 없습니다.' : '아직 만들어진 메일이 없습니다.'}
                     </p>
                   ) : (
-                    <ul key={tab} aria-label={tab === 'drafts' ? '승인 대기 메일' : '팀장 안내 메일'} className="motion-results flex flex-col gap-1">
+                    <ul key={activeTab} aria-label={activeTab === 'drafts' ? '승인 대기 메일' : '팀장 안내 메일'} className="motion-results flex flex-col gap-1">
                       {list.map((m) => (
                         <li key={m.id}>
                           <button type="button" aria-current={selected?.id === m.id ? 'true' : undefined}
@@ -102,12 +114,14 @@ export default function Mail() {
 
               <section aria-labelledby="draft-h" className={mailPanel}>
                 {selected ? (
-                  <MailDetail key={selected.id + ':' + selected.state} m={selected} hasEmailForm={noEmail.some((t) => t.current === selected.submission)}
+                  <MailDetail key={selected.id + ':' + selected.state} m={selected} emailTeamId={noEmail.find(t => t.submission?.id === selected.submission)?.id}
                     onSaved={refresh} onApproved={setMessage} />
                 ) : (
                   <>
                     <h2 id="draft-h" className="panel-title">초안 검토</h2>
-                    <p className="motion-results text-sm text-muted">목록에서 메일을 고르면 내용이 여기에 표시됩니다.</p>
+                    <p className="motion-results text-sm text-muted">{requested && !requestedMail
+                      ? '요청한 메일을 찾을 수 없습니다. 목록에서 확인할 메일을 선택하세요.'
+                      : '목록에서 메일을 고르면 내용이 여기에 표시됩니다.'}</p>
                   </>
                 )}
               </section>
@@ -119,8 +133,8 @@ export default function Mail() {
   );
 }
 
-function MailDetail({ m, hasEmailForm, onSaved, onApproved }: {
-  m: MailRow; hasEmailForm: boolean; onSaved: () => void; onApproved: (message: string) => void;
+function MailDetail({ m, emailTeamId, onSaved, onApproved }: {
+  m: MailRow; emailTeamId?: string; onSaved: () => void; onApproved: (message: string) => void;
 }) {
   const [view, setView] = useState<MailView>();
   const [confirm, setConfirm] = useState(false);
@@ -179,9 +193,13 @@ function MailDetail({ m, hasEmailForm, onSaved, onApproved }: {
         <div className="motion-results flex flex-col gap-3.5">
           <p className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 text-sm">
             받는 사람<strong className="break-all">{view.recipient || view.sent_to || '주소 확인 필요'}</strong>
-            {m.state === 'recipient_check' && hasEmailForm && <a href="#missing-h" className="font-medium text-brand-strong underline underline-offset-2">수신 주소 확인</a>}
+            {m.state === 'recipient_check' && emailTeamId && (
+              <button type="button" className={buttonStyles.text} onClick={() => document.getElementById('team-email-' + emailTeamId)?.focus()}>
+                수신 주소 확인
+              </button>
+            )}
           </p>
-          {m.state === 'recipient_check' && !hasEmailForm && <RecipientCheck submission={m.submission} onSaved={onSaved} />}
+          {m.state === 'recipient_check' && !emailTeamId && <RecipientCheck submission={m.submission} onSaved={onSaved} />}
           {editable ? (
             <>
               <label className="flex flex-col gap-1.5 text-sm font-bold">제목

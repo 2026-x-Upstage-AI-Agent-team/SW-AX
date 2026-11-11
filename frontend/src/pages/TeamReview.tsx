@@ -22,6 +22,7 @@ import {
 } from '../api/service';
 import { Page } from '../components/Layout';
 import DocumentPreview from '../components/DocumentPreview';
+import { workflowLabels } from '../components/workspaceMenu';
 import { ProgressTrack } from '../components/WorkflowProgress';
 import {
   CheckIcon,
@@ -35,6 +36,7 @@ import {
   inputStyle,
 } from '../components/ui';
 import { useEvent } from '../context/EventContext';
+import { isSupplementMail, supplementMailAction } from '../hooks/reviewQueue';
 
 const DOC_KEYS: DocKey[] = ['01', '02', '03', '?'];
 
@@ -53,7 +55,7 @@ export default function TeamReview() {
     <Page tone="gray" width="review">
       <div className="team-review">
         <Link to={back} className="team-review-back">
-          ← 팀별 검토
+          ← {workflowLabels.review}
         </Link>
         {!submission ? <Notice error={result.error} onRetry={result.reload} /> : <Review key={submission.id} s={submission} onSaved={refresh} />}
       </div>
@@ -148,7 +150,7 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
           {file && <Link to={'/files/' + file.id + '/edit?review=' + encodeURIComponent(s.id)} target="_blank" rel="noreferrer" className={buttonStyles.outline}>한글 문서 편집</Link>}
           {!outdated && (
             <Link to={`/intake?base=${s.id}`} className={cx(buttonStyles.primary, 'team-review-attach')}>
-              보완 서류 첨부
+              보완 서류 올리기
             </Link>
           )}
         </div>
@@ -285,8 +287,8 @@ function StudioExplanation({ s }: { s: SubmissionDetail }) {
 
 /** 결론을 기록했을 때 실제로 일어나는 일 (service/app.py save_review 기준) */
 function decidedMessage(s: SubmissionDetail, d: Decision) {
-  if (s.verdict === '담당자확인') return `‘${d}’으로 기록했습니다. 이메일 발송에서 팀장에게 보낼 ${d === '승인' ? '검토 완료' : '보완 요청'} 초안을 확인하세요.`;
-  if (d === '보완 필요') return '‘보완 필요’로 기록했습니다. 이메일 발송에서 선택한 항목이 담긴 초안을 확인하세요.';
+  if (d === '보완 필요') return '보완 필요로 저장했습니다. 안내 메일에서 선택한 보완 항목을 확인하세요.';
+  if (s.verdict === '담당자확인') return '서류를 승인했습니다. 팀장 안내 메일에서 검토 완료 초안을 확인하세요.';
   return '서류를 승인했습니다.';
 }
 
@@ -362,6 +364,7 @@ function StatusCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }
 
 /** 담당자 검토 결론 기록 */
 function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
+  const { dashboard } = useEvent();
   const [decision, setDecision] = useState<Decision | ''>(s.decision ?? '');
   const [note, setNote] = useState(s.note);
   const [issues, setIssues] = useState<string[]>(s.result?.issues ?? []);
@@ -371,6 +374,11 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
   const locked = !!s.decision;
   const canSave = s.state === 'done' && !s.held && s.current === s.id;
   const needsNote = s.verdict === '담당자확인' && !!decision;
+  const supplementMail = dashboard?.mail.find(mail => isSupplementMail(mail, s.id))
+    ?? s.mail?.find(mail => isSupplementMail(mail, s.id));
+  const mailAction = canSave && s.decision !== '승인' && (s.decision === '보완 필요' || s.verdict === '재제출요청')
+    ? supplementMailAction(s.id, supplementMail)
+    : null;
 
   async function save(final: boolean) {
     setBusy(true);
@@ -417,12 +425,12 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
                 onChange={() => setDecision(d)}
                 className="size-[18px] shrink-0 accent-brand-strong"
               />
-              {d}
+              {d === '승인' ? '서류 승인' : d}
             </label>
           ))}
         </div>
         {s.verdict === '재제출요청' && !locked && <p className="text-xs text-muted">재제출요청 판정은 보완본을 받아 다시 검토한 뒤 승인할 수 있습니다.</p>}
-        {locked && <p className="text-xs text-muted">이미 안내한 결론은 바꿀 수 없습니다. 바꾸려면 보완 서류를 첨부하세요.</p>}
+        {locked && <p className="text-xs text-muted">이미 저장한 검토 결과를 바꾸려면 보완 서류를 올리세요.</p>}
         {decision === '보완 필요' && (
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-xs text-muted">팀장에게 안내할 보완 항목</legend>
@@ -449,7 +457,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
         <div className="team-review-decision-actions">
           {!locked && (
             <button type="button" disabled={!decision} onClick={() => save(true)} className={cx(buttonStyles.primary, 'min-h-11 text-sm')}>
-              결론 기록
+              {workflowLabels.saveReview}
             </button>
           )}
           <button type="button" disabled={locked && note === s.note} onClick={() => save(false)} className={buttonStyles.secondary}>
@@ -457,7 +465,8 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
           </button>
         </div>
       </fieldset>
-      {s.decision === '승인' && canSave && <Link to="/report" className={cx(buttonStyles.text, 'self-start')}>보고서에서 지급 정보 입력 →</Link>}
+      {mailAction && <Link to={mailAction.to} className={cx(buttonStyles.outline, 'self-start')}>{mailAction.label}</Link>}
+      {s.decision === '승인' && canSave && <Link to="/report" className={cx(buttonStyles.text, 'self-start')}>지급 보고서에서 지급 정보 입력 →</Link>}
       {s.state !== 'done' && <p className="text-xs text-subtle">Studio 판정이 끝난 뒤 기록할 수 있습니다.</p>}
       <Feedback error={error} message={message} />
     </div>

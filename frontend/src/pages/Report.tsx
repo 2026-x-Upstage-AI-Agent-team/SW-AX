@@ -18,6 +18,7 @@ import {
 } from '../api/service';
 import { Page } from '../components/Layout';
 import { Feedback, Notice, PageHeader, PdfFrame, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
+import { workflowLabels } from '../components/workspaceMenu';
 import { useEvent } from '../context/EventContext';
 
 type PaymentEdit = { revision: number; values: Payment };
@@ -98,8 +99,8 @@ export default function Report() {
   return (
     <Page tone="gray">
       <PageHeader
-        title="보고서 확정"
-        lead="서류를 승인한 팀의 지급 정보를 저장하고, 편철할 팀과 순서를 선택하세요."
+        title={workflowLabels.report}
+        lead="서류를 승인한 팀의 지급 정보를 저장하고, 보고서에 넣을 팀과 순서를 선택하세요."
       />
 
       {!draft.data ? (
@@ -414,11 +415,12 @@ function Generate({ event, order, unpaid, onCreated }: { event: string; order: s
     <div className="flex flex-col gap-3 rounded-[20px] bg-white p-[22px]">
       <div className="flex flex-wrap items-center gap-3.5">
         <div className="flex flex-[1_1_260px] flex-col gap-1">
-          <strong className="text-[15px]">선택한 {order.length}팀으로 보고서 생성</strong>
+          <strong className="text-[15px]">선택한 {order.length}팀으로 보고서 만들기</strong>
+          {unpaid === 0 && <span className="text-[13px] text-muted">미리보기를 확인한 뒤 보고서를 확정할 수 있어요.</span>}
           {unpaid > 0 && <span className="text-[13px] text-caution">선택한 {unpaid}팀의 지급 정보를 모두 입력하고 저장하세요.</span>}
         </div>
         <button type="button" onClick={run} disabled={!order.length || unpaid > 0 || busy} className={buttonStyles.primary}>
-          미리보기 생성
+          {busy ? '보고서 만드는 중…' : workflowLabels.reportAction}
         </button>
       </div>
       <Feedback error={error} />

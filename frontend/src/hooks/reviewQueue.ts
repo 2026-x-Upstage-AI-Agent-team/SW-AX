@@ -1,5 +1,6 @@
 import { busyStates, recoverableStates, stateLabel } from '../api/labels';
-import type { DashTeam } from '../api/service';
+import { isMailDraft, type DashTeam, type MailRow } from '../api/service';
+import { workflowLabels } from '../components/workspaceMenu';
 import type { TeamRow } from './useOverview';
 
 export const reviewStages = [
@@ -35,20 +36,29 @@ export function reviewPriority(row: TeamRow) {
   return { review: 2, supplement: 3, assignment: 4, processing: 5, approved: 6 }[state];
 }
 
+export function isSupplementMail(mail: MailRow, submissionId: string) {
+  return mail.submission === submissionId && (mail.kind === '보완 요청' || mail.kind === '팀장 보완 요청');
+}
+
+export function supplementMailAction(submissionId: string, mail?: MailRow) {
+  const to = mail ? '/mail?mail=' + encodeURIComponent(mail.id) : '/mail?supplement=' + encodeURIComponent(submissionId);
+  if (mail?.state === 'recipient_check') return { label: '수신 주소 확인', to, hint: '보완 안내를 보내기 전에 수신자를 확인하세요.' };
+  if (mail && !isMailDraft(mail)) return { label: '안내 메일 확인', to, hint: '팀장 안내 메일의 발송 상태를 확인하세요.' };
+  return { label: workflowLabels.mailAction, to, hint: '초안과 수신자를 확인하고 발송을 승인하세요.' };
+}
+
 export function nextReviewAction(row: TeamRow): { label: string; to: string; hint: string } {
   const submission = row.submission;
   const stage = reviewStage(row);
   const detail = submission ? '/teams/' + submission.id : '/review';
   if (stage === 'assignment') return { label: '팀 배정 확인', to: '/assign', hint: '이 팀에 속할 파일을 확인한 뒤 검토할 수 있습니다.' };
-  if (stage === 'processing') return { label: '진행 보기', to: detail, hint: '검토 결과가 도착하면 담당자 결정을 기록할 수 있습니다.' };
-  if (stage === 'approved') return { label: '지급 정보 입력', to: '/report', hint: '보고서에서 시상구분과 지급 금액을 확인하세요.' };
-  if (stage === 'supplement') {
-    const mail = row.leaderMail;
-    const mailTo = mail ? '/mail?mail=' + encodeURIComponent(mail.id) : '/mail';
-    if (mail?.state === 'recipient_check') return { label: '수신 주소 확인', to: mailTo, hint: '보완 안내를 보내기 전에 수신자를 확인하세요.' };
-    if (mail?.state === 'draft') return { label: '보완 안내 검토', to: mailTo, hint: '초안과 수신자를 확인하고 발송을 승인하세요.' };
-    if (mail?.state === 'sent' || mail?.state === 'local') return { label: '보완 서류 첨부', to: '/intake?base=' + encodeURIComponent(submission!.id), hint: '새로 받은 서류를 같은 팀의 다음 제출본으로 첨부하세요.' };
-    if (mail) return { label: '안내 상태 확인', to: mailTo, hint: '팀장 안내의 발송 상태를 확인하세요.' };
+  if (stage === 'processing') return { label: workflowLabels.progressAction, to: detail, hint: '검토가 끝나면 원문을 확인하고 결과를 저장할 수 있습니다.' };
+  if (stage === 'approved') return { label: '지급 정보 입력', to: '/report', hint: '지급 보고서에서 시상구분과 지급 금액을 확인하세요.' };
+  if (stage === 'supplement' && submission) {
+    const mail = row.detail?.mail?.find(item => isSupplementMail(item, submission.id))
+      ?? (row.leaderMail && isSupplementMail(row.leaderMail, submission.id) ? row.leaderMail : undefined);
+    if (mail?.state === 'sent' || mail?.state === 'local') return { label: '보완 서류 올리기', to: '/intake?base=' + encodeURIComponent(submission.id), hint: '새로 받은 서류를 같은 팀의 다음 제출본으로 올리세요.' };
+    if (mail || submission.decision === '보완 필요') return supplementMailAction(submission.id, mail);
     return { label: '보완 항목 확인', to: detail, hint: '원본과 보완 사유를 확인하고 필요한 안내를 준비하세요.' };
   }
   if (submission?.state !== 'done') return { label: '처리 상태 확인', to: detail, hint: submission?.error || `${stateLabel(submission?.state)} 상태를 확인하고 처리를 이어가세요.` };

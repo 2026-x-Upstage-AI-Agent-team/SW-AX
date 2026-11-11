@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { ArrowRight, Search } from 'lucide-react';
 import { Page } from '../components/Layout';
 import { Link } from '../components/workspaceNavigation';
+import { workflowLabels } from '../components/workspaceMenu';
 import { DocChips, Notice, PageHeader, StateBadge, VerdictBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useWorkspaceOverview } from '../context/WorkspaceOverviewContext';
 import { nextReviewAction, queueGroups, reviewPriority, reviewStage, reviewStages, type ReviewStage } from '../hooks/reviewQueue';
@@ -15,8 +16,12 @@ export default function ReviewList() {
   const query = search.get('q') ?? '';
   const searchText = query.trim().toLocaleLowerCase();
   const order = search.get('sort') === 'recent' ? 'recent' : 'priority';
-  const groups = queueGroups(rows ?? []);
-  const candidates = filter === 'all' ? rows ?? [] : groups[filter];
+  const submissions = new Set(search.getAll('submission'));
+  const visibleRows = submissions.size
+    ? (rows ?? []).filter(row => row.submission && submissions.has(row.submission.id))
+    : rows ?? [];
+  const groups = queueGroups(visibleRows);
+  const candidates = filter === 'all' ? visibleRows : groups[filter];
   const list = candidates.filter(row => `${row.name} ${row.rep ?? ''}`.toLocaleLowerCase().includes(searchText)).sort((a, b) =>
     order === 'recent' ? (b.submission?.received ?? b.submission?.created ?? 0) - (a.submission?.received ?? a.submission?.created ?? 0) : reviewPriority(a) - reviewPriority(b));
   const next = [...groups.review].sort((a, b) => reviewPriority(a) - reviewPriority(b))[0];
@@ -41,14 +46,14 @@ export default function ReviewList() {
   }
 
   return <Page tone="gray">
-    <PageHeader title="팀별 검토" lead="확인할 팀을 골라 원문을 대조하고, 승인·보완 처리를 이어가세요." side={next &&
+    <PageHeader title={workflowLabels.review} lead="확인할 팀을 골라 원문과 AI 검토 결과를 비교한 뒤 서류 승인 또는 보완 필요를 선택하세요." side={next &&
       <Link to={withReturn('/teams/' + next.submission!.id, next)} className={buttonStyles.primary}>다음 팀 검토<ArrowRight size={17} aria-hidden="true" /></Link>
     } />
-    {!dashboard ? <Notice error={error} onRetry={refresh} /> : !rows?.length ? <div className="motion-results surface flex flex-col items-center gap-3 px-6 py-10 text-center text-sm text-muted"><h2>아직 검토할 팀이 없습니다.</h2><p>팀의 서류를 첨부하면 자동 검토를 마친 뒤 이곳에서 처리할 수 있습니다.</p><Link to="/intake" className={buttonStyles.primary}>파일 첨부</Link></div> : <>
+    {!dashboard ? <Notice error={error} onRetry={refresh} /> : !rows?.length && !submissions.size ? <div className="motion-results surface flex flex-col items-center gap-3 px-6 py-10 text-center text-sm text-muted"><h2>아직 검토할 팀이 없습니다.</h2><p>팀의 서류를 올리면 AI 검토가 끝난 뒤 이곳에서 결과를 확인할 수 있습니다.</p><Link to="/intake" className={buttonStyles.primary}>{workflowLabels.upload}</Link></div> : <>
       <div className="flex flex-col gap-4">
         <div role="group" aria-label="검토 작업 필터" className="segments self-start">
           {reviewStages.map(stage => <button key={stage.key} type="button" className="segment" aria-label={`${stage.label} ${groups[stage.key].length}`} aria-pressed={filter === stage.key} onClick={() => update('filter', stage.key)}>{stage.label}<span className="ml-1 text-subtle">{groups[stage.key].length}</span></button>)}
-          <button type="button" className="segment" aria-label={`전체 ${rows.length}`} aria-pressed={filter === 'all'} onClick={() => update('filter', 'all')}>전체<span className="ml-1 text-subtle">{rows.length}</span></button>
+          <button type="button" className="segment" aria-label={`전체 ${visibleRows.length}`} aria-pressed={filter === 'all'} onClick={() => update('filter', 'all')}>전체<span className="ml-1 text-subtle">{visibleRows.length}</span></button>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex min-w-0 flex-[1_1_18rem] items-center gap-2"><Search size={17} aria-hidden="true" /><span className="sr-only">팀명 또는 대표자 검색</span><input type="search" className={inputStyle} value={query} onChange={event => update('q', event.target.value, true)} placeholder="팀명 또는 대표자로 찾기" /></label>
@@ -56,7 +61,13 @@ export default function ReviewList() {
         </div>
       </div>
       <section aria-labelledby="teams-h" className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2"><h2 id="teams-h" tabIndex={-1} className="panel-title">검토 대상 팀</h2><span aria-live="polite">{list.length}팀</span></div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="teams-h" tabIndex={-1} className="panel-title">{submissions.size ? '올린 서류의 검토 대상 팀' : '검토 대상 팀'}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <span aria-live="polite">{list.length}팀</span>
+            {submissions.size > 0 && <Link to="/review?filter=all" className={buttonStyles.text}>전체 팀 결과 보기</Link>}
+          </div>
+        </div>
         <div key={`${filter}:${order}:${searchText}`} className="motion-results flex flex-col gap-3">
           {list.length ? list.map(row => {
             const submission = row.submission;

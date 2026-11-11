@@ -8,6 +8,7 @@ import { paths, receiptName } from '../api/intake';
 import { docLabels, when } from '../api/labels';
 import { assignFile, getBatch, isFileProcessed, retryFile, type BatchDetail, type Dashboard, type FileInfo } from '../api/service';
 import IntakeLayout from '../components/IntakeLayout';
+import { workflowLabels } from '../components/workspaceMenu';
 import DocumentPreview from '../components/DocumentPreview';
 import { Feedback, Notice, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { useEvent } from '../context/EventContext';
@@ -18,7 +19,7 @@ type Action = 'assign' | 'outside' | 'hold';
 export default function Assign() {
   const { dashboard, dashboardError, events, eventsError, refresh } = useEvent();
   return (
-    <IntakeLayout>
+    <IntakeLayout view="assignment">
       {dashboard ? <AssignmentQueue key={dashboard.event} dashboard={dashboard} /> : !eventsError && events?.length === 0 ? (
         <p className="surface p-6">등록된 대회가 없습니다. <Link to="/manage" className={buttonStyles.text}>대회 등록</Link></p>
       ) : <Notice error={dashboardError || eventsError} onRetry={refresh} />}
@@ -106,9 +107,9 @@ function AssignmentQueue({ dashboard }: { dashboard: Dashboard }) {
 
       {items.length === 0 ? (
         <p className="motion-results rounded-[22px] bg-white px-6 py-10 text-center text-sm text-muted">
-          첨부된 원본이 없습니다.{' '}
+          올린 서류가 없습니다.{' '}
           <Link to="/intake" className="font-bold text-brand-strong underline underline-offset-2">
-            파일 첨부
+            {workflowLabels.upload}
           </Link>
         </p>
       ) : (

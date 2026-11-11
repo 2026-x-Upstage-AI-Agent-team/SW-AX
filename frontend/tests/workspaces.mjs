@@ -218,16 +218,16 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     await page.waitForURL('**/#' + root);
     await page.getByRole('heading', { name: '업무 현황', exact: true }).waitFor();
     const guide = page.getByRole('dialog', { name: '워크스페이스 시작 가이드', exact: true });
-    await guide.getByRole('heading', { name: '먼저, 파일 첨부를 눌러 주세요.', exact: true }).waitFor();
-    await page.locator('.workspace-rail').getByRole('link', { name: '파일 첨부', exact: true }).click();
+    await guide.getByRole('heading', { name: '한 팀의 서류를 올려 보세요.', exact: true }).waitFor();
+    await page.locator('.workspace-rail').getByRole('link', { name: '서류 올리기', exact: true }).click();
     await page.waitForURL('**/#' + root + '/intake');
-    await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
+    await page.getByRole('heading', { level: 1, name: '서류 올리기', exact: true }).waitFor();
     await guide.getByRole('heading', { name: '한 팀의 서류를 함께 선택하세요.' }).waitFor();
     await guide.getByRole('button', { name: '가이드 종료' }).click();
-    assert.equal(await page.getByLabel('첨부할 팀').inputValue(), 'bundle');
-    assert.equal(await page.getByRole('button', { name: '파일 첨부하기', exact: true }).isDisabled(), true);
+    assert.equal(await page.getByLabel('서류를 올릴 팀').inputValue(), 'bundle');
+    assert.equal(await page.getByRole('button', { name: '선택한 서류 올리기', exact: true }).isDisabled(), true);
     await page.reload();
-    await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
+    await page.getByRole('heading', { level: 1, name: '서류 올리기', exact: true }).waitFor();
     const picker = page.getByRole('button', { name: '워크스페이스 선택', exact: true });
     await picker.getByText(name, { exact: true }).waitFor();
 
@@ -240,7 +240,7 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
     await otherPage.getByRole('heading', { name: '업무 현황', exact: true }).waitFor();
     // This changes the remembered workspace, but must never change the first tab's target.
     await page.reload();
-    await page.getByRole('heading', { name: '파일 첨부', exact: true }).waitFor();
+    await page.getByRole('heading', { level: 1, name: '서류 올리기', exact: true }).waitFor();
     await picker.getByText(name, { exact: true }).waitFor();
     assert.equal(new URL(page.url()).hash, '#' + root + '/intake');
     await page.getByRole('link', { name: '워크스페이스 목록', exact: true }).click();
@@ -259,7 +259,7 @@ test('카테고리에서 생성한 워크스페이스가 첨부·새로고침·�
 
     await page.goto('/#/categories/awards/workspaces/00000000-0000-0000-0000-000000000000/intake');
     await page.getByRole('heading', { name: '워크스페이스를 열 수 없습니다.' }).waitFor();
-    assert.equal(await page.getByRole('button', { name: '파일 첨부하기' }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: '선택한 서류 올리기' }).count(), 0);
     assert.deepEqual(errors, []);
   } finally {
     // Only remove empty workspaces created by this test, using the normal deletion preview token.

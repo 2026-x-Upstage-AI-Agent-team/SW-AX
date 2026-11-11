@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '../../components/workspaceNavigation';
+import { workflowLabels } from '../../components/workspaceMenu';
 import { ArrowRight, Check, FileUp, LoaderCircle, X } from 'lucide-react';
 import { ApiError, bytes } from '../../api/client';
 import { isDemoBackend } from '../../api/backend';
@@ -18,11 +19,10 @@ const MAX_FILE = 40 * 1024 ** 2;
 const PENDING_KEY = 'intake.pending';
 
 const receiptSteps = [
-  ['원본 저장', '파일을 저장하고 첨부번호를 발급합니다.'],
-  ['판독 · 제출본 확정', '원본을 판독해 검토용 PDF와 팀 제출본을 준비합니다.'],
-  ['Studio 판정', '성공, 담당자 확인, 재제출 요청 중 하나로 판정합니다.'],
-  ['담당자 검토 · 메일', '원문과 근거를 확인하고 팀장 안내를 검토합니다.'],
-  ['지급내역 · 보고서', '확정한 팀의 서류를 HWPX와 PDF로 정리합니다.'],
+  [workflowLabels.upload, '한 팀의 신청서·동의서·증빙을 함께 올립니다.'],
+  [workflowLabels.progress, '올린 서류가 대기 중인지, AI가 검토 중인지 확인합니다.'],
+  [workflowLabels.review, '원문을 대조해 승인하거나, 보완이 필요하면 안내 메일을 검토합니다.'],
+  [workflowLabels.reportAction, '승인한 팀의 지급 정보를 입력하고 HWPX·PDF를 만듭니다.'],
 ];
 
 export function UploadOverview() {
@@ -30,9 +30,9 @@ export function UploadOverview() {
   const recent = dashboard?.batches.slice().sort((a, b) => b.created - a.created).slice(0, 4) ?? [];
 
   return (
-    <aside aria-label="파일 첨부 안내" className="grid min-w-0 gap-5">
+    <aside aria-label="서류 올리기 안내" className="grid min-w-0 gap-5">
       <section className="rounded-[20px] bg-ink p-[clamp(18px,2.5vw,24px)] text-white">
-        <h2 className="text-lg font-semibold">첨부 뒤 진행 순서</h2>
+        <h2 className="text-lg font-semibold">작업 순서</h2>
         <ol className="mt-4 grid gap-3.5">
           {receiptSteps.map(([title, description], index) => (
             <li key={title} className="flex min-w-0 items-start gap-3">
@@ -49,9 +49,9 @@ export function UploadOverview() {
       </section>
       <section className="surface min-w-0 rounded-[20px] p-[clamp(18px,2.5vw,24px)]">
         <div className="flex flex-wrap items-center justify-between gap-x-3">
-          <h2 className="text-lg font-semibold">최근 첨부</h2>
+          <h2 className="text-lg font-semibold">최근 올린 서류</h2>
           <Link to="/intake/batches" className={buttonStyles.text}>
-            첨부 내역 전체<ArrowRight size={15} aria-hidden="true" />
+            {workflowLabels.progressAction}<ArrowRight size={15} aria-hidden="true" />
           </Link>
         </div>
         {recent.length ? (
@@ -70,7 +70,7 @@ export function UploadOverview() {
           </ul>
         ) : (
           <p className="mt-2 text-sm text-muted">
-            {dashboardError ? '최근 첨부 내역을 불러오지 못했습니다.' : dashboard ? '아직 첨부한 문서가 없습니다.' : '최근 첨부 내역을 불러오는 중입니다.'}
+            {dashboardError ? '최근 올린 서류를 불러오지 못했습니다.' : dashboard ? '아직 올린 서류가 없습니다.' : '최근 올린 서류를 불러오는 중입니다.'}
           </p>
         )}
       </section>
@@ -219,11 +219,13 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
       const receipt = await uploadBatch(form, key, setProgress);
       writePending(null);
       refresh();
-      navigate(`/intake/batches/${receipt.batch_id}`);
+      navigate(`/intake/batches/${encodeURIComponent(receipt.batch_id)}`, {
+        state: { uploaded: { batchId: receipt.batch_id, count: files.length } },
+      });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         writePending(null);
-        setError(err.message + ' 첨부 내역을 확인해 주세요. 다시 첨부하면 새 첨부번호가 생성됩니다.');
+        setError(err.message + ' 검토 진행에서 올린 서류를 확인해 주세요. 다시 올리면 새 첨부번호가 생성됩니다.');
       } else {
         setError((err as Error).message);
       }
@@ -240,7 +242,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '첨부할 서류'}</h2>
+        <h2 className="text-lg font-semibold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '올릴 서류'}</h2>
         <span className="text-xs font-medium text-muted">HWP · HWPX</span>
       </div>
       <fieldset disabled={busy || !!loadingEdit} className="flex min-w-0 flex-col gap-2">
@@ -271,11 +273,11 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         ) : (
           <>
             <label htmlFor="target" className="text-sm font-bold">
-              첨부할 팀
+              서류를 올릴 팀
             </label>
             <select id="target" value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 w-full min-w-0 rounded-full border border-line-2 bg-white px-4 text-sm text-ink">
-              {!isDemoBackend && <option value="bundle">새 팀 서류 첨부 · 팀명 입력 없이</option>}
-              <option value="">팀 미지정 · 여러 팀 서류 첨부</option>
+              {!isDemoBackend && <option value="bundle">새 팀 서류 올리기 · 팀명 입력 없이</option>}
+              <option value="">팀 미지정 · 여러 팀 서류 올리기</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {teamLabel(t)}
@@ -284,7 +286,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
             </select>
             <p className="text-[13px] leading-relaxed text-muted">{target === 'bundle'
               ? '한 팀에서 받은 서류만 함께 올리세요. 첨부 순서대로 팀번호를 부여하고, 판정 후 신청서의 팀명을 표시합니다. 신청서가 없어도 받은 서류로 판정합니다.'
-              : target ? '선택한 기존 팀에 첨부합니다.' : '여러 팀의 서류를 함께 받았을 때 사용합니다. 팀을 구분할 근거가 부족하면 담당자가 배정합니다.'}</p>
+              : target ? '선택한 팀의 서류로 올립니다.' : '여러 팀의 서류를 함께 받았을 때 사용합니다. 팀을 구분할 근거가 부족하면 담당자가 배정합니다.'}</p>
           </>
         )}
         <input
@@ -292,7 +294,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           type="file"
           multiple
           accept=".hwp,.hwpx"
-          aria-label="첨부할 서류 파일 선택"
+          aria-label={workflowLabels.choose}
           hidden
           onChange={(e) => {
             add(e.target.files);
@@ -301,9 +303,9 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         />
         <button
           type="button"
-          aria-label="첨부할 서류 파일 선택"
+          aria-label={workflowLabels.choose}
           data-tour="file-picker"
-          aria-describedby={fileError ? 'upload-limits upload-file-error' : 'upload-limits'}
+          aria-describedby={fileError ? 'upload-instructions upload-limits upload-file-error' : 'upload-instructions upload-limits'}
           onClick={() => picker.current?.click()}
           className={cx(
             'mt-3 grid w-full place-items-center gap-2 rounded-[20px] border-2 border-dashed px-4 py-7 text-center sm:px-6 sm:py-9',
@@ -313,9 +315,12 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           <span aria-hidden="true" className="mb-1 grid size-14 place-items-center rounded-full bg-brand-strong text-white">
             <FileUp size={24} strokeWidth={2} />
           </span>
-          <strong className="text-base font-semibold text-ink sm:text-lg">화면 어디에나 파일을 끌어다 놓거나 선택하세요</strong>
+          <strong id="upload-instructions" className="text-base font-semibold text-ink sm:text-lg">{base
+            ? '새로 받은 보완 서류를 선택하세요.'
+            : target === '' ? '여러 팀의 서류를 함께 선택하세요.' : '한 팀의 신청서·동의서·증빙을 함께 선택하세요.'}</strong>
+          <span className="text-[13px] leading-relaxed text-muted">화면 어디에나 파일을 끌어다 놓을 수 있어요.</span>
           <span id="upload-limits" className="text-[13px] leading-relaxed text-muted">00 지급내역서 제외 · 최대 100개 · 파일당 40 MiB · 합계 300 MiB</span>
-          <span aria-hidden="true" className="mt-1.5 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-sm font-semibold text-white">파일 선택</span>
+          <span aria-hidden="true" className="mt-1.5 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-sm font-semibold text-white">{workflowLabels.choose}</span>
         </button>
         {fileError && <p id="upload-file-error" role="alert" className="rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">{fileError}</p>}
         {files.length > 0 && (
@@ -365,7 +370,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
         </span>
         <button className={cx(buttonStyles.primary, 'min-h-[52px] rounded-full px-5')} data-tour="upload-submit" disabled={busy || !!loadingEdit || !files.length}>
           {busy ? <LoaderCircle size={17} className="shrink-0 motion-safe:animate-spin" aria-hidden="true" /> : <Check size={18} aria-hidden="true" />}
-          {busy ? '첨부 중…' : base ? '보완 서류 첨부하기' : '파일 첨부하기'}
+          {busy ? '서류 올리는 중…' : base ? '보완 서류 올리기' : workflowLabels.submit}
         </button>
       </footer>
     </form>

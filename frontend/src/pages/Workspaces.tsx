@@ -47,7 +47,7 @@ function WorkspaceList({ categoryId }: { categoryId: string }) {
     <section className="flex flex-col gap-1.5">
       <p className="text-sm font-semibold text-muted">{category.name}</p>
       <h1 className="page-title">워크스페이스</h1>
-      <p className="page-lead">작업할 대회를 선택하거나 새로운 작업 공간을 만드세요.<br />각 공간에서 파일 첨부부터 검토, 보고서 작성까지 이어집니다.</p>
+      <p className="page-lead">작업할 대회를 선택하거나 새로운 작업 공간을 만드세요.<br />각 공간에서 서류를 올리고, 검토 결과를 확인하고, 지급 보고서를 만들 수 있어요.</p>
     </section>
     <div className="motion-results grid items-start gap-5 md:[grid-template-columns:minmax(0,1fr)_minmax(17rem,22rem)]">
       <section aria-labelledby="workspace-list-heading" className="flex min-w-0 flex-col gap-4">

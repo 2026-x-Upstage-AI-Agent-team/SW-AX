@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLocation, useParams, useSearchParams } from 'react-router';
 import { Link, useNavigate } from '../../components/workspaceNavigation';
+import { workflowLabels } from '../../components/workspaceMenu';
 import { backend } from '../../api/backend';
 import { api, bytes, formatDate, useApi, useAsync, usePolling } from '../../api/client';
 import { paths, teamLabel, type BatchDetails, type BatchSummary } from '../../api/intake';
@@ -16,33 +17,47 @@ import Upload, { UploadOverview } from './Upload';
 const card = 'flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]';
 
 type BatchJob = { state: string; submissionId: string | null };
+type UploadReceipt = { batchId: string; count: number };
 
-function BatchReviewStatus({ preparing, needsAssignment, jobs }: {
+function useUploadReceipt(batchId: string) {
+  const receipt = useLocation().state?.uploaded as UploadReceipt | undefined;
+  return receipt?.batchId === batchId ? receipt : undefined;
+}
+
+function ViewBatchProgress({ batchId }: { batchId: string }) {
+  return <Link to={'/intake/batches/' + encodeURIComponent(batchId)} replace
+    data-tour="upload-receipt" className={buttonStyles.primary}>{workflowLabels.progressAction}</Link>;
+}
+
+function BatchLoading({ receipt, error, onRetry }: { receipt?: UploadReceipt; error?: string; onRetry: () => void }) {
+  if (!receipt || error) return <Notice error={error} onRetry={onRetry} />;
+  return <WorkflowProgress title={`서류 ${receipt.count}개를 올렸어요.`}
+    description="올린 서류의 검토 상태를 불러오는 중이에요."
+    tone="working" action={<ViewBatchProgress batchId={receipt.batchId} />} />;
+}
+
+function BatchReviewStatus({ preparing, needsAssignment, jobs, receipt }: {
   preparing: boolean;
   needsAssignment: boolean;
   jobs: BatchJob[];
+  receipt?: UploadReceipt;
 }) {
-  const updates = '진행 상태는 자동으로 갱신돼요. 다른 팀 서류를 계속 첨부할 수 있어요.';
-  if (preparing) return <WorkflowProgress
-    title="첨부한 파일을 판독 중이에요"
-    description={updates}
+  const updates = '진행 상태는 자동으로 갱신돼요. 다른 팀 서류를 계속 올릴 수 있어요.';
+  const progressAction = receipt && <ViewBatchProgress batchId={receipt.batchId} />;
+  const workingTitle = preparing ? '첨부한 파일을 판독 중이에요'
+    : jobs.some(job => busyStates.has(job.state) && job.state !== 'queued') ? 'AI가 서류를 검토 중이에요'
+    : jobs.some(job => job.state === 'queued') ? '자동 검토를 기다리고 있어요' : '';
+  if (workingTitle) return <WorkflowProgress
+    title={workingTitle}
+    description={receipt ? `서류 ${receipt.count}개를 올렸어요. ${updates}` : updates}
     tone="working"
-  />;
-  if (jobs.some(job => busyStates.has(job.state) && job.state !== 'queued')) return <WorkflowProgress
-    title="AI가 서류를 검토 중이에요"
-    description={updates}
-    tone="working"
-  />;
-  if (jobs.some(job => job.state === 'queued')) return <WorkflowProgress
-    title="자동 검토를 기다리고 있어요"
-    description={updates}
-    tone="working"
+    action={progressAction}
   />;
 
   const stopped = jobs.find(job => recoverableStates.has(job.state) || job.state === 'ownership');
   if (stopped) return <WorkflowProgress
     title="검토 상태를 확인해 주세요"
-    description="팀별 검토에서 사유와 이어서 할 일을 확인할 수 있어요."
+    description="팀별 결과 확인에서 사유와 이어서 할 일을 확인할 수 있어요."
     tone="attention"
     action={<Link to={stopped.submissionId ? '/teams/' + stopped.submissionId : '/review?filter=all'} className={buttonStyles.secondary}>검토 상태 보기</Link>}
   />;
@@ -54,24 +69,32 @@ function BatchReviewStatus({ preparing, needsAssignment, jobs }: {
   />;
 
   const completed = jobs.filter(job => job.state === 'done');
-  if (completed.length === 0) return null;
+  if (completed.length === 0) return receipt ? <WorkflowProgress
+    title={`서류 ${receipt.count}개를 올렸어요.`}
+    description="검토 진행에서 올린 서류와 현재 상태를 확인할 수 있어요."
+    tone="complete"
+    action={progressAction}
+  /> : null;
   const single = completed.length === 1 ? completed[0].submissionId : null;
+  const filter = new URLSearchParams({ filter: 'all' });
+  completed.forEach(job => { if (job.submissionId) filter.append('submission', job.submissionId); });
   return <WorkflowProgress
     title="AI 검토가 완료됐어요"
     description={`${completed.length}팀의 검토 결과를 확인할 수 있어요.`}
     tone="complete"
-    action={<Link to={single ? '/teams/' + single : '/review?filter=all'} className={buttonStyles.primary}>검토 결과 보기</Link>}
+    action={<Link to={single ? '/teams/' + encodeURIComponent(single) : '/review?' + filter}
+      data-tour={receipt ? 'upload-receipt' : undefined} className={buttonStyles.primary}>{workflowLabels.review}</Link>}
   />;
 }
 
-/** /intake (업로드·보완 서류 첨부), /intake/batches (첨부 내역), /intake/batches/:id (첨부 상세) */
+/** /intake (서류 올리기), /intake/batches (검토 진행), /intake/batches/:id (검토 진행 상세) */
 export default function IntakePage({ view }: { view: 'upload' | 'history' | 'detail' }) {
   const { event, events, eventsError, teams, teamsError, refresh } = useEvent();
   const [search] = useSearchParams();
   const baseId = search.get('base');
 
   return (
-    <IntakeLayout replacement={!!baseId}>
+    <IntakeLayout view={view === 'upload' ? baseId ? 'replacement' : 'upload' : 'progress'}>
       {!events ? (
         <Notice error={eventsError && `${eventsError} (API 서버가 실행 중인지 확인해 주세요.)`} onRetry={refresh} />
       ) : !event ? (
@@ -104,7 +127,7 @@ function BaseUpload({ sid }: { sid: string }) {
   const { event, teams } = useEvent();
   const base = useAsync(() => getSubmission(sid), [sid]);
   if (!base.data) return <Notice error={base.error} onRetry={base.reload} />;
-  if (base.data.current !== base.data.id) return <Feedback error="최신 제출 버전에서만 보완 서류 첨부할 수 있습니다." />;
+  if (base.data.current !== base.data.id) return <Feedback error="최신 제출본에서만 보완 서류를 올릴 수 있습니다." />;
   return <Upload key={sid} event={event!} teams={teams ?? []} base={base.data} />;
 }
 
@@ -121,7 +144,7 @@ function History({ eventId }: { eventId: string }) {
     <section className={cx(card, 'motion-results')}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">
-          첨부 목록 <em className="ml-1 text-base not-italic text-brand-strong">{result.data.length}</em>
+          올린 서류 <em className="ml-1 text-base not-italic text-brand-strong">{result.data.length}</em>
         </h2>
         <button type="button" onClick={refresh} className={buttonStyles.text}>
           새로고침
@@ -129,7 +152,7 @@ function History({ eventId }: { eventId: string }) {
       </div>
       <Feedback message={message} />
       {result.data.length === 0 ? (
-        <p className="py-6 text-sm text-muted">아직 업로드한 문서가 없습니다.</p>
+        <p className="py-6 text-sm text-muted">아직 올린 서류가 없습니다.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -146,8 +169,9 @@ function History({ eventId }: { eventId: string }) {
               {result.data.map((batch) => (
                 <tr key={batch.batch_id} className="border-b border-line-soft">
                   <td className="whitespace-nowrap px-2 py-3">
-                    <Link to={`/intake/batches/${batch.batch_id}`} className="font-mono text-brand-strong underline underline-offset-2">
-                      {batch.batch_id.slice(0, 8)}
+                    <span className="block font-mono">{batch.batch_id.slice(0, 8)}</span>
+                    <Link to={`/intake/batches/${encodeURIComponent(batch.batch_id)}`} className="mt-1 inline-flex font-semibold text-brand-strong hover:underline">
+                      {workflowLabels.progressAction}<span className="sr-only"> · {batch.batch_id.slice(0, 8)}</span>
                     </Link>
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">{formatDate(batch.created_at)}</td>
@@ -172,6 +196,7 @@ function History({ eventId }: { eventId: string }) {
 
 function Detail({ eventId }: { eventId: string }) {
   const { id = '' } = useParams();
+  const receipt = useUploadReceipt(id);
   const { dashboard, dashboardError, revision, teams, refresh } = useEvent();
   const navigate = useNavigate();
   const [deleted, setDeleted] = useState<{ batch: string; name: string }>();
@@ -197,21 +222,23 @@ function Detail({ eventId }: { eventId: string }) {
   const conflicted = detail?.batch.status === 'conflict' || detail?.batch.status === 'conflict_reviewed';
   usePolling(Boolean(detail?.batch.event_id === eventId && !conflicted && !result.error && !preparing && !trackingJobs
     && (unresolvedFiles || reviewJobs.some(job => busyStates.has(job.state)))), result.reload, 3000);
-  if (!detail) return <Notice error={result.error} onRetry={result.reload} />;
+  if (!detail) return <BatchLoading receipt={receipt} error={result.error} onRetry={result.reload} />;
   const { batch, files } = detail;
   const targetName = batch.team_name && teamLabel({ name: batch.team_name, rep: batch.team_rep, intake_number: batch.intake_number });
   if (batch.event_id !== eventId) return <Feedback error="선택한 대회의 첨부번호가 아닙니다." />;
+  const status = result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted && (
+    dashboardError && !jobs.size ? <Notice error={dashboardError} onRetry={refresh} /> :
+    <BatchReviewStatus preparing={preparing} jobs={reviewJobs} receipt={receipt}
+      needsAssignment={batchState === 'review' || files.some(file => file.state === 'unassigned') || reviewJobs.some(job => job.state === 'blocked')} />
+  );
+  if (receipt && !conflicted) return status;
   return (
     <div className="motion-results flex flex-col gap-4">
       <Feedback message={deleted?.batch === id ? deleted.name + ' 원본을 삭제했습니다.' : ''} />
-      {result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted && (
-        dashboardError && !jobs.size ? <Notice error={dashboardError} onRetry={refresh} /> :
-        <BatchReviewStatus preparing={preparing} jobs={reviewJobs}
-          needsAssignment={batchState === 'review' || files.some(file => file.state === 'unassigned') || reviewJobs.some(job => job.state === 'blocked')} />
-      )}
+      {status}
       <section className={card}>
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-extrabold">첨부 상세</h2>
+          <h2 className="text-xl font-extrabold">검토 진행 상세</h2>
           <StateBadge state={batch.status ?? 'received'} />
         </div>
         <dl className="grid grid-cols-[86px_minmax(0,1fr)] gap-3 text-sm">
@@ -220,7 +247,7 @@ function Detail({ eventId }: { eventId: string }) {
           <dt className="text-muted">첨부 일시</dt>
           <dd>{formatDate(batch.created_at)}</dd>
           <dt className="text-muted">지정 팀</dt>
-          <dd>{targetName || '미지정 · 여러 팀 서류 첨부'}</dd>
+          <dd>{targetName || '미지정 · 여러 팀 서류 올리기'}</dd>
         </dl>
       </section>
       {batch.status === 'conflict' && <CorrectionNotice id={batch.batch_id} current={batch.current_submission} onSaved={result.reload} />}
@@ -288,9 +315,9 @@ function Detail({ eventId }: { eventId: string }) {
         </ol>
       </section>
       <div className="flex flex-wrap gap-3">
-        {batch.intake_number != null && <Link to="/intake" className={buttonStyles.primary}>다음 팀 서류 첨부</Link>}
+        {batch.intake_number != null && <Link to="/intake" className={buttonStyles.primary}>다음 팀 서류 올리기</Link>}
         <Link to="/intake/batches" className={buttonStyles.secondary}>
-          첨부 목록으로
+          검토 진행 목록으로
         </Link>
       </div>
     </div>
@@ -307,14 +334,14 @@ function ServiceHistory() {
     <section className={cx(card, 'motion-results')}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-extrabold">
-          첨부 목록 <em className="ml-1 text-base not-italic text-brand-strong">{batches.length}</em>
+          올린 서류 <em className="ml-1 text-base not-italic text-brand-strong">{batches.length}</em>
         </h2>
         <button type="button" onClick={refresh} className={buttonStyles.text}>
           새로고침
         </button>
       </div>
       {batches.length === 0 ? (
-        <p className="py-6 text-sm text-muted">아직 업로드한 문서가 없습니다.</p>
+        <p className="py-6 text-sm text-muted">아직 올린 서류가 없습니다.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -331,8 +358,9 @@ function ServiceHistory() {
               {batches.map((b) => (
                 <tr key={b.id} className="border-b border-line-soft">
                   <td className="whitespace-nowrap px-2 py-3">
-                    <Link to={`/intake/batches/${b.id}`} className="font-mono text-brand-strong underline underline-offset-2">
-                      {b.id.slice(0, 8)}
+                    <span className="block font-mono">{b.id.slice(0, 8)}</span>
+                    <Link to={`/intake/batches/${encodeURIComponent(b.id)}`} className="mt-1 inline-flex font-semibold text-brand-strong hover:underline">
+                      {workflowLabels.progressAction}<span className="sr-only"> · {b.id.slice(0, 8)}</span>
                     </Link>
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">{when(b.created)}</td>
@@ -368,7 +396,7 @@ function CorrectionNotice({ id, current, onSaved }: { id: string; current?: stri
   return <div className={card}>
     <strong>보완 기준 제출본이 변경됐습니다.</strong>
     <p>아래 첨부한 파일을 최신 확정본과 대조하고, 반영할 파일만 다시 첨부해 주세요.</p>
-    {current && <Link to={'/intake?base=' + current} className={buttonStyles.text}>최신 제출본에서 보완 서류 첨부</Link>}
+    {current && <Link to={'/intake?base=' + current} className={buttonStyles.text}>최신 제출본에서 보완 서류 올리기</Link>}
     <button type="button" className={cx(buttonStyles.outline, 'self-start')} disabled={saving} onClick={finish}>이 첨부의 대조 완료</button>
     <Feedback error={error} />
   </div>;
@@ -376,12 +404,13 @@ function CorrectionNotice({ id, current, onSaved }: { id: string; current?: stri
 
 function ServiceDetail() {
   const { id = '' } = useParams();
+  const receipt = useUploadReceipt(id);
   const { dashboard, revision, refresh } = useEvent();
   const result = useAsync(() => getBatch(id), [id, revision]);
   const trackingPreparation = dashboard?.batches.some(batch => batch.id === id && batch.state === 'preparing');
   const detail = result.data?.id === id ? result.data : undefined;
   usePolling(detail?.state === 'preparing' && !trackingPreparation && !result.error, result.reload, 3000);
-  if (!detail) return <Notice error={result.error} onRetry={result.reload} />;
+  if (!detail) return <BatchLoading receipt={receipt} error={result.error} onRetry={result.reload} />;
   const b = detail;
   const teamName = (tid?: string | null) => dashboard?.teams.find((t) => t.id === tid)?.name ?? '';
   const pending = b.files.filter((f) => !isFileProcessed(f)).length;
@@ -390,13 +419,15 @@ function ServiceDetail() {
     return submission ? [{ state: submission.state, submissionId: submission.id }] : [];
   });
   const conflicted = b.state === 'conflict' || b.state === 'conflict_reviewed';
+  const status = result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted &&
+    <BatchReviewStatus preparing={b.state === 'preparing'} needsAssignment={pending > 0} jobs={jobs} receipt={receipt} />;
+  if (receipt && !conflicted) return status;
   return (
     <div className="motion-results flex flex-col gap-4">
-      {result.error ? <Notice error={result.error} onRetry={result.reload} /> : !conflicted &&
-        <BatchReviewStatus preparing={b.state === 'preparing'} needsAssignment={pending > 0} jobs={jobs} />}
+      {status}
       <section className={card}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-xl font-extrabold">첨부 상세</h2>
+          <h2 className="text-xl font-extrabold">검토 진행 상세</h2>
           <StateBadge state={b.state} />
         </div>
         <dl className="grid grid-cols-[86px_minmax(0,1fr)] gap-3 text-sm">
@@ -405,7 +436,7 @@ function ServiceDetail() {
           <dt className="text-muted">첨부 일시</dt>
           <dd>{when(b.created)}</dd>
           <dt className="text-muted">지정 팀</dt>
-          <dd>{b.target ? teamName(b.target) : '미지정 · 여러 팀 서류 첨부'}{b.base && ' · 보완 서류 첨부'}</dd>
+          <dd>{b.target ? teamName(b.target) : '미지정 · 여러 팀 서류 올리기'}{b.base && ' · 보완 서류 올리기'}</dd>
         </dl>
         {b.state === 'conflict' && <CorrectionNotice id={b.id} current={dashboard?.teams.find((t) => t.id === b.target)?.current} onSaved={result.reload} />}
         {pending > 0 && b.state !== 'conflict' && b.state !== 'conflict_reviewed' && (
@@ -468,7 +499,7 @@ function ServiceDetail() {
       </section>
       <div>
         <Link to="/intake/batches" className={buttonStyles.secondary} onClick={refresh}>
-          첨부 목록으로
+          검토 진행 목록으로
         </Link>
       </div>
     </div>
