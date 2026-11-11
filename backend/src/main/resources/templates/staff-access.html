@@ -6,8 +6,9 @@
   <meta name="theme-color" content="#ffffff">
   <title th:text="${leaving ? '로그아웃 | SW·AX 문서 자동화' : '담당자 로그인 | SW·AX 문서 자동화'}">담당자 로그인 | SW·AX 문서 자동화</title>
   <link rel="icon" type="image/svg+xml" th:href="@{/sw-ax.svg}">
-  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=8)}">
+  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=9)}">
   <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=6)}"></script>
+  <script defer th:unless="${leaving}" th:src="@{/staff-access/login-preview.js(v=1)}"></script>
 </head>
 <body>
   <main class="access-shell">
@@ -68,7 +69,7 @@
           <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>계정이 없으면 사업단 운영자에게 발급을 요청하세요.</li>
         </ul>
       </section>
-      <p class="access-footer">SW-AX · 시상금 증빙 자동화</p>
+      <p class="access-footer">SW-AX · SW중심대학사업단 업무 자동화</p>
     </div>
     <aside th:replace="~{staff-login-preview :: preview}"></aside>
   </main>

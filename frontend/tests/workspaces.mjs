@@ -5,6 +5,64 @@ import { chromium } from 'playwright-core';
 const baseURL = process.env.INTAKE_TEST_URL;
 assert.ok(baseURL && ['127.0.0.1', 'localhost'].includes(new URL(baseURL).hostname), 'Set INTAKE_TEST_URL to a local test instance.');
 
+test('로그인 예시 카드와 진행 단계가 함께 바뀌고 재생을 멈출 수 있다', { timeout: 60000 }, async () => {
+  const browser = await chromium.launch({ channel: 'chrome', executablePath: process.env.CHROME_EXECUTABLE });
+  const options = { baseURL, viewport: { width: 1280, height: 850 }, reducedMotion: 'no-preference' };
+  const assertStage = async (page, index) => {
+    const stage = page.locator('.preview-stage');
+    assert.equal(await stage.getAttribute('data-preview-stage'), String(index));
+    assert.deepEqual(await stage.locator('[data-preview-card][aria-hidden="false"]').evaluateAll(cards =>
+      cards.map(card => card.dataset.previewCard)), [String(index)]);
+    assert.deepEqual(await stage.locator('[data-preview-step][aria-current="step"]').evaluateAll(steps =>
+      steps.map(step => step.dataset.previewStep)), [String(index)]);
+  };
+  try {
+    const page = await browser.newPage(options);
+    await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
+    await page.goto('/login');
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const toggle = page.locator('[data-preview-toggle]');
+    const cards = page.locator('.preview-cards');
+    const cardBox = await cards.boundingBox();
+    const line = page.locator('.preview-steps');
+    assert.ok(cardBox);
+    assert.equal(await line.evaluate(node => getComputedStyle(node, '::after').transitionProperty), 'scale');
+    assert.equal(await toggle.isVisible(), true);
+    await assertStage(page, 0);
+    await page.clock.runFor(3000);
+    await assertStage(page, 1);
+
+    assert.equal((await toggle.textContent()).trim(), '일시정지');
+    await toggle.press('Enter');
+    assert.equal((await toggle.textContent()).trim(), '재생');
+    await page.clock.runFor(9000);
+    await assertStage(page, 1);
+    await toggle.press('Enter');
+
+    await page.clock.runFor(3000);
+    await assertStage(page, 2);
+    await page.clock.runFor(3000);
+    await assertStage(page, 3);
+    assert.deepEqual(await cards.boundingBox(), cardBox);
+    await page.clock.runFor(2000);
+    await assertStage(page, 3);
+    await page.clock.runFor(2200);
+    await assertStage(page, 0);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.reload();
+    await page.clock.runFor(10000);
+    await assertStage(page, 1);
+    assert.equal(await toggle.isVisible(), false);
+
+    const staticPage = await browser.newPage({ ...options, javaScriptEnabled: false });
+    await staticPage.goto('/login');
+    await assertStage(staticPage, 1);
+    assert.equal(await staticPage.locator('[data-preview-toggle]').isVisible(), false);
+  } finally { await browser.close(); }
+});
+
 test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테고리 선택에서 시작한다', { timeout: 60000 }, async () => {
   const browser = await chromium.launch({ channel: 'chrome', executablePath: process.env.CHROME_EXECUTABLE });
   try {

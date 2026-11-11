@@ -18,63 +18,167 @@
 
     <div class="preview-intro">
       <h2 id="login-preview-title">SW중심대학 <span>문서 자동화</span></h2>
-      <p>신청서·동의서·증빙을 팀별로 대조하고, 지급내역 보고서까지 한 번에 편철합니다.</p>
-      <ul class="preview-documents" aria-label="검토 서류" role="list">
-        <li>01 신청서</li>
-        <li>02 동의서</li>
-        <li>03 신분증·통장 사본</li>
+      <p>사업단에 들어오는 서류를 AI가 먼저 읽고 대조합니다. 담당자는 확인이 필요한 곳만 보면 됩니다.</p>
+      <ul class="preview-topics" aria-label="지원 업무" role="list">
+        <li class="is-available">
+          <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#preview-check" /></svg>
+          시상금 증빙
+        </li>
+        <li>결과 보고서 검토 <span class="preview-topic-soon">예정</span></li>
+        <li>장학금 서류 검토 <span class="preview-topic-soon">예정</span></li>
       </ul>
     </div>
 
-    <div class="preview-stage">
-      <article class="preview-verdict" aria-label="서류 검토 결과 예시">
-        <p class="preview-completion">
-          <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#preview-check" /></svg>
-          Studio 판정 완료
-        </p>
-        <header class="preview-verdict-header">
-          <p><strong>접수 3팀</strong> · 가상검토팀03 <span class="preview-sample">예시</span></p>
-          <span class="preview-return">재제출요청</span>
-        </header>
-        <ul class="preview-verdict-list" role="list">
-          <li>
-            <span class="preview-result-icon" aria-hidden="true">
-              <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
-            </span>
-            <span>02 동의서</span>
-            <strong class="preview-pass">모두 통과</strong>
-          </li>
-          <li>
-            <span class="preview-result-icon preview-result-icon--warning" aria-hidden="true">!</span>
-            <span>01 신청서·03 통장 사본</span>
-            <strong class="preview-issue">계좌번호 불일치</strong>
-          </li>
-        </ul>
-        <p class="preview-evidence">
-          원문 근거
-          <span class="preview-evidence-tag preview-evidence-tag--active">01·1쪽·3행</span>
-          <span class="preview-evidence-tag">03·2쪽</span>
-        </p>
-      </article>
+    <div class="preview-stage" data-preview-stage="1">
+      <div class="preview-cards">
+        <article class="preview-verdict" data-preview-card="0" aria-label="서류 접수 예시" aria-hidden="true">
+          <p class="preview-completion">
+            <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#preview-check" /></svg>
+            서류 접수 완료
+          </p>
+          <header class="preview-verdict-header">
+            <p><strong>서류 접수 내역</strong> · 제출 3건</p>
+            <span class="preview-return preview-return--ready">접수 완료</span>
+          </header>
+          <ul class="preview-verdict-list" role="list">
+            <li>
+              <span class="preview-result-icon" aria-hidden="true">
+                <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+              </span>
+              <span>신청서·동의서</span>
+              <strong class="preview-pass">2건 접수</strong>
+            </li>
+            <li>
+              <span class="preview-result-icon" aria-hidden="true">
+                <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+              </span>
+              <span>신분증·통장 사본</span>
+              <strong class="preview-pass">1건 접수</strong>
+            </li>
+          </ul>
+          <p class="preview-evidence">
+            제출 자료
+            <span class="preview-evidence-tag preview-evidence-tag--active">1번·2번 서류</span>
+            <span class="preview-evidence-tag">3번 서류</span>
+          </p>
+        </article>
+
+        <article class="preview-verdict" data-preview-card="1" aria-label="AI 검토 결과 예시" aria-hidden="false">
+          <p class="preview-completion">
+            <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#preview-check" /></svg>
+            AI 검토 완료
+          </p>
+          <header class="preview-verdict-header">
+            <p><strong>서류 검토 결과</strong> · 제출 3건</p>
+            <span class="preview-return">확인 필요 1건</span>
+          </header>
+          <ul class="preview-verdict-list" role="list">
+            <li>
+              <span class="preview-result-icon" aria-hidden="true">
+                <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+              </span>
+              <span>필수 서류</span>
+              <strong class="preview-pass">모두 제출</strong>
+            </li>
+            <li>
+              <span class="preview-result-icon preview-result-icon--warning" aria-hidden="true">!</span>
+              <span>서류 간 기재 내용</span>
+              <strong class="preview-issue">불일치 1건</strong>
+            </li>
+          </ul>
+          <p class="preview-evidence">
+            원문 근거
+            <span class="preview-evidence-tag preview-evidence-tag--active">1번 서류·1쪽·3행</span>
+            <span class="preview-evidence-tag">3번 서류·2쪽</span>
+          </p>
+        </article>
+
+        <article class="preview-verdict" data-preview-card="2" aria-label="담당자 확인 예시" aria-hidden="true">
+          <p class="preview-completion">
+            <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#preview-check" /></svg>
+            담당자 확인 완료
+          </p>
+          <header class="preview-verdict-header">
+            <p><strong>담당자 확인</strong> · 검토 1건</p>
+            <span class="preview-return preview-return--ready">확인 완료</span>
+          </header>
+          <ul class="preview-verdict-list" role="list">
+            <li>
+              <span class="preview-result-icon" aria-hidden="true">
+                <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+              </span>
+              <span>제출본 원문</span>
+              <strong class="preview-pass">대조 완료</strong>
+            </li>
+            <li>
+              <span class="preview-result-icon" aria-hidden="true">
+                <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+              </span>
+              <span>계좌번호 불일치</span>
+              <strong class="preview-pass">정정 완료</strong>
+            </li>
+          </ul>
+          <p class="preview-evidence">
+            확인 근거
+            <span class="preview-evidence-tag preview-evidence-tag--active">1번 서류·1쪽·3행</span>
+            <span class="preview-evidence-tag">3번 서류·2쪽</span>
+          </p>
+        </article>
+
+        <article class="preview-verdict" data-preview-card="3" aria-label="결과 문서 예시" aria-hidden="true">
+          <p class="preview-completion">
+            <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#preview-check" /></svg>
+            결과 문서 생성 완료
+          </p>
+          <header class="preview-verdict-header">
+            <p><strong>결과 문서</strong> · 2종</p>
+            <span class="preview-return preview-return--ready">생성 완료</span>
+          </header>
+          <ul class="preview-verdict-list" role="list">
+            <li>
+              <span class="preview-result-icon" aria-hidden="true">
+                <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+              </span>
+              <span>지급내역 보고서</span>
+              <strong class="preview-pass">HWPX 준비 완료</strong>
+            </li>
+            <li>
+              <span class="preview-result-icon" aria-hidden="true">
+                <svg width="12" height="12" focusable="false"><use href="#preview-check" /></svg>
+              </span>
+              <span>제출용 보고서</span>
+              <strong class="preview-pass">PDF 준비 완료</strong>
+            </li>
+          </ul>
+          <p class="preview-evidence">
+            포함 내역
+            <span class="preview-evidence-tag preview-evidence-tag--active">지급내역</span>
+            <span class="preview-evidence-tag">검토 근거</span>
+          </p>
+        </article>
+      </div>
 
       <section class="preview-workflow" aria-labelledby="preview-workflow-title">
-        <h3 id="preview-workflow-title">접수부터 보고서까지</h3>
+        <header class="preview-workflow-header">
+          <h3 id="preview-workflow-title">접수부터 결과 문서까지 <span class="preview-sample">예시</span></h3>
+          <button type="button" class="preview-toggle" data-preview-toggle hidden>일시정지</button>
+        </header>
         <ol class="preview-steps" role="list">
-          <li class="is-complete">
+          <li class="is-complete" data-preview-step="0">
             <span class="preview-step-icon" aria-hidden="true"><svg width="13" height="13" focusable="false"><use href="#preview-check" /></svg></span>
-            <span>파일 첨부</span>
+            <span>서류 접수</span>
           </li>
-          <li class="is-complete">
+          <li class="is-current" data-preview-step="1" aria-current="step">
             <span class="preview-step-icon" aria-hidden="true"><svg width="13" height="13" focusable="false"><use href="#preview-check" /></svg></span>
-            <span>Studio 판정</span>
+            <span>AI 검토</span>
           </li>
-          <li class="is-complete">
+          <li data-preview-step="2">
             <span class="preview-step-icon" aria-hidden="true"><svg width="13" height="13" focusable="false"><use href="#preview-check" /></svg></span>
-            <span>담당자 검토</span>
+            <span>담당자 확인</span>
           </li>
-          <li>
-            <span class="preview-step-icon" aria-hidden="true"></span>
-            <span>HWPX·PDF</span>
+          <li data-preview-step="3">
+            <span class="preview-step-icon" aria-hidden="true"><svg width="13" height="13" focusable="false"><use href="#preview-check" /></svg></span>
+            <span>결과 문서</span>
           </li>
         </ol>
       </section>
