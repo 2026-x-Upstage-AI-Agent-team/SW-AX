@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
-import { CheckCheck, FileStack, LogOut, Plus } from 'lucide-react';
+import { FileStack, LogOut, Plus } from 'lucide-react';
+import BrandMark from '../components/BrandMark';
 import { isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { buttonStyles } from '../components/ui';
@@ -13,8 +14,8 @@ export default function Hub() {
     <div className="flex min-h-dvh flex-col bg-canvas">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-rail-line bg-white px-[clamp(1rem,3.5vw,2.5rem)] py-3.5">
         <span className="brand-lockup">
-          <span className="brand-mark"><CheckCheck size={22} strokeWidth={2.5} aria-hidden="true" /></span>
-          <span className="min-w-0"><strong>SW·AX</strong><small>SW중심대학 문서 자동화</small></span>
+          <BrandMark />
+          <span className="min-w-0"><strong>SW-AX</strong><small>SW중심대학 문서 자동화</small></span>
         </span>
         {!isDemoBackend && (
           <div className="flex flex-wrap items-center gap-3">

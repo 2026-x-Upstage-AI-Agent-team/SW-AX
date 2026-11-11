@@ -2,11 +2,15 @@
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   font-optical-sizing: auto;
-  color: #1c1c1e;
-  background: #f7f7f7;
-  --forest: #174d38;
-  --action: #226649;
-  --muted: #54635a;
+  color: #0f172a;
+  background: #f8fafc;
+  --ink: #0f172a;
+  --action: #4f46e5;
+  --action-hover: #4338ca;
+  --action-active: #3730a3;
+  --accent-surface: #eef2ff;
+  --muted: #475569;
+  --line: #e2e8f0;
   --error: #b42318;
 }
 
@@ -34,9 +38,9 @@ button { cursor: pointer; }
   width: min(100%, 30rem);
   overflow: hidden;
   background: #fff;
-  border: 1px solid #d1d1d6;
-  border-radius: 1.5rem;
-  box-shadow: 0 1.25rem 4rem -2.75rem rgb(26 61 41 / 28%);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  box-shadow: 0 1.25rem 4rem -2.75rem rgb(15 23 42 / 32%);
 }
 .identity {
   display: flex;
@@ -44,18 +48,18 @@ button { cursor: pointer; }
   flex-wrap: wrap;
   gap: .65rem 1rem;
   padding: 1.25rem clamp(1.375rem, 6vw, 2.5rem);
-  background: #edf2ed;
-  color: var(--forest);
+  background: var(--accent-surface);
+  color: var(--ink);
 }
 .brand { display: flex; align-items: center; gap: .65rem; }
-.brand strong { font-size: 1.16rem; letter-spacing: -.045em; }
+.brand strong { font-size: 1.2rem; letter-spacing: -.02em; }
 .brand-mark {
   display: grid;
   place-items: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: .7rem;
-  background: var(--forest);
+  border-radius: .5625rem;
+  background: var(--action);
   color: #fff;
 }
 .brand-mark svg { width: 1.4rem; height: 1.4rem; }
@@ -73,10 +77,10 @@ input {
   min-width: 0;
   min-height: 3.15rem;
   padding: .65rem .9rem;
-  border: 1px solid #98a89d;
+  border: 1px solid #cbd5e1;
   border-radius: .75rem;
   background: white;
-  color: #1c1c1e;
+  color: var(--ink);
   font-size: 1rem;
 }
 input:focus { border-color: var(--action); }
@@ -108,7 +112,7 @@ input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
   margin-top: .45rem;
   padding: .7rem 1rem;
   border: 1px solid transparent;
-  border-radius: .75rem;
+  border-radius: 999px;
   background: var(--action);
   color: #fff;
   font-weight: 700;
@@ -129,23 +133,23 @@ input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
 .logout-notice {
   width: min(23rem, calc(100% - 2rem));
   padding: 1.5rem;
-  border: 1px solid #d1d1d6;
-  border-radius: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
   background: white;
-  color: #1c1c1e;
-  box-shadow: 0 .75rem 2rem rgb(0 0 0 / 16%);
+  color: var(--ink);
+  box-shadow: 0 .75rem 2rem rgb(15 23 42 / 16%);
 }
-.logout-notice::backdrop { background: rgb(0 0 0 / 38%); }
+.logout-notice::backdrop { background: rgb(15 23 42 / 42%); }
 .logout-notice p { font-weight: 650; }
 .logout-notice form { margin-top: 1rem; justify-items: end; }
 .logout-notice .primary { min-width: 4.75rem; margin-top: 0; }
 
 @media (hover: hover) {
-  .primary:hover { background: var(--forest); }
-  .visibility:hover { background: #edf2ed; }
+  .primary:hover { background: var(--action-hover); }
+  .visibility:hover { background: var(--accent-surface); }
 }
-.primary:active { background: #103f2c; transform: scale(.99); }
-.visibility:active { background: #dce9df; }
+.primary:active { background: var(--action-active); transform: scale(.99); }
+.visibility:active { background: #e0e7ff; }
 @media (min-width: 48rem) {
   .access-shell {
     display: grid;
@@ -156,13 +160,13 @@ input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
   .identity {
     display: block;
     padding: clamp(2rem, 3.7vw, 3.5rem);
-    background-color: #183d31;
-    background-image: linear-gradient(155deg, rgb(12 38 28 / 28%), transparent 62%), url("folio.webp");
+    background-color: var(--ink);
+    background-image: linear-gradient(155deg, rgb(15 23 42 / 78%), rgb(49 46 129 / 32%)), url("folio.webp");
+    background-blend-mode: normal, luminosity;
     background-position: center;
     background-size: cover;
-    color: #f6f9f1;
+    color: #f8fafc;
   }
-  .brand-mark { background: #ebf3e8; color: var(--forest); }
   .product-name {
     margin-top: clamp(1.85rem, 4.5vh, 2.9rem);
     font-size: clamp(2.5rem, 4vw, 3.65rem);

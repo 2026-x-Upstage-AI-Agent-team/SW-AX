@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet } from 'react-router';
-import { CheckCheck, ClipboardCheck, FileStack, FileText, GraduationCap, Handshake, LogOut, Receipt, type LucideIcon } from 'lucide-react';
+import { ClipboardCheck, FileStack, FileText, GraduationCap, Handshake, LogOut, Receipt, type LucideIcon } from 'lucide-react';
+import BrandMark from '../components/BrandMark';
 import { isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { categoryPath, type Category } from '../api/workspaces';
@@ -18,8 +19,8 @@ export function PortalLayout() {
   return <div className="flex min-h-dvh flex-col bg-canvas">
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-rail-line bg-white px-[clamp(1rem,3.5vw,2.5rem)] py-3.5">
       <Link to="/" className="brand-lockup" aria-label="SW·AX 업무 선택">
-        <span className="brand-mark"><CheckCheck size={22} strokeWidth={2.5} aria-hidden="true" /></span>
-        <span className="min-w-0"><strong>SW·AX</strong><small>SW중심대학 문서 자동화</small></span>
+        <BrandMark />
+        <span className="min-w-0"><strong>SW-AX</strong><small>SW중심대학 문서 자동화</small></span>
       </Link>
       {!isDemoBackend && <div className="flex flex-wrap items-center gap-3">
         {session.data?.login && <span className="text-sm text-ink-2">{session.data.login}</span>}

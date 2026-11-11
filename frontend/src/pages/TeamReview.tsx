@@ -49,9 +49,9 @@ export default function TeamReview() {
   usePolling(!!submission && (busyStates.has(submission.state) || (slow && submission.state !== 'failed')), refresh, slow ? 15000 : 3000);
 
   return (
-    <Page tone="gray">
-      <div className="flex flex-col gap-3.5">
-        <Link to={back} className="text-sm text-brand-strong hover:text-brand-deep">
+    <Page tone="gray" width="review">
+      <div className="team-review">
+        <Link to={back} className="team-review-back">
           ← 팀별 검토
         </Link>
         {!submission ? <Notice error={result.error} onRetry={result.reload} /> : <Review key={submission.id} s={submission} onSaved={refresh} />}
@@ -74,6 +74,13 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   const fileDoc = (fid?: string) => DOC_KEYS.find((k) => docs?.[k]?.some((r) => r.id === fid)) ?? (s.files.find((f) => f.id === fid)?.kind as DocKey | undefined);
   const activeDoc = fileDoc(view.id);
   const outdated = s.current !== s.id;
+  const checksByDocument = new Map<DocKey, Check[]>();
+  for (const check of evidence.problems) {
+    const kind = check.refs.length ? fileDoc(check.refs[0].id) ?? '?' : '?';
+    const checks = checksByDocument.get(kind) ?? [];
+    checks.push(check);
+    checksByDocument.set(kind, checks);
+  }
 
   function showEvidence(ref?: Ref) {
     setView(previous => ({ ...ref, evidence: (previous.evidence ?? 0) + 1 }));
@@ -81,24 +88,26 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
   }
 
   function renderChecks(checks: Check[]) {
-    return <ul>{checks.map(c => {
+    return <ul className="team-review-checks">{checks.map(c => {
       const state = checkState(c.passed);
       return (
-        <li key={c.label} className={cx('border-t border-line-soft px-[22px] py-3', state === 'fail' && 'bg-alert-soft', state === 'check' && 'bg-caution-bg')}>
-          <div className="flex items-center gap-3">
-            <CheckIcon state={state} /><span className="text-sm font-medium text-ink">{c.label}</span>
+        <li key={c.label} className="team-review-check" data-state={state}>
+          <div className="team-review-check-label">
+            <span className="team-review-check-icon"><CheckIcon state={state} /></span>
+            <span>{c.label}</span>
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 pl-7">
+          <div className="team-review-evidence-links">
             {c.refs.length ? c.refs.map((r, j) => {
               const kind = fileDoc(r.id) ?? '?';
               const copies = docs?.[kind] ?? [];
               const copy = copies.findIndex(entry => entry.id === r.id);
               return (
-                <button key={j} type="button" aria-controls="review-preview" onClick={() => showEvidence(r)} className={buttonStyles.text}>
+                <button key={j} type="button" aria-controls="review-preview" onClick={() => showEvidence(r)} className="team-review-evidence-link"
+                  data-selected={view.id === r.id && view.page === r.page && view.row === r.row}>
                   {kind} {docLabels[kind]}{copies.length > 1 && copy >= 0 && ` (${copy + 1}번째)`} · {r.page}쪽{r.row && ` · ${r.row}행`}
                 </button>
               );
-            }) : <button type="button" aria-controls="review-preview" onClick={() => showEvidence()} className={buttonStyles.text}>확정 파일 목록 보기</button>}
+            }) : <button type="button" aria-controls="review-preview" onClick={() => showEvidence()} className="team-review-evidence-link">확정 파일 목록 보기</button>}
           </div>
         </li>
       );
@@ -117,32 +126,40 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
           )}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="text-4xl font-extrabold tracking-[-0.03em]">{receiptName(s.result?.team_name?.trim() || '미확인', s.intake_number)}</h1>
-        <span className="text-[13px] text-subtle">
-          대표 {s.fields.members.find((m) => m.role === '대표')?.name.trim() || '미확인'} ·{' '}
-          <span className="font-semibold tabular-nums">제출 v{s.version}</span> · 원본 {s.count}개
-        </span>
-        {s.state === 'done' && s.verdict ? <VerdictBadge verdict={s.verdict} size="md" /> : <StateBadge state={s.state} size="md" />}
-        {s.decision && (
-          <span className={cx('rounded-full border px-3 py-1.5 text-[13px] font-bold', s.decision === '승인' ? 'border-brand text-brand-strong' : 'border-alert-strong text-alert-strong')}>
-            담당자 {s.decision}
-          </span>
-        )}
-        <div className="flex-auto" />
-        {!outdated && (
-          <Link to={`/intake?base=${s.id}`} className={cx(buttonStyles.primary, 'min-h-11 px-5 text-sm')}>
-            보완 서류 첨부
-          </Link>
-        )}
-      </div>
-      {evidence.summary && <p className="max-w-4xl text-[17px] leading-relaxed text-ink-2">{evidence.summary}</p>}
+      <header className="team-review-heading">
+        <div className="team-review-heading-copy">
+          <div className="team-review-heading-title">
+            <h1>{receiptName(s.result?.team_name?.trim() || '미확인', s.intake_number)}</h1>
+            {s.state === 'done' && s.verdict ? <VerdictBadge verdict={s.verdict} size="md" /> : <StateBadge state={s.state} size="md" />}
+            {s.decision && (
+              <span className={cx('rounded-full border px-3 py-1.5 text-[13px] font-bold', s.decision === '승인' ? 'border-brand text-brand-strong' : 'border-alert-strong text-alert-strong')}>
+                담당자 {s.decision}
+              </span>
+            )}
+          </div>
+          <div className="team-review-meta">
+            <span>대표 {s.fields.members.find((m) => m.role === '대표')?.name.trim() || '미확인'}</span>
+            <span>제출 v{s.version}</span>
+            <span>원본 {s.count}개</span>
+          </div>
+        </div>
+        <div className="team-review-heading-actions">
+          {file && <Link to={'/files/' + file.id + '/edit?review=' + encodeURIComponent(s.id)} target="_blank" rel="noreferrer" className={buttonStyles.outline}>한글 문서 편집</Link>}
+          {!outdated && (
+            <Link to={`/intake?base=${s.id}`} className={cx(buttonStyles.primary, 'team-review-attach')}>
+              보완 서류 첨부
+            </Link>
+          )}
+        </div>
+      </header>
+      {evidence.summary && <p className="team-review-summary">{evidence.summary}</p>}
       {s.held && <Feedback error="이 팀에 속할 수 있는 미배정 파일이 있어 검토 저장과 안내가 보류됩니다. 팀 배정 확인에서 먼저 정리해 주세요." />}
       {s.state !== 'done' && <StatusCard s={s} onSaved={onSaved} />}
 
-      <div className="mt-4 flex flex-wrap items-start gap-6">
-        <section ref={previewPanel} id="review-preview" tabIndex={-1} aria-label="원문 미리보기" className="min-w-0 flex-[999_1_560px] overflow-hidden rounded-[22px] border border-line bg-white">
-          <div role="tablist" aria-label="서류" className="flex flex-wrap gap-1 border-b border-line px-4 py-3">
+      <div className="team-review-columns">
+        <section ref={previewPanel} id="review-preview" tabIndex={-1} aria-label="원문 미리보기" className="team-review-card team-review-preview">
+          <StudioExplanation s={s} />
+          <div role="tablist" aria-label="서류" className="team-review-tabs">
             {DOC_KEYS.filter((k) => k !== '?' || (docs?.['?']?.length ?? 0) > 0).map((k) => {
               const refs = docs?.[k] ?? s.files.filter((f) => f.kind === k).map((f) => ({ id: f.id, page: f.page }));
               return (
@@ -154,8 +171,8 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                   disabled={refs.length === 0}
                   onClick={() => setView(refs[0])}
                   className={cx(
-                    'min-h-10 rounded-[10px] px-3.5 text-[13px] disabled:cursor-not-allowed',
-                    activeDoc === k ? 'bg-ink font-bold text-white' : refs.length ? 'text-muted hover:bg-canvas' : 'text-alert-strong',
+                    'team-review-tab',
+                    !refs.length && 'text-alert-strong',
                   )}
                 >
                   {k === '?' ? '기타' : k} {docLabels[k]}
@@ -164,13 +181,12 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
                 </button>
               );
             })}
-            <button type="button" role="tab" aria-selected={!file} onClick={() => setView({})}
-              className={cx('min-h-10 rounded-[10px] px-3.5 text-[13px]', !file ? 'bg-ink font-bold text-white' : 'text-muted hover:bg-canvas')}>
+            <button type="button" role="tab" aria-selected={!file} onClick={() => setView({})} className="team-review-tab">
               확정 파일 목록
             </button>
           </div>
           {activeDoc && (docs?.[activeDoc]?.length ?? 0) > 1 && (
-            <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2">
+            <div className="flex flex-wrap gap-1.5">
               {docs![activeDoc].map((r, i) => (
                 <button
                   key={r.id}
@@ -183,19 +199,18 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
               ))}
             </div>
           )}
-          <div className="flex flex-col gap-2 bg-paper p-3 sm:p-5">
+          <div className="team-review-document">
             {file ? (<>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+              <div className="team-review-document-toolbar">
                 <span className="file-name text-ink">
                   {file.name} {view.page ? `· ${view.page}쪽` : ''} {view.row ? `· ${view.row}행` : ''}
                 </span>
-                <Link to={'/files/' + file.id + '/edit?review=' + encodeURIComponent(s.id)} target="_blank" rel="noreferrer" className={buttonStyles.outline}>한글 문서 편집</Link>
               </div>
-              <DocumentPreview key={`${file.id}-${view.evidence ?? 'latest'}`} file={file} page={view.page} original={!!view.evidence} openLink
-                beforePreview={<StudioExplanation s={s} />} />
+              <div className="team-review-document-body">
+                <DocumentPreview key={`${file.id}-${view.evidence ?? 'latest'}`} file={file} page={view.page} original={!!view.evidence} openLink />
+              </div>
             </>) : (
-              <section aria-label="확정 파일 목록" className="rounded-xl bg-white p-4">
-                <StudioExplanation s={s} />
+              <section aria-label="확정 파일 목록" className="team-review-document-body">
                 <h2 className="font-bold">제출 v{s.version} 확정 파일 목록 · {s.files.length}개</h2>
                 <ol className="mt-2 list-decimal space-y-1 pl-6">
                   {s.files.map((f) => (
@@ -210,29 +225,36 @@ function Review({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void }) {
               </section>
             )}
           </div>
+          <HistoryCard s={s} />
         </section>
 
-        <aside aria-label="검토 체크리스트" className="flex min-w-0 flex-[1_1_380px] flex-col gap-4">
-          <div className="rounded-[22px] border border-line bg-white py-2">
-            <h2 className="px-[22px] pb-2 pt-4 text-[17px] font-extrabold">검토 항목</h2>
+        <aside aria-label="검토 체크리스트" className="team-review-checklist">
+          <section className="team-review-card">
+            <div className="team-review-card-heading">
+              <h2>서류별 체크리스트</h2>
+              {res && <span>확인 {evidence.problems.length} · 통과 {evidence.passed.length}</span>}
+            </div>
             {!res ? (
-              <p className="px-[22px] pb-4 text-sm text-muted">Studio 판정이 끝나면 항목이 표시됩니다.</p>
+              <p className="text-sm text-muted">Studio 판정이 끝나면 항목이 표시됩니다.</p>
             ) : <>
-              {renderChecks(evidence.problems)}
-              {evidence.passed.length > 0 && <details className="border-t border-line-soft">
-                <summary className="cursor-pointer px-[22px] py-3 text-sm font-semibold text-muted">통과한 항목 {evidence.passed.length}개</summary>
+              {DOC_KEYS.map(kind => {
+                const checks = checksByDocument.get(kind);
+                return checks && <section key={kind} className="team-review-check-group">
+                  <h3><span className="team-review-document-code">{kind === '?' ? '기타' : kind}</span>{docLabels[kind]}</h3>
+                  {renderChecks(checks)}
+                </section>;
+              })}
+              {evidence.passed.length > 0 && <details className="team-review-check-group">
+                <summary className="team-review-passed-summary">통과한 항목 {evidence.passed.length}개</summary>
                 {renderChecks(evidence.passed)}
               </details>}
             </>}
-          </div>
+          </section>
           <DecisionCard key={s.revision} s={s} onSaved={onSaved} />
         </aside>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-start gap-6">
-        <MembersCard key={s.revision} s={s} onSaved={onSaved} />
-        <HistoryCard s={s} />
-      </div>
+      <MembersCard key={s.revision} s={s} onSaved={onSaved} />
     </>
   );
 }
@@ -241,10 +263,10 @@ function StudioExplanation({ s }: { s: SubmissionDetail }) {
   if (!s.result || !s.verdict || s.verdict === '성공') return null;
   const explanation = studioExplanation(s.result);
   return (
-    <section aria-label="Upstage 검토 설명" className="rounded-xl border border-caution-line bg-caution-bg px-4 py-3 text-ink-2">
+    <section aria-label="Upstage 검토 설명" className="team-review-explanation">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-1">
-        <h2 className="text-[15px] font-bold text-ink">확인이 필요한 내용</h2>
-        <span className="text-xs text-muted">Upstage 판정 근거 · 제출 v{s.version}</span>
+        <h2>확인이 필요한 내용</h2>
+        <span>Upstage 판정 근거 · 제출 v{s.version}</span>
       </div>
       <p className="whitespace-pre-line break-words text-[15px] leading-relaxed">{explanation.reason}</p>
       {explanation.fields.length > 0 && (
@@ -368,18 +390,18 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
   }
 
   return (
-    <div className="flex flex-col gap-3.5 rounded-[22px] border border-line bg-white p-[22px]">
-      <h2 className="text-[17px] font-extrabold">담당자 검토</h2>
+    <div className="team-review-card">
+      <h2 className="team-review-card-title">담당자 검토</h2>
       <fieldset disabled={!canSave || busy} className="flex flex-col gap-3.5">
-        <div role="radiogroup" aria-label="검토 결론" className="grid grid-cols-2 gap-2">
+        <div role="radiogroup" aria-label="검토 결론" className="grid gap-2.5">
           {(['승인', '보완 필요'] as Decision[]).map((d) => (
             <label
               key={d}
               className={cx(
-                'flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm',
-                decision === d ? (d === '승인' ? 'border-brand bg-brand-tint font-bold text-brand-deep' : 'border-alert-strong bg-alert-soft font-bold text-alert-strong') : 'border-line-2',
+                'team-review-decision',
                 (locked ? decision !== d : d === '승인' && s.verdict === '재제출요청') && 'cursor-not-allowed opacity-40',
               )}
+              data-selected={decision === d}
             >
               <input
                 type="radio"
@@ -388,7 +410,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
                 checked={decision === d}
                 disabled={locked || (d === '승인' && s.verdict === '재제출요청')}
                 onChange={() => setDecision(d)}
-                className="sr-only"
+                className="size-[18px] shrink-0 accent-brand-strong"
               />
               {d}
             </label>
@@ -419,7 +441,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
           확인 메모{needsNote && <span className="text-caution"> · 원본과 대조한 결과를 한 줄로 기록해 주세요</span>}
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000} className={cx(inputStyle, 'h-auto py-2.5 leading-relaxed')} />
         </label>
-        <div className="flex flex-wrap gap-2">
+        <div className="team-review-decision-actions">
           {!locked && (
             <button type="button" disabled={!decision} onClick={() => save(true)} className={cx(buttonStyles.primary, 'min-h-11 text-sm')}>
               결론 기록
@@ -442,8 +464,8 @@ function MembersCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void 
   const r = s.fields.recipient;
   const value = (v?: string) => v?.trim() ? v : '미확인';
   return (
-    <details open={Boolean(s.result?.extraction_warnings?.length)} className="min-w-0 flex-[2_1_560px] rounded-[22px] border border-line bg-white p-[22px]">
-      <summary className="cursor-pointer text-[17px] font-extrabold">명단·지급 정보 대조</summary>
+    <details open={Boolean(s.result?.extraction_warnings?.length)} className="team-review-members">
+      <summary className="team-review-card-title cursor-pointer">명단·지급 정보 대조</summary>
       {s.result?.extraction_warnings?.map((warning) => (
         <p key={warning} className="mt-3 text-sm text-caution">{warning}</p>
       ))}
@@ -546,14 +568,14 @@ function ExtractionEditor({ s, onSaved }: { s: SubmissionDetail; onSaved: () => 
 
 function HistoryCard({ s }: { s: SubmissionDetail }) {
   return (
-    <section className="min-w-0 flex-[1_1_320px] rounded-[22px] border border-line bg-white p-[22px]">
-      <h2 className="mb-3 text-[17px] font-extrabold">제출 버전과 기록</h2>
-      <ol className="flex flex-col gap-1.5">
+    <section className="team-review-history">
+      <h2 className="team-review-card-title">제출 버전과 기록</h2>
+      <ol className="team-review-versions">
         {s.history.map((h) => (
           <li key={h.id}>
             <Link
               to={`/teams/${h.id}`}
-              className={cx('flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm', h.id === s.id ? 'bg-brand-tint font-bold' : 'hover:bg-canvas')}
+              className={cx('team-review-version', h.id === s.id && 'bg-brand-tint font-bold')}
             >
               <span className="font-mono">v{h.version}</span>
               <StateBadge state={h.state} />
@@ -564,7 +586,7 @@ function HistoryCard({ s }: { s: SubmissionDetail }) {
         ))}
       </ol>
       {s.audit.length > 0 && (
-        <ul className="mt-4 flex max-h-72 flex-col gap-1 overflow-y-auto border-t border-line-soft pt-3 text-xs text-muted">
+        <ul className="team-review-audit">
           {s.audit.map((a, i) => (
             <li key={i}>
               {when(a.ts)} · {a.action}

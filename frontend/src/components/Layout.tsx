@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link as PortalLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from 'react-router';
-import { AtSign, CalendarDays, CheckCheck, ChevronDown, FolderOpen, Inbox, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2, UserRound } from 'lucide-react';
+import { AtSign, CalendarDays, ChevronDown, FolderOpen, Inbox, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2, UserRound } from 'lucide-react';
 import { backend, isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { isLeaderMail, isMailDraft } from '../api/service';
@@ -15,6 +15,7 @@ import { buttonStyles, cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
 import { WorkspaceTourProvider, useWorkspaceTour } from './WorkspaceTour';
 import WorkspaceHelp from './WorkspaceHelp';
+import BrandMark from './BrandMark';
 import WorkspaceSearch from './WorkspaceSearch';
 
 type NavigationControl = {
@@ -24,8 +25,8 @@ type NavigationControl = {
 
 function Brand({ subtitle, compact = false, onNavigate }: { subtitle: string; compact?: boolean; onNavigate?: () => void }) {
   return <PortalLink to="/" className="brand-lockup" onClick={onNavigate} aria-label="SW·AX 업무 선택">
-    <span className="brand-mark"><CheckCheck size={22} strokeWidth={2.5} aria-hidden="true" /></span>
-    <span className={compact ? 'sr-only' : 'min-w-0'}><strong>SW·AX</strong><small title={subtitle}>{subtitle}</small></span>
+    <BrandMark />
+    <span className={compact ? 'sr-only' : 'min-w-0'}><strong>SW-AX</strong><small title={subtitle}>{subtitle}</small></span>
   </PortalLink>;
 }
 
@@ -65,6 +66,7 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
           </select><ChevronDown size={15} aria-hidden="true" /></span>
       </div>}
     <nav aria-label="주 메뉴" className="workspace-nav">
+      {!control.compact && <p className="rail-label">메뉴</p>}
       {renderMenu(primaryMenu[0])}
       <button type="button" onClick={control.toggleDocuments} aria-label="서류 관리" title="서류 관리" aria-expanded={control.documentsOpen && !control.compact}
         aria-current={documentActive && (!control.documentsOpen || control.compact) ? 'page' : undefined}
@@ -77,14 +79,15 @@ function WorkspaceNav({ worker, control, onNavigate }: { worker: ReturnType<type
       {primaryMenu.slice(1).map(renderMenu)}
     </nav>
     <div className="sidebar-foot">
-      <WorkerStatus control={worker} />
+      {!control.compact && <p className="rail-label">설정</p>}
       <NavLink to="/gmail" onClick={onNavigate} aria-label="Gmail 연결" title="Gmail 연결" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><AtSign size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>Gmail 연결</span></NavLink>
       <NavLink to="/manage" onClick={onNavigate} aria-label="워크스페이스 설정" title="워크스페이스 설정" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><Settings2 size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>워크스페이스 설정</span></NavLink>
       <div className={cx('flex items-center justify-between', control.compact && 'flex-col')}>
-        <button type="button" className="icon-button" onClick={() => { onNavigate?.(); control.search(); }} aria-label="현재 워크스페이스 검색" title="검색 · Ctrl+K"><Search size={20} aria-hidden="true" /></button>
+        <button type="button" className="icon-button min-[60rem]:hidden" onClick={() => { onNavigate?.(); control.search(); }} aria-label="현재 워크스페이스 검색" title="검색 · Ctrl+K"><Search size={20} aria-hidden="true" /></button>
         <button type="button" className="icon-button hidden min-[60rem]:grid" onClick={control.toggleRail} aria-label={control.compact ? '사이드바 펼치기' : '사이드바 접기'} title={control.compact ? '사이드바 펼치기' : '사이드바 접기'}>{control.compact ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}</button>
-        <button type="button" className="icon-button" onClick={() => { onNavigate?.(); control.account(); }} aria-label="계정 메뉴" title="계정 메뉴"><UserRound size={20} aria-hidden="true" /></button>
+        <button type="button" className="icon-button min-[60rem]:hidden" onClick={() => { onNavigate?.(); control.account(); }} aria-label="계정 메뉴" title="계정 메뉴"><UserRound size={20} aria-hidden="true" /></button>
       </div>
+      <WorkerStatus control={worker} />
     </div>
   </>;
 }
@@ -147,7 +150,20 @@ function WorkspaceLayout() {
     <dialog ref={menuDialog} id="workspace-menu" className="mobile-menu" aria-label="작업 메뉴" onClose={close} onClick={event => { if (event.target === event.currentTarget) close(); }}>
       <div className="mobile-menu-body"><div className="flex items-center justify-between gap-2"><Brand subtitle={brandSubtitle} onNavigate={close} /><button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus><PanelLeftClose size={20} aria-hidden="true" /></button></div><WorkspaceNav worker={worker} control={{ ...control, compact: false }} onNavigate={close} /></div>
     </dialog>
-    <div className="workspace-body"><Outlet /></div>
+    <div className="workspace-body">
+      <header className="workspace-toolbar">
+        <button type="button" className="toolbar-search" aria-label="현재 워크스페이스 검색" onClick={control.search}>
+          <Search size={18} aria-hidden="true" />
+          <span>팀·파일·메뉴 검색</span>
+          <kbd aria-hidden="true">Ctrl K</kbd>
+        </button>
+        <button type="button" className="toolbar-account" aria-label="계정 메뉴" onClick={control.account}>
+          <span className="toolbar-avatar"><UserRound size={17} aria-hidden="true" /></span>
+          <span>{session.data?.login ?? '담당자'}</span>
+        </button>
+      </header>
+      <Outlet />
+    </div>
     {!active && <WorkspaceHelp onStartGuide={startGuide} />}
     <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     <dialog ref={accountDialog} className="deletion-dialog" aria-label="계정 메뉴" onClose={() => setAccountOpen(false)} onCancel={() => setAccountOpen(false)}>

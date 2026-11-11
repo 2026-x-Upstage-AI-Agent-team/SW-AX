@@ -11,7 +11,7 @@ import DeleteIntake from '../../components/DeleteIntake';
 import WorkflowProgress from '../../components/WorkflowProgress';
 import { Feedback, Notice, StateBadge, buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
-import Upload from './Upload';
+import Upload, { UploadOverview } from './Upload';
 
 const card = 'flex flex-col gap-4 rounded-[22px] border border-line bg-white p-[clamp(18px,3vw,32px)]';
 
@@ -85,7 +85,10 @@ export default function IntakePage({ view }: { view: 'upload' | 'history' | 'det
       ) : !teams ? (
         <Notice error={teamsError} onRetry={refresh} />
       ) : view === 'upload' ? (
-        baseId ? <BaseUpload sid={baseId} /> : <Upload key={event.id} event={event} teams={teams} />
+        <div className="grid min-w-0 items-start gap-5 min-[1180px]:grid-cols-[minmax(0,3fr)_minmax(17rem,2fr)]">
+          {baseId ? <BaseUpload sid={baseId} /> : <Upload key={event.id} event={event} teams={teams} />}
+          <UploadOverview />
+        </div>
       ) : backend === 'service' ? (
         view === 'history' ? <ServiceHistory /> : <ServiceDetail />
       ) : view === 'history' ? (

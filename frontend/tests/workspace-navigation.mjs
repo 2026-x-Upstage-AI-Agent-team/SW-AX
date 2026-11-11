@@ -158,6 +158,14 @@ test('업무 현황은 판정 분포와 진행 요약을 보여주고 검토 작
   await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams } }));
   await page.goto(root);
   await page.getByRole('heading', { name: 'AI 판정 분포' }).waitFor();
+  const ring = page.locator('.verdict-ring');
+  const ringStyle = await ring.evaluate(node => {
+    const style = getComputedStyle(node);
+    return { radius: style.borderTopLeftRadius, thickness: parseFloat(style.paddingTop) };
+  });
+  assert.equal(ringStyle.radius, '50%');
+  assert.ok(ringStyle.thickness > 0, 'The chart ring must stay visible after the shared style reset.');
+  assert.ok(await page.locator('.workspace-rail').evaluate(node => parseFloat(getComputedStyle(node).paddingInlineStart) > 0));
   if (process.env.SWAX_NAV_SCREENSHOTS) await page.screenshot({ path: process.env.SWAX_NAV_SCREENSHOTS + '/workspace-dashboard.png', fullPage: true });
   assert.equal(await page.getByRole('group', { name: '검토 작업 필터' }).count(), 0);
   assert.equal(await page.getByRole('region', { name: '팀별 판정 표' }).count(), 0);

@@ -1,42 +1,47 @@
 @import "tailwindcss";
 
-/* 울산대학교 SW중심대학사업단 사이트(sw.ulsan.ac.kr) 팔레트.
-   brand(#4AA36A)는 사이트 원색, brand-strong은 흰 글자 대비 4.5:1을 맞춘 버튼·링크용 색. */
+@font-face {
+  font-family: Outfit;
+  src: url('/fonts/outfit-latin.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-sans: Outfit, "Noto Sans KR", "Pretendard Variable", Pretendard, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Consolas, "Apple SD Gothic Neo", "Malgun Gothic", monospace;
 
-  --color-brand: #4aa36a;
-  --color-brand-strong: #226649;
-  --color-brand-deep: #174d38;
-  --color-brand-tint: #e5f2e9;
+  --color-brand: #6366f1;
+  --color-brand-strong: #4f46e5;
+  --color-brand-deep: #3730a3;
+  --color-brand-tint: #eef2ff;
 
-  --color-alert: #ff4c2d;
-  --color-alert-strong: #b83218;
-  --color-alert-tint: #ffede9;
-  --color-alert-soft: #fff4f1;
+  --color-alert: #fb7185;
+  --color-alert-strong: #be123c;
+  --color-alert-tint: #ffe4e6;
+  --color-alert-soft: #fff1f2;
 
   --color-info: #63b8f4;
   --color-info-tint: #eaf5fd;
 
-  --color-caution: #9a5300;
-  --color-caution-tint: #fff1dc;
-  --color-caution-bg: #fff7ea;
-  --color-caution-line: #f5d9a8;
+  --color-caution: #92400e;
+  --color-caution-tint: #fef3c7;
+  --color-caution-bg: #fffbeb;
+  --color-caution-line: #fde68a;
 
-  /* 중립색은 회색 계열(와이어프레임 색감 A). 녹색은 조작 요소와 상태에만 쓴다. */
-  --color-ink: #1c1c1e;
-  --color-ink-2: #3a3a3c;
-  --color-muted: #636366;
-  --color-subtle: #636366;
-  --color-line: #e5e5ea;
-  --color-line-2: #d1d1d6;
-  --color-line-soft: #f2f2f7;
-  --color-canvas: #f7f7f7;
-  --color-paper: #e5e5ea;
-  --color-fill: #e5e5ea;
-  --color-fill-strong: #d1d1d6;
-  --color-rail-line: #d5e0d8;
+  --color-ink: #0f172a;
+  --color-ink-2: #334155;
+  --color-muted: #475569;
+  --color-subtle: #64748b;
+  --color-line: #e2e8f0;
+  --color-line-2: #cbd5e1;
+  --color-line-soft: #f1f5f9;
+  --color-canvas: #f8fafc;
+  --color-paper: #e2e8f0;
+  --color-fill: #f1f5f9;
+  --color-fill-strong: #e2e8f0;
+  --color-rail-line: #e2e8f0;
 }
 
 @layer base {

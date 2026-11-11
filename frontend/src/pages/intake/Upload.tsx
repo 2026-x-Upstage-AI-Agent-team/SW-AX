@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useNavigate } from '../../components/workspaceNavigation';
-import { FileUp, LoaderCircle } from 'lucide-react';
+import { Link, useNavigate } from '../../components/workspaceNavigation';
+import { ArrowRight, Check, FileUp, LoaderCircle, X } from 'lucide-react';
 import { ApiError, bytes } from '../../api/client';
 import { isDemoBackend } from '../../api/backend';
 import { teamLabel, uploadBatch, type AwardEvent, type AwardTeam } from '../../api/intake';
-import { docLabels } from '../../api/labels';
+import { docLabels, when } from '../../api/labels';
 import { getEditHistory, readVersion, versionName } from '../../api/documentVersions';
 import type { SubmissionDetail } from '../../api/service';
-import { buttonStyles, cx } from '../../components/ui';
+import { StateBadge, buttonStyles, cx } from '../../components/ui';
 import { useEvent } from '../../context/EventContext';
 
 type Picked = { id: string; file: File; sourceId?: string };
@@ -16,6 +16,67 @@ const MAX_FILES = 100;
 const MAX_TOTAL = 300 * 1024 ** 2;
 const MAX_FILE = 40 * 1024 ** 2;
 const PENDING_KEY = 'intake.pending';
+
+const receiptSteps = [
+  ['원본 저장', '파일을 저장하고 첨부번호를 발급합니다.'],
+  ['판독 · 제출본 확정', '원본을 판독해 검토용 PDF와 팀 제출본을 준비합니다.'],
+  ['Studio 판정', '성공, 담당자 확인, 재제출 요청 중 하나로 판정합니다.'],
+  ['담당자 검토 · 메일', '원문과 근거를 확인하고 팀장 안내를 검토합니다.'],
+  ['지급내역 · 보고서', '확정한 팀의 서류를 HWPX와 PDF로 정리합니다.'],
+];
+
+export function UploadOverview() {
+  const { dashboard, dashboardError } = useEvent();
+  const recent = dashboard?.batches.slice().sort((a, b) => b.created - a.created).slice(0, 4) ?? [];
+
+  return (
+    <aside aria-label="파일 첨부 안내" className="grid min-w-0 gap-5">
+      <section className="rounded-[20px] bg-[#0f172a] p-[clamp(18px,2.5vw,24px)] text-white">
+        <h2 className="text-lg font-semibold">첨부 뒤 진행 순서</h2>
+        <ol className="mt-4 grid gap-3.5">
+          {receiptSteps.map(([title, description], index) => (
+            <li key={title} className="flex min-w-0 items-start gap-3">
+              <span aria-hidden="true" className={cx('grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold', index === 0 ? 'bg-[#6366f1] text-white' : 'bg-[#1e293b] text-[#e2e8f0]')}>
+                {index + 1}
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold">{title}</h3>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-[#cbd5e1]">{description}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+      <section className="surface min-w-0 rounded-[20px] p-[clamp(18px,2.5vw,24px)]">
+        <div className="flex flex-wrap items-center justify-between gap-x-3">
+          <h2 className="text-lg font-semibold">최근 첨부</h2>
+          <Link to="/intake/batches" className={buttonStyles.text}>
+            첨부 내역 전체<ArrowRight size={15} aria-hidden="true" />
+          </Link>
+        </div>
+        {recent.length ? (
+          <ul className="mt-1.5">
+            {recent.map((batch) => (
+              <li key={batch.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line-soft py-3">
+                <div className="min-w-0">
+                  <Link to={`/intake/batches/${encodeURIComponent(batch.id)}`} className="font-semibold text-ink hover:text-brand-strong hover:underline">
+                    첨부 {batch.id.slice(0, 8)}
+                  </Link>
+                  <p className="mt-0.5 text-[13px] text-muted">원본 {batch.count}개 · {when(batch.created)}</p>
+                </div>
+                <StateBadge state={batch.state} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-muted">
+            {dashboardError ? '최근 첨부 내역을 불러오지 못했습니다.' : dashboard ? '아직 첨부한 문서가 없습니다.' : '최근 첨부 내역을 불러오는 중입니다.'}
+          </p>
+        )}
+      </section>
+    </aside>
+  );
+}
 
 function readPending(): { selection: string; key: string } | null {
   try {
@@ -172,15 +233,15 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
   }
 
   return (
-    <form onSubmit={submit} data-tour="upload-form" data-tour-pending={files.length > 0} data-tour-busy={busy || !!loadingEdit} className="surface flex flex-col gap-6 p-[clamp(18px,3vw,32px)]">
+    <form onSubmit={submit} data-tour="upload-form" data-tour-pending={files.length > 0} data-tour-busy={busy || !!loadingEdit} className="surface flex min-w-0 flex-col gap-5 rounded-[20px] p-[clamp(18px,2.5vw,24px)]">
       {dragging && (
         <div aria-hidden="true" className="drop-overlay">
           <span><FileUp size={28} strokeWidth={1.7} />여기에 놓아 파일 추가</span>
         </div>
       )}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-extrabold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '첨부할 서류'}</h2>
-        <span className="text-sm text-muted">HWP · HWPX</span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">{base ? `${base.team_name} 보완본 (v${base.version} → 새 버전)` : '첨부할 서류'}</h2>
+        <span className="text-xs font-medium text-muted">HWP · HWPX</span>
       </div>
       <fieldset disabled={busy || !!loadingEdit} className="flex min-w-0 flex-col gap-2">
         {base ? (
@@ -212,7 +273,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
             <label htmlFor="target" className="text-sm font-bold">
               첨부할 팀
             </label>
-            <select id="target" value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 max-w-[370px] rounded-xl border border-line-2 bg-white px-3">
+            <select id="target" value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 w-full min-w-0 rounded-full border border-line-2 bg-white px-4 text-sm text-ink">
               {!isDemoBackend && <option value="bundle">새 팀 서류 첨부 · 팀명 입력 없이</option>}
               <option value="">팀 미지정 · 여러 팀 서류 첨부</option>
               {teams.map((t) => (
@@ -221,7 +282,7 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
                 </option>
               ))}
             </select>
-            <p className="text-sm text-muted">{target === 'bundle'
+            <p className="text-[13px] leading-relaxed text-muted">{target === 'bundle'
               ? '한 팀에서 받은 서류만 함께 올리세요. 첨부 순서대로 팀번호를 부여하고, 판정 후 신청서의 팀명을 표시합니다. 신청서가 없어도 받은 서류로 판정합니다.'
               : target ? '선택한 기존 팀에 첨부합니다.' : '여러 팀의 서류를 함께 받았을 때 사용합니다. 팀을 구분할 근거가 부족하면 담당자가 배정합니다.'}</p>
           </>
@@ -245,38 +306,45 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           aria-describedby={fileError ? 'upload-limits upload-file-error' : 'upload-limits'}
           onClick={() => picker.current?.click()}
           className={cx(
-            'mt-4 grid w-full place-items-center gap-2 rounded-2xl border border-dashed px-4 py-8 text-brand-deep sm:py-11',
-            dragging ? 'border-brand-strong bg-brand-tint ring-2 ring-brand-strong' : 'border-brand/65 bg-canvas hover:border-brand-strong hover:bg-brand-tint',
+            'mt-3 grid w-full place-items-center gap-2 rounded-[20px] border-2 border-dashed px-4 py-7 text-center sm:px-6 sm:py-9',
+            dragging ? 'border-brand-strong bg-brand-tint ring-2 ring-brand-strong' : 'border-[#a5b4fc] bg-brand-tint hover:border-brand-strong',
           )}
         >
-          <span aria-hidden="true" className="mb-1 grid size-12 place-items-center rounded-2xl bg-brand-tint">
-            <FileUp size={25} strokeWidth={1.7} />
+          <span aria-hidden="true" className="mb-1 grid size-14 place-items-center rounded-full bg-brand-strong text-white">
+            <FileUp size={24} strokeWidth={2} />
           </span>
-          <strong className="text-base text-ink">화면 어디에나 파일을 끌어다 놓거나 선택하세요</strong>
-          <span id="upload-limits" className="text-[13px] text-muted">00 지급내역서 제외 · 최대 100개 · 파일당 40 MiB · 합계 300 MiB</span>
+          <strong className="text-base font-semibold text-ink sm:text-lg">화면 어디에나 파일을 끌어다 놓거나 선택하세요</strong>
+          <span id="upload-limits" className="text-[13px] leading-relaxed text-muted">00 지급내역서 제외 · 최대 100개 · 파일당 40 MiB · 합계 300 MiB</span>
+          <span aria-hidden="true" className="mt-1.5 inline-flex min-h-11 items-center rounded-full bg-[#0f172a] px-5 text-sm font-semibold text-white">파일 선택</span>
         </button>
         {fileError && <p id="upload-file-error" role="alert" className="rounded-xl bg-alert-soft px-4 py-3 text-sm text-alert-strong">{fileError}</p>}
         {files.length > 0 && (
-          <ol className="mt-2">
-            {files.map(({ id, file }) => (
-              <li key={id} className="flex flex-wrap items-center gap-2.5 border-b border-line-soft py-3 text-sm">
-                <span className="file-name flex-[1_1_160px]">{file.name}</span>
-                <small className="whitespace-nowrap text-muted">{bytes(file.size)}</small>
-                <button
-                  type="button"
-                  aria-label={file.name + ' 선택 취소'}
-                  className={buttonStyles.text}
-                  onClick={() => {
-                    setFiles((list) => list.filter((item) => item.id !== id));
-                    setError('');
-                    setFileError('');
-                  }}
-                >
-                  제거
-                </button>
-              </li>
-            ))}
-          </ol>
+          <div className="mt-4 grid gap-2.5">
+            <h3 className="font-semibold">선택한 원본 {files.length}개</h3>
+            <ol className="grid gap-2.5">
+              {files.map(({ id, file }, index) => (
+                <li key={id} className="flex min-w-0 items-center gap-2.5 rounded-2xl border border-line py-1.5 pr-1.5 pl-3 text-sm">
+                  <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full bg-[#0f172a] text-xs font-semibold text-white">{index + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <span className="file-name block font-semibold">{file.name}</span>
+                    <small className="text-xs text-muted">{bytes(file.size)}</small>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={file.name + ' 선택 취소'}
+                    className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-canvas hover:text-ink"
+                    onClick={() => {
+                      setFiles((list) => list.filter((item) => item.id !== id));
+                      setError('');
+                      setFileError('');
+                    }}
+                  >
+                    <X size={18} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
       </fieldset>
       {error && (
@@ -291,12 +359,12 @@ export default function Upload({ event, teams, base }: { event: AwardEvent; team
           {progress < 100 && <span aria-hidden="true" className="tabular-nums">{progress}%</span>}
         </div>
       )}
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-sm">
-        <span>
-          선택 <b>{files.length}</b>개 {bytes(total)}
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm">
+        <span className="text-muted">
+          선택 <b className="text-ink">{files.length}</b>개 · {bytes(total)}
         </span>
-        <button className={buttonStyles.primary} data-tour="upload-submit" disabled={busy || !!loadingEdit || !files.length}>
-          {busy && <LoaderCircle size={17} className="shrink-0 motion-safe:animate-spin" aria-hidden="true" />}
+        <button className={cx(buttonStyles.primary, 'min-h-[52px] rounded-full px-5')} data-tour="upload-submit" disabled={busy || !!loadingEdit || !files.length}>
+          {busy ? <LoaderCircle size={17} className="shrink-0 motion-safe:animate-spin" aria-hidden="true" /> : <Check size={18} aria-hidden="true" />}
           {busy ? '첨부 중…' : base ? '보완 서류 첨부하기' : '파일 첨부하기'}
         </button>
       </footer>

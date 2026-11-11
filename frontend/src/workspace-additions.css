@@ -58,7 +58,7 @@
   }
   .workspace-tour { position: fixed; inset: 0; z-index: 1000; pointer-events: none; }
   .tour-shade { position: fixed; background: rgb(0 0 0 / 45%); pointer-events: auto; }
-  .tour-spotlight { position: fixed; border: 2px solid #8fe3b4; border-radius: .72rem; box-shadow: 0 0 0 4px rgb(143 227 180 / 22%), 0 0 24px rgb(143 227 180 / 45%); pointer-events: none; }
+  .tour-spotlight { position: fixed; border: 2px solid #a5b4fc; border-radius: .72rem; box-shadow: 0 0 0 4px rgb(165 180 252 / 25%), 0 0 24px rgb(165 180 252 / 45%); pointer-events: none; }
   .tour-arrow { position: fixed; z-index: 1; width: 12px; height: 12px; transform: rotate(45deg); background: white; }
   .tour-card { position: fixed; z-index: 1; display: flex; flex-direction: column; gap: .85rem; max-height: calc(100dvh - 24px); overflow: hidden; padding: 1.25rem; border: 1px solid var(--color-line-2); border-radius: 14px; background: white; color: var(--color-ink); box-shadow: 0 14px 60px rgb(0 0 0 / 24%); pointer-events: auto; outline: none; }
   .tour-card > * { flex: none; }

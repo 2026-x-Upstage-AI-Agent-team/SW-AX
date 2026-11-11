@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f7f7f7">
+  <meta name="theme-color" content="#f8fafc">
   <title th:text="${leaving ? '로그아웃 | SW·AX 문서 자동화' : '담당자 로그인 | SW·AX 문서 자동화'}">담당자 로그인 | SW·AX 문서 자동화</title>
-  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=4)}">
+  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=6)}">
   <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=5)}"></script>
 </head>
 <body>
@@ -13,12 +13,16 @@
     <div class="identity">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6 7 17l-5-5"/>
-            <path d="m22 10-7.5 7.5L13 16"/>
+          <svg viewBox="0 0 48 48" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+            <mask id="staff-logo-cutout" x="-20%" y="-20%" width="140%" height="140%">
+              <rect width="48" height="48" fill="#fff"/>
+              <path d="M21.5 32.9L34 19.5" stroke="#000" stroke-width="8.4" stroke-linecap="butt"/>
+            </mask>
+            <path d="M15.6 27L21.5 32.9L34 19.5" stroke="#a5b4fc"/>
+            <path d="M10 39L24 9l14 30" stroke="currentColor" mask="url(#staff-logo-cutout)"/>
           </svg>
         </span>
-        <strong>SW·AX</strong>
+        <strong>SW-AX</strong>
       </div>
       <p class="product-name">SW중심대학 <span>문서 자동화</span></p>
     </div>

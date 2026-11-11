@@ -1,0 +1,121 @@
+@layer components {
+  .dashboard-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.75rem), 1fr));
+    gap: 1.25rem;
+  }
+  .dashboard-metrics .dashboard-metric {
+    display: grid;
+    align-content: start;
+    gap: .5rem;
+    padding: 1.375rem;
+    border-radius: 1.25rem;
+  }
+  .dashboard-metric dt {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    color: var(--color-muted);
+    font-size: .875rem;
+    font-weight: 600;
+  }
+  .dashboard-metric-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    color: var(--color-brand-strong);
+    background: var(--color-brand-tint);
+  }
+  .dashboard-metric .dashboard-metric-value {
+    font-size: clamp(2rem, 3.5vw, 2.625rem);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.04em;
+    line-height: 1.05;
+  }
+  .dashboard-metric-value span {
+    margin-inline-start: .35rem;
+    font-size: .95rem;
+    color: var(--color-muted);
+    letter-spacing: normal;
+  }
+  .dashboard-metrics .dashboard-metric-priority {
+    background: #0f172a;
+    color: white;
+    border-color: #0f172a;
+  }
+  .dashboard-metric-priority dt, .dashboard-metric-priority .dashboard-metric-value span { color: #cbd5e1; }
+  .dashboard-metric-priority .dashboard-metric-icon { background: #1e293b; color: #fcd34d; }
+  .dashboard-metric-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+    min-height: 2.75rem;
+    color: #c7d2fe;
+    font-weight: 650;
+  }
+  .dashboard-metric-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .dashboard-metric-link:focus-visible { outline-color: #c7d2fe; }
+  .dashboard-caption { margin-top: .2rem; color: var(--color-muted); font-size: .8125rem; }
+  .dashboard-analysis {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+  }
+  .dashboard-analysis .dashboard-stages, .dashboard-analysis .summary-panel {
+    min-width: 0;
+    border-radius: 1.25rem;
+    padding: clamp(1rem, 2.1vw, 1.5rem);
+  }
+  .dashboard-stages { display: grid; align-content: start; gap: 1rem; flex: 2 1 27rem; }
+  .dashboard-analysis .summary-panel {
+    flex: 1 1 20rem;
+    --chart-success: #4f46e5;
+    --chart-review: #fbbf24;
+    --chart-return: #f43f5e;
+    --chart-pending: #cbd5e1;
+  }
+  .dashboard-analysis .summary-body { flex-wrap: wrap; margin-block: 1.25rem 0; }
+  .dashboard-analysis .verdict-legend { flex: 1 1 8.5rem; }
+  .dashboard-stage-list { display: grid; gap: .15rem; }
+  .dashboard-stage {
+    display: grid;
+    grid-template-columns: minmax(6.2rem, 8rem) minmax(1.5rem, 1fr) auto;
+    align-items: center;
+    gap: clamp(.5rem, 1.1vw, 1rem);
+    min-height: 2.75rem;
+    padding-inline: .35rem;
+    border-radius: .65rem;
+    color: var(--color-ink);
+    font-size: .875rem;
+    font-weight: 600;
+  }
+  .dashboard-stage:hover { background: var(--color-canvas); }
+  .dashboard-stage-track {
+    display: block;
+    height: .65rem;
+    background: var(--color-brand-tint);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .dashboard-stage-track > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-brand-strong);
+  }
+  .dashboard-stage-count {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    justify-content: end;
+    min-width: 3.5rem;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .dashboard-stage-count svg { color: var(--color-muted); }
+}
