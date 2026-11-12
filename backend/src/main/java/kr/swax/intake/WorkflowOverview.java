@@ -39,11 +39,19 @@ class WorkflowOverview {
         result.put("overview",data.one("SELECT jsonb_build_object('date',event_date,'place',place) FROM award_event WHERE id=?",event));
         result.put("events",data.catalog.events(login));
         result.put("teams",data.list("""
+            WITH attached_teams AS (
+                SELECT DISTINCT CASE WHEN f.state='assigned' THEN f.team_id ELSE b.target_team_id END AS team_id
+                FROM intake_batch b JOIN intake_file_state f ON f.batch_id=b.id
+                WHERE b.event_id=? AND (f.state='assigned' OR (f.state='unassigned'
+                    AND b.target_team_id IS NOT NULL AND b.target_team_id<>ALL(f.excluded)))
+            )
             SELECT jsonb_build_object('id',t.id,'name',t.name,'intake_number',t.intake_number,'rep',t.representative,'email',t.email,
-                'current',c.submission_id,'held',ops_team_held(t.id),'submission',s.info)
+                'current',c.submission_id,'held',ops_team_held(t.id),'submission',s.info,
+                'has_documents',coalesce(s.file_count,0)>0 OR a.team_id IS NOT NULL)
             FROM award_team t LEFT JOIN intake_team_confirmation c ON c.team_id=t.id AND c.state<>'superseded'
-            LEFT JOIN ops_summary s ON s.id=c.submission_id WHERE t.event_id=? ORDER BY t.intake_number,t.name,t.representative,t.id
-            """,event));
+            LEFT JOIN ops_summary s ON s.id=c.submission_id LEFT JOIN attached_teams a ON a.team_id=t.id
+            WHERE t.event_id=? ORDER BY t.intake_number,t.name,t.representative,t.id
+            """,event,event));
         result.put("batches",data.list("""
             SELECT jsonb_build_object('id',b.id,'created',extract(epoch FROM b.created_at),'count',count(*),
                 'pending',count(*) FILTER(WHERE coalesce(p.state,'') NOT IN ('conflict','conflict_reviewed') AND f.info->>'state' IN ('unassigned','error','waiting')),

@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#ffffff">
   <title th:text="${leaving ? '로그아웃 | SW·AX 문서 자동화' : '담당자 로그인 | SW·AX 문서 자동화'}">담당자 로그인 | SW·AX 문서 자동화</title>
   <link rel="icon" type="image/svg+xml" th:href="@{/sw-ax.svg}">
-  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=9)}">
-  <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=6)}"></script>
+  <link rel="stylesheet" th:href="@{/staff-access/login.css(v=10)}">
+  <script defer th:unless="${leaving}" th:src="@{/staff-access/login.js(v=8)}"></script>
   <script defer th:unless="${leaving}" th:src="@{/staff-access/login-preview.js(v=1)}"></script>
 </head>
 <body>
@@ -58,6 +58,8 @@
             <span id="login-submit-label">로그인</span>
             <svg class="submit-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
           </button>
+          <button class="test-account-fill" id="test-account-fill" type="button" aria-describedby="test-account-status" hidden>테스트 계정 채우기</button>
+          <p id="test-account-status" class="test-account-status" role="status"></p>
         </form>
 
         <form th:if="${leaving}" th:action="@{/logout}" method="post">

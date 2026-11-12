@@ -145,6 +145,21 @@ input[aria-invalid="true"]:focus-visible { outline-color: var(--error); }
 .submit-icon { width: 1rem; height: 1rem; }
 #staff-login .primary:disabled { opacity: .7; cursor: wait; }
 #staff-login .primary:disabled .submit-icon { display: none; }
+.test-account-fill {
+  justify-self: center;
+  min-height: 2.75rem;
+  margin-block-start: .4rem;
+  padding: .4rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--action);
+  font-size: .875rem;
+  font-weight: 650;
+}
+.test-account-fill:hover:enabled { background: var(--accent-surface); }
+.test-account-fill:disabled { opacity: .65; cursor: wait; }
+.test-account-status { color: var(--muted); font-size: .8rem; text-align: center; }
 .back-link { justify-self: center; margin-block-start: .75rem; padding: .5rem; color: var(--action); font-weight: 600; text-underline-offset: .2em; }
 .staff-note {
   display: grid;

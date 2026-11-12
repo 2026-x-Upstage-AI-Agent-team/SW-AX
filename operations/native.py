@@ -2,6 +2,7 @@
 import hashlib
 import os
 import shutil
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,6 +25,15 @@ def render(src, dest):
         powershell(ROOT/"service/convert.ps1",source,pdf,"-Guard",module,timeout=180)
         shutil.copyfile(pdf,dest)
     finally:
+        # Windows can keep the input locked briefly after Hancom exits.
+        deadline = time.monotonic() + 5
         for path in (source,pdf):
-            path.unlink(missing_ok=True)
+            while True:
+                try:
+                    path.unlink(missing_ok=True)
+                    break
+                except PermissionError as error:
+                    if getattr(error, "winerror", None) != 32 or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.1)
         work.rmdir()

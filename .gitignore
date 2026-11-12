@@ -3,6 +3,7 @@ client_secret_*.json
 /output/upstage/
 /.venv/
 /var/
+/frontend/.env.local
 __pycache__/
 /backend/.gradle/
 /backend/build/

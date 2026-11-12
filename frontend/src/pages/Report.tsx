@@ -17,25 +17,32 @@ import {
   type ReportView,
 } from '../api/service';
 import { Page } from '../components/Layout';
+import WorkflowProgress from '../components/WorkflowProgress';
 import { Feedback, Notice, PageHeader, PdfFrame, StateBadge, buttonStyles, cx, inputStyle } from '../components/ui';
 import { workflowLabels } from '../components/workspaceMenu';
 import { useEvent } from '../context/EventContext';
+import { workspaceTasks } from '../hooks/workspaceTasks';
 
 type PaymentEdit = { revision: number; values: Payment };
-const PAY_FIELDS: Array<[keyof Payment, string, boolean]> = [
-  ['award_type', '시상구분', false],
-  ['support_amount', '지원액(원)', true],
-  ['gross_amount', '지급총액', true],
-  ['tax_amount', '세액', true],
-  ['net_amount', '차인지급액', true],
+const PAY_FIELDS: Array<[key: keyof Payment, label: string, numeric: boolean, example: string]> = [
+  ['award_type', '시상구분', false, 'WAVE 2026 우수상'],
+  ['support_amount', '지원액(원)', true, '500000'],
+  ['gross_amount', '지급총액', true, '500000'],
+  ['tax_amount', '세액', true, '0'],
+  ['net_amount', '차인지급액', true, '500000'],
 ];
+
+const ungroupAmount = (value: string) => /^[0-9,]*$/.test(value) ? value.replaceAll(',', '') : value;
+const groupAmount = (value: string) => /^[0-9]{1,15}$/.test(value)
+  ? value.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  : value;
 
 const payOf = (t: DraftTeam): Payment => ({
   award_type: t.award_type ?? '',
-  support_amount: String(t.support_amount ?? ''),
-  gross_amount: String(t.recipient?.gross_amount ?? ''),
-  tax_amount: String(t.recipient?.tax_amount ?? ''),
-  net_amount: String(t.recipient?.net_amount ?? ''),
+  support_amount: ungroupAmount(String(t.support_amount ?? '')),
+  gross_amount: ungroupAmount(String(t.recipient?.gross_amount ?? '')),
+  tax_amount: ungroupAmount(String(t.recipient?.tax_amount ?? '')),
+  net_amount: ungroupAmount(String(t.recipient?.net_amount ?? '')),
 });
 const samePay = (a: Payment, b: Payment) => PAY_FIELDS.every(([key]) => a[key] === b[key]);
 
@@ -63,6 +70,7 @@ export default function Report() {
   const activeRid = dashboard?.reports.some((item) => item.id === rid) ? rid : latest?.id;
   const chosen = order.map((id) => teams.find((t) => t.submission === id)).filter((t): t is DraftTeam => !!t);
   const held = teams.filter((t) => t.pending.length > 0);
+  const assignment = workspaceTasks(dashboard).find((task) => task.key === 'assign');
   function editFor(t: DraftTeam) {
     const edit = edits[t.submission!];
     return edit && !samePay(edit.values, payOf(t)) ? edit : undefined;
@@ -111,7 +119,15 @@ export default function Report() {
             <h2 id="teams-h" className="text-xl font-extrabold">
               팀 순서와 지급 정보
             </h2>
-            {ready.length === 0 && <p className="rounded-[20px] bg-white px-5 py-6 text-sm text-muted">서류를 승인하면 이곳에서 지급 정보를 입력할 수 있습니다.</p>}
+            {assignment && (
+              <WorkflowProgress
+                title={assignment.text}
+                description="서류를 소속 팀에 배정하고 검토 결과를 승인하면 지급 정보를 입력할 수 있어요."
+                tone="attention"
+                action={<Link to={assignment.to} className={buttonStyles.secondary}>{assignment.action}</Link>}
+              />
+            )}
+            {ready.length === 0 && !assignment && <p className="rounded-[20px] bg-white px-5 py-6 text-sm text-muted">서류를 승인하면 이곳에서 지급 정보를 입력할 수 있습니다.</p>}
             {ready.map((t) => {
               const index = order.indexOf(t.submission!);
               return (
@@ -236,6 +252,26 @@ function PayForm({ t, edit, onChange, onSaved }: {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
+  function changeField(event: ChangeEvent<HTMLInputElement>, key: keyof Payment, numeric: boolean) {
+    const input = event.currentTarget;
+    const typed = input.value;
+    const value = numeric ? ungroupAmount(typed) : typed;
+    const formatted = numeric ? groupAmount(value) : value;
+    if (formatted !== typed) {
+      // Keep the caret beside the same digit when a separator appears or disappears.
+      const digitsBefore = ungroupAmount(typed.slice(0, input.selectionStart ?? typed.length)).length;
+      let caret = 0;
+      for (let digits = 0; caret < formatted.length && digits < digitsBefore; caret++) {
+        if (formatted[caret] !== ',') digits++;
+      }
+      if ((event.nativeEvent as InputEvent).inputType === 'deleteContentForward' && formatted[caret] === ',') caret++;
+      input.value = formatted;
+      input.setSelectionRange(caret, caret);
+    }
+    setMessage('');
+    onChange({ ...pay, [key]: value });
+  }
+
   async function save() {
     if (!t.submission || !edit) return;
     setBusy(true);
@@ -243,8 +279,14 @@ function PayForm({ t, edit, onChange, onSaved }: {
     setMessage('');
     try {
       const values = { ...pay };
-      for (const [key] of PAY_FIELDS) values[key] = values[key].trim();
-      await savePayment(t.submission, edit.revision, values);
+      const payload = { ...pay };
+      for (const [key, , numeric] of PAY_FIELDS) {
+        const value = values[key].trim();
+        values[key] = numeric ? ungroupAmount(value) : value;
+        // The API accepts up to 13 digits without separators and up to 15 with them.
+        payload[key] = numeric && values[key].length > 13 ? groupAmount(values[key]) : values[key];
+      }
+      await savePayment(t.submission, edit.revision, payload);
       onChange(values);
       setMessage('저장했습니다.');
       onSaved();
@@ -260,17 +302,17 @@ function PayForm({ t, edit, onChange, onSaved }: {
     <div className="flex flex-col gap-2.5">
       {t.missing_payouts.length > 0 && <p className="text-xs text-caution">지급 정보 입력 대기 · {t.missing_payouts.join(', ')}</p>}
       <div className="grid grid-cols-2 gap-2.5">
-        {PAY_FIELDS.map(([key, label, numeric]) => (
+        {PAY_FIELDS.map(([key, label, numeric, example]) => (
           <label key={key} className={cx('flex flex-col gap-1.5 text-xs text-muted', key === 'award_type' && 'col-span-2')}>
             {label}
             <input
               type="text"
               inputMode={numeric ? 'numeric' : undefined}
               maxLength={key === 'award_type' ? 60 : undefined}
-              placeholder="미확인"
-              value={pay[key]}
+              placeholder={`예: ${numeric ? groupAmount(example) : example}`}
+              value={numeric ? groupAmount(pay[key]) : pay[key]}
               disabled={busy}
-              onChange={(e) => { setMessage(''); onChange({ ...pay, [key]: e.target.value }); }}
+              onChange={(event) => changeField(event, key, numeric)}
               className={cx(inputStyle, numeric && 'font-mono')}
             />
           </label>

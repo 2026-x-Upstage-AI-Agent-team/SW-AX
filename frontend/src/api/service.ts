@@ -34,6 +34,7 @@ export type DashTeam = {
   email: string;
   current: string | null;
   held: boolean;
+  has_documents?: boolean;
   submission: SubInfo | null;
 };
 

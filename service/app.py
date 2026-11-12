@@ -102,8 +102,18 @@ def sub_info(s):
 def dashboard(event: str = "wave"):
     with database() as db:
         require(db,"events",event)
-        teams = rows(db,"SELECT id,name,rep,email,current FROM teams WHERE event=? ORDER BY rowid",event)
+        teams = rows(db,"""WITH attached_teams AS (
+                SELECT DISTINCT CASE WHEN f.state='assigned' THEN f.team ELSE b.target END AS team
+                FROM batches b JOIN files f ON f.batch=b.id
+                WHERE b.event=? AND (f.state='assigned' OR (f.state IN ('waiting','read','unassigned','error')
+                    AND b.target IS NOT NULL AND NOT EXISTS (SELECT 1 FROM json_each(f.excluded) WHERE value=b.target)))
+            )
+            SELECT t.id,t.name,t.rep,t.email,t.current, a.team IS NOT NULL OR EXISTS (
+                SELECT 1 FROM submissions s CROSS JOIN json_each(s.files) sf JOIN files f ON f.id=sf.value WHERE s.id=t.current
+            ) AS has_documents
+            FROM teams t LEFT JOIN attached_teams a ON a.team=t.id WHERE t.event=? ORDER BY t.rowid""",event,event)
         for t in teams:
+            t["has_documents"] = bool(t["has_documents"])
             t["held"] = held(db,t["id"])
             t["submission"] = sub_info(require(db,"submissions",t["current"])) if t["current"] else None
         batches = rows(db,"""SELECT b.id,b.state,b.created,count(f.id) AS count,

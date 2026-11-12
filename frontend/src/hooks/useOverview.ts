@@ -12,7 +12,7 @@ export type TeamRow = DashTeam & {
 };
 
 /**
- * 현황판 팀 목록. 대시보드에는 판정 근거와 서류 구성이 없어서 팀별 제출본을 함께 읽는다.
+ * 현황판과 검토 목록에는 현재 서류가 있는 팀만 표시하고 판정 근거는 팀별 제출본에서 읽는다.
  * 대시보드가 갱신될 때마다 다시 읽는다.
  */
 export function useOverview() {
@@ -36,14 +36,17 @@ export function useOverview() {
     };
   }, [dashboard]);
 
-  const rows: TeamRow[] | undefined = dashboard?.teams.map((t) => {
+  const hasOriginals = dashboard?.batches.some((batch) => batch.count > 0);
+  const activeTeams = dashboard?.teams.filter((team) =>
+    team.has_documents ?? (Boolean(team.submission?.count) || Boolean(hasOriginals && team.held)));
+  const rows: TeamRow[] | undefined = activeTeams?.map((t) => {
     const detail = t.current ? details[t.current] : undefined;
     return {
       ...t,
       name: receiptName(t.name, t.intake_number),
       detail,
       reviewSummary: t.submission?.state === 'done' ? reviewEvidence(detail?.result, t.submission.verdict).summary : undefined,
-      leaderMail: dashboard.mail.find((m) => m.submission === t.current && isLeaderMail(m)),
+      leaderMail: dashboard?.mail.find((m) => m.submission === t.current && isLeaderMail(m)),
     };
   });
 

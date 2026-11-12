@@ -336,6 +336,46 @@ test('업무 현황은 판정 분포와 진행 요약을 보여주고 검토 작
   assert.equal(await page.getByRole('heading', { name: 'AI 판정 분포' }).count(), 0);
 });
 
+test('마지막 첨부 묶음을 삭제하면 업무 현황과 팀별 검토 집계에서 빠진다', async t => {
+  const page = await pageFor(t);
+  const registered = { ...team, current: null, submission: null };
+  const emptyTeam = { ...registered, id: 'empty-team', name: '빈 팀', has_documents: false };
+  let deleted = false;
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: {
+    ...dashboard,
+    teams: [{ ...registered, has_documents: !deleted }, emptyTeam],
+    batches: deleted ? [] : [batch],
+  } }));
+  await page.route('**/api/intake-batches?*', route => route.fulfill({ json: deleted ? [] : [{
+    batch_id: batch.id, status: 'received', created_at: '2026-11-12T00:00:00Z', team_name: team.name, file_count: 1,
+  }] }));
+  await page.route('**/api/intake-batches/batch-1/deletion-preview', route => route.fulfill({
+    json: { team_count: 0, batch_count: 1, file_count: 1, reviews: [], reports: [], token: 'test' },
+  }));
+  await page.route('**/api/intake-batches/batch-1', route => {
+    assert.equal(route.request().method(), 'DELETE');
+    deleted = true;
+    return route.fulfill({ status: 204 });
+  });
+
+  await page.goto(root);
+  const rail = page.getByRole('complementary', { name: '작업 공간' });
+  const uploaded = page.locator('dl').filter({ hasText: '서류를 올린 팀' });
+  await uploaded.getByText('1팀', { exact: true }).waitFor();
+  await page.getByRole('link', { name: '팀 배정 확인 1팀 보기' }).waitFor();
+  await rail.getByRole('link', { name: '검토 진행', exact: true }).click();
+  await page.getByRole('button', { name: /묶음 삭제$/ }).click();
+  await page.getByRole('button', { name: '묶음 삭제하기' }).click();
+  await page.getByText('아직 올린 서류가 없습니다.').waitFor();
+
+  await rail.getByRole('link', { name: '업무 현황', exact: true }).click();
+  await uploaded.getByText('원본 0개', { exact: true }).waitFor();
+  await uploaded.getByText('0팀', { exact: true }).waitFor();
+  assert.match(await page.locator('.ring-center').innerText(), /^0\s+첨부한 팀$/);
+  await page.getByRole('link', { name: '팀 배정 확인 0팀 보기' }).click();
+  await page.getByRole('heading', { name: '아직 검토할 팀이 없습니다.' }).waitFor();
+});
+
 test('검토 검색과 필터는 원문을 열었다 돌아와도 유지된다', async t => {
   const page = await pageFor(t);
   await page.goto(root + '/review?filter=all');

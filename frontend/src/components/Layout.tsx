@@ -43,13 +43,13 @@ function WorkspaceNav({ worker, control, onNavigate, account }: { worker: Return
   const drafts = dashboard?.mail.filter(m => isLeaderMail(m) && isMailDraft(m)).length ?? 0;
   const reviewCount = queueGroups(rows ?? []).review.length;
   const tasks = workspaceTasks(dashboard, rows).length;
-  const renderMenu = (item: typeof workflowMenu[number] | typeof dashboardMenu | typeof mailMenu, step?: number) => {
+  const renderMenu = (item: typeof workflowMenu[number] | typeof dashboardMenu | typeof mailMenu) => {
     const count = item.to === '/mail' ? drafts : item.to === '/review' ? reviewCount : item.to === '/' ? tasks : 0;
     const link = <Link key={item.to} to={item.to} onClick={onNavigate} aria-label={item.label}
       aria-current={currentMenu(item.to, section) ? 'page' : undefined} data-tour={item.tour}
       title={item.label + (count ? ` · 확인할 일 ${count}건` : '')}
       className={cx('nav-item', currentMenu(item.to, section) && 'is-current', control.compact && 'justify-center')}>
-      {step && !control.compact ? <span className="workflow-step-number" aria-hidden="true">{step}</span> : <item.Icon size={19} aria-hidden="true" />}
+      <item.Icon size={19} aria-hidden="true" />
       <span className={control.compact ? 'sr-only' : undefined}>{item.label}</span>
       {!control.compact && count > 0 && item.to !== '/' && <span className="nav-count">{count}</span>}
     </Link>;
@@ -66,7 +66,7 @@ function WorkspaceNav({ worker, control, onNavigate, account }: { worker: Return
       {renderMenu(dashboardMenu)}
       {!control.compact && <p className="rail-label">업무 순서</p>}
       <ol className="workspace-nav" aria-label="업무 순서" role="list">
-        {workflowMenu.map((item, index) => <li key={item.to}>{renderMenu(item, index + 1)}</li>)}
+        {workflowMenu.map(item => <li key={item.to}>{renderMenu(item)}</li>)}
       </ol>
       {renderMenu(mailMenu)}
     </nav>
