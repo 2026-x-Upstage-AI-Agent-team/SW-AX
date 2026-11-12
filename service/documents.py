@@ -28,6 +28,8 @@ def powershell(script, *arguments, timeout, legacy=False):
     exe = "powershell.exe" if legacy else "pwsh.exe"
     bundled = Path(sys.base_prefix).parent / "native/powershell/pwsh.exe"
     binary = shutil.which(exe) or str(bundled if bundled.is_file() else Path(os.environ["ProgramFiles"]) / "PowerShell/7/pwsh.exe")
+    if not legacy and os.environ.get("AWARDS_POWERSHELL"):
+        binary = os.environ["AWARDS_POWERSHELL"]
     return subprocess.run([binary, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                            "-File", str(script), *map(str, arguments)], capture_output=True,
                           creationflags=subprocess.CREATE_NO_WINDOW, timeout=timeout, check=True)

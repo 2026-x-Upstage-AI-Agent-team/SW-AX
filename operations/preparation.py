@@ -1,3 +1,4 @@
+import os
 import subprocess
 
 from psycopg.types.json import Jsonb
@@ -10,6 +11,7 @@ from .store import cached_file
 
 
 def prepare(db, api):
+    remote = os.environ.get("AWARDS_PC_ENABLED", "false").lower() == "true"
     if clear_deleted_cache(db):
         return True
     db.execute("""INSERT INTO intake_preparation(batch_id)
@@ -19,7 +21,10 @@ def prepare(db, api):
         AND NOT EXISTS(SELECT FROM original_analysis WHERE file_id=f.id) ON CONFLICT DO NOTHING""")
     batch = db.execute("""SELECT b.id,b.event_id,b.target_team_id,b.base_submission,b.uploaded_by,p.state,t.intake_number FROM intake_preparation p
         JOIN intake_batch b ON b.id=p.batch_id LEFT JOIN award_team t ON t.id=b.target_team_id
-        WHERE p.state IN ('pending','ready') ORDER BY p.created_at,b.id LIMIT 1""").fetchone()
+        WHERE p.state IN ('pending','ready')
+        AND (NOT %s OR p.state='ready' OR NOT EXISTS(SELECT FROM intake_file f WHERE f.batch_id=b.id
+            AND NOT EXISTS(SELECT FROM original_analysis a WHERE a.file_id=f.id)))
+        ORDER BY p.created_at,b.id LIMIT 1""",(remote,)).fetchone()
     if not batch:
         return False
     bid = batch["id"]
@@ -31,6 +36,8 @@ def prepare(db, api):
         fid = item["id"]
         if db.execute("SELECT 1 FROM original_analysis WHERE file_id=%s", (fid,)).fetchone():
             continue
+        if remote:
+            return False
         display = "파일%02d.%s" % (item["position"],item["name"].rsplit(".",1)[-1].lower())
         db.execute("""INSERT INTO file_preparation_log(file_id,stage,display_name)
             SELECT id,'검토 PDF 준비',%s FROM intake_file WHERE id=%s FOR KEY SHARE""",(display,fid))

@@ -23,6 +23,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'net.java.dev.jna:jna-platform:5.17.0'
     implementation 'org.eclipse.angus:angus-mail'
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'

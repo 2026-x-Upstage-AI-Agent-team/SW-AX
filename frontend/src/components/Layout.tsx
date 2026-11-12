@@ -1,11 +1,12 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigationType } from 'react-router';
-import { AtSign, CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDashboard, Mail, Menu, PanelLeftClose, Settings2 } from 'lucide-react';
+import { AtSign, CalendarDays, CheckCheck, ChevronDown, Files, Inbox, LayoutDashboard, Mail, Menu, MonitorCheck, PanelLeftClose, Settings2 } from 'lucide-react';
 import { backend } from '../api/backend';
 import { isLeaderMail, isMailDraft } from '../api/service';
 import { useEvent } from '../context/EventContext';
 import { cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
+import { pcLabel, usePcConnection } from '../api/pcConnection';
 
 const menu = [
   { to: '/', label: '업무 현황', Icon: LayoutDashboard },
@@ -30,10 +31,11 @@ function Brand({ subtitle = '시상금 서류 검토실', onNavigate }: { subtit
   );
 }
 
-function WorkspaceNav({ worker, onNavigate }: { worker: ReturnType<typeof useWorkerControl>; onNavigate?: () => void }) {
+function WorkspaceNav({ worker, pc, onNavigate }: { worker: ReturnType<typeof useWorkerControl>; pc: ReturnType<typeof usePcConnection>; onNavigate?: () => void }) {
   const { events, eventsError, event, selectEvent, dashboard } = useEvent();
   const { pathname } = useLocation();
   const drafts = dashboard?.mail.filter((m) => isLeaderMail(m) && isMailDraft(m)).length ?? 0;
+  const pcReady = Boolean(pc.status?.device?.online && pc.status.device.hancom_ready && !pc.error);
   return (
     <>
       <label className="event-field">
@@ -58,6 +60,10 @@ function WorkspaceNav({ worker, onNavigate }: { worker: ReturnType<typeof useWor
       </nav>
       <div className="sidebar-foot">
         <WorkerStatus control={worker} />
+        {pc.status?.enabled && <NavLink to="/pc-connect" onClick={onNavigate} className={({ isActive }) => cx('nav-item', isActive && 'is-current')}>
+          <MonitorCheck size={19} aria-hidden="true" />{pc.error ? 'PC 연결 확인 필요' : pcLabel(pc.status)}
+          <span className={cx('pc-connection-indicator', pcReady && 'is-active')} aria-hidden="true" />
+        </NavLink>}
         <NavLink to="/gmail" onClick={onNavigate} className={({ isActive }) => cx('nav-item', isActive && 'is-current')}>
           <AtSign size={19} aria-hidden="true" />Gmail 연결
         </NavLink>
@@ -72,6 +78,7 @@ function WorkspaceNav({ worker, onNavigate }: { worker: ReturnType<typeof useWor
 
 export default function Layout() {
   const worker = useWorkerControl();
+  const pc = usePcConnection();
   const menuDialog = useRef<HTMLDialogElement>(null);
   const { event } = useEvent();
   const { pathname } = useLocation();
@@ -99,7 +106,7 @@ export default function Layout() {
       }}>본문으로 바로가기</a>
       <aside className="workspace-rail" aria-label="작업 공간">
         <Brand />
-        <WorkspaceNav worker={worker} />
+        <WorkspaceNav worker={worker} pc={pc} />
       </aside>
       <header className="mobile-bar">
         <Brand subtitle={event?.name} />
@@ -117,10 +124,17 @@ export default function Layout() {
               <PanelLeftClose size={20} aria-hidden="true" />
             </button>
           </div>
-          <WorkspaceNav worker={worker} onNavigate={close} />
+          <WorkspaceNav worker={worker} pc={pc} onNavigate={close} />
         </div>
       </dialog>
-      <div className="workspace-body"><Outlet /></div>
+      <div className="workspace-body">
+        {pc.status?.enabled && (!pc.status.device?.online || !pc.status.device.hancom_ready || pc.error)
+          && (pathname.startsWith('/intake') || pathname.startsWith('/report')) && <div className="pc-connection-notice" role="status">
+          <span>{pc.error || pcLabel(pc.status)}. 접수한 서류는 연결 후 자동으로 처리합니다.</span>
+          <Link to="/pc-connect">PC 연결 확인</Link>
+        </div>}
+        <Outlet />
+      </div>
     </div>
   );
 }

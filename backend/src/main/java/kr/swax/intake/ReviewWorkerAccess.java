@@ -25,8 +25,9 @@ class ReviewWorkerAccess {
 
     @Bean
     @Order(2)
-    SecurityFilterChain outputWorkerApi(HttpSecurity http, @Value("${awards.output.worker-token}") String token) throws Exception {
-        return bearer(http, OutputJobs.PATH, token);
+    SecurityFilterChain outputWorkerApi(HttpSecurity http, @Value("${awards.output.worker-token}") String token,
+                                        @Value("${awards.pc.enabled:false}") boolean pcEnabled) throws Exception {
+        return bearer(http, OutputJobs.PATH, pcEnabled ? "" : token);
     }
 
     private SecurityFilterChain bearer(HttpSecurity http, String path, String token) throws Exception {

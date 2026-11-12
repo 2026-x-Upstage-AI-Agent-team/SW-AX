@@ -13,6 +13,7 @@ import Mail from './pages/Mail';
 import Manage from './pages/Manage';
 import Report from './pages/Report';
 import TeamReview from './pages/TeamReview';
+import PcConnect from './pages/PcConnect';
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="assign" element={<Assign />} />
         <Route path="mail" element={<Mail />} />
         <Route path="gmail" element={<Gmail />} />
+        <Route path="pc-connect" element={<PcConnect />} />
         <Route path="report" element={<Report />} />
         <Route path="manage" element={<Manage />} />
         <Route path="*" element={<NotFound />} />

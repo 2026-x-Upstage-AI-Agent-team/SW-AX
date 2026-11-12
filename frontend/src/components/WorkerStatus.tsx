@@ -4,7 +4,7 @@ import { api } from '../api/client';
 
 const labels = { loading: '확인 중', stopped: '실행 필요', starting: '시작 중…', running: '실행 중', unknown: '확인 불가' };
 type State = keyof typeof labels;
-type WorkerReply = { state: 'stopped' | 'starting' | 'running' };
+type WorkerReply = { state: 'stopped' | 'starting' | 'running'; managed?: boolean };
 const statusPath = '/api/operations/worker-status';
 
 function stateOf(reply: WorkerReply) {
@@ -15,6 +15,7 @@ function stateOf(reply: WorkerReply) {
 export function useWorkerControl() {
   const [state, setState] = useState<State>('loading');
   const [message, setMessage] = useState('');
+  const [managed, setManaged] = useState(false);
   const [posting, setPosting] = useState(false);
   const [revision, setRevision] = useState(0);
   const startPending = useRef(false);
@@ -30,8 +31,10 @@ export function useWorkerControl() {
       reading = true;
       let delay = 15000;
       try {
-        const next = stateOf(await api<WorkerReply>(statusPath, { signal: AbortSignal.timeout(8000) }));
+        const reply = await api<WorkerReply>(statusPath, { signal: AbortSignal.timeout(8000) });
+        const next = stateOf(reply);
         if (active && !startPending.current) {
+          setManaged(Boolean(reply.managed));
           setState(next);
           if (next === 'running') setMessage('');
           if (next === 'starting') delay = 1500;
@@ -69,16 +72,16 @@ export function useWorkerControl() {
     }
   }
 
-  return { state, message, start, refresh };
+  return { state, message, start, refresh, managed };
 }
 
 export default function WorkerStatus({ control }: { control: ReturnType<typeof useWorkerControl> }) {
   if (isDemoBackend) return null;
-  const { state, message, start, refresh } = control;
+  const { state, message, start, refresh, managed } = control;
   return (
     <div className="rail-worker" data-state={state}>
       <span role="status" className="rail-worker-state"><i aria-hidden="true" />워커 {labels[state]}</span>
-      {state === 'stopped' && <button type="button" onClick={start}>실행하기</button>}
+      {state === 'stopped' && !managed && <button type="button" onClick={start}>실행하기</button>}
       {state === 'unknown' && <button type="button" onClick={refresh}>다시 확인</button>}
       {message && <p role="alert">{message}</p>}
     </div>

@@ -250,6 +250,11 @@
   .workspace :is(textarea, select, input:not([type="checkbox"], [type="radio"], [type="file"])) { font-size: max(1rem, 16px); }
 }
 
+.pc-connection-notice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; padding: .9rem 1.5rem; background: var(--color-caution-tint); font-size: .9rem; }
+.pc-connection-notice a { font-weight: 700; text-decoration: underline; }
+.pc-connection-indicator { display: inline-block; width: .625rem; height: .625rem; flex-shrink: 0; border-radius: 50%; background: #a5adb6; }
+.pc-connection-indicator.is-active { background: #22c55e; box-shadow: 0 0 0 3px rgb(34 197 94 / .12), 0 0 8px rgb(34 197 94 / .35); }
+
 @container team-list (max-width: 55rem) {
   .team-table-scroll table, .team-table-scroll tbody { display: block; width: 100%; min-width: 0; }
   .team-table-scroll thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
