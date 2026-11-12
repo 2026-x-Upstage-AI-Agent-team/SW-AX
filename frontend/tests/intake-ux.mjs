@@ -312,6 +312,74 @@ test('보고서의 빈 추출값은 미확인으로 표시하고 등록 대표�
   assert.equal(await page.getByRole('checkbox', { name: '미확인 편철에 포함', exact: true }).count(), 1);
 });
 
+test('새 Agent의 긴 근거는 검토 상세에 보존하고 현황판에는 짧은 사유만 표시한다', async t => {
+  const page = await newPage(t);
+  const findings = [
+    { 문서유형: '개인정보동의서', 대상자: '문서 전체', 검사항목: '필수 제출 유형 및 후속 필수검사', 문제유형: '처리 정책 확인',
+      근거: '개인정보동의서의 존재와 처리 상태가 확인되지 않습니다.【†1】 동의서 기준의 필수값·동의·서명·명단 대조를 완료할 수 없습니다.[+1] 접수 원본과 분류·추출 상태를 확인해야 합니다.[†2]' },
+    { 문서유형: '지급확인서', 대상자: '대표', 검사항목: '하단 신청인 서명', 문제유형: '판독 확인', 근거: '서명 영역 일부가 잘려 있어 확인이 필요합니다.[+3]' },
+    { 문서유형: '신분증·통장 사본', 대상자: '대표', 검사항목: '은행명', 문제유형: '판독 확인', 근거: '통장 하단 은행명을 확인해야 합니다.【†4】' },
+  ];
+  const reason = '개인정보동의서의 존재·처리 상태와 서명·은행명의 판독 확인이 필요합니다.[+5]';
+  const label = finding => ['문서유형', '대상자', '검사항목', '문제유형'].map(key => finding[key]).join(' · ') + ': ' + finding.근거;
+  const detail = { id: 'agent-summary', current: 'agent-summary', team: 'summary-team', team_name: '새 응답팀', state: 'done', version: 1,
+    count: 0, verdict: '담당자확인', decision: null, revision: 0, email: '', note: '', held: false,
+    files: [], history: [], audit: [], mail: [], fields: { members: [], recipient: {} },
+    result: { team_name: '새 응답팀', verdict: '담당자확인', reason, documents: { '01': [], '02': [], '03': [], '?': [] },
+      members: [], recipient: {}, checks: findings.map(finding => ({ label: label(finding), passed: null, refs: [] })), issues: [], staff_report: '',
+      agent_decision: { 최종판정: '담당자확인', 판정근거: reason, 확정오류: [], 확인필요: findings } } };
+  const longTitle = '담당자가 원문과 추출 결과를 확인해야 하는 매우 긴 검사 항목 '.repeat(5);
+  const longDetail = { ...detail, id: 'long-title', current: 'long-title', team_name: '긴 항목팀',
+    result: { ...detail.result, team_name: '긴 항목팀', agent_decision: { ...detail.result.agent_decision,
+      확인필요: [{ ...findings[0], 검사항목: longTitle }] } } };
+  const teams = [detail, longDetail].map(s => ({ id: s.id, current: s.id, name: s.team_name, submission: s }));
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...dashboard, teams, batches: [] } }));
+  for (const s of [detail, longDetail]) await page.route('**/api/operations/submissions/' + s.id, route => route.fulfill({ json: s }));
+  await page.goto('/#/');
+  const table = page.getByRole('region', { name: '팀별 판정 표' });
+  const summary = table.getByRole('row').filter({ hasText: '새 응답팀' }).locator('.team-reason');
+  await summary.filter({ hasText: /필수 제출 유형/ }).waitFor();
+  assert.match(await summary.innerText(), /개인정보동의서.*필수 제출 유형.*하단 신청인 서명.*외 1건/);
+  assert.ok((await summary.innerText()).length <= 140);
+  assert.doesNotMatch(await summary.innerText(), /동의서 기준|완료할 수 없습니다|문서 전체/);
+  const bounded = table.getByRole('row').filter({ hasText: '긴 항목팀' }).locator('.team-reason');
+  await bounded.filter({ hasText: /…/ }).waitFor();
+  assert.ok((await bounded.innerText()).length <= 64);
+  const markers = /【[^】]*】|\[(?:\+|[†‡])\d+\]/;
+  assert.doesNotMatch(await page.locator('main').innerText(), markers);
+  await table.getByRole('link', { name: '새 응답팀 검토 열기', exact: true }).click();
+  const checks = page.getByRole('complementary', { name: '검토 체크리스트' });
+  await checks.getByText(/동의서 기준의 필수값·동의·서명·명단 대조를 완료할 수 없습니다/).waitFor();
+  assert.match(await checks.innerText(), /접수 원본과 분류·추출 상태를 확인해야 합니다/);
+  assert.match(await checks.innerText(), /통장 하단 은행명을 확인해야 합니다/);
+  const explanation = page.getByRole('region', { name: 'Upstage 검토 설명' });
+  assert.match(await explanation.innerText(), /개인정보동의서의 존재·처리 상태와 서명·은행명의 판독 확인이 필요합니다/);
+  assert.doesNotMatch(await page.locator('main').innerText(), markers);
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+});
+
+test('새 Agent의 보완필요 판정과 확정오류를 그대로 표시하고 승인을 제한한다', async t => {
+  const page = await newPage(t);
+  const label = '개인정보동의서 · 가상학생 · 제3자 제공 동의 · 누락: 동의 칸 공란';
+  const reason = '확정오류 1건으로 보완이 필요하다.';
+  const detail = { id: 'agent4', current: 'agent4', team: 'team', team_name: team.name, state: 'done', version: 1,
+    count: 0, verdict: '보완필요', decision: null, revision: 0, email: '', note: '', held: false,
+    files: [], history: [], audit: [], mail: [], fields: { members: [], recipient: {} },
+    result: { team_name: 'Agent4 팀', verdict: '보완필요', reason, documents: { '01': [], '02': [], '03': [], '?': [] },
+      members: [], recipient: {}, checks: [{ label, passed: false, refs: [] }], issues: ['consent'], staff_report: '',
+      agent_decision: { 최종판정: '보완필요', 판정근거: reason,
+        확정오류: [{ 문서유형: '개인정보동의서', 대상자: '가상학생', 검사항목: '제3자 제공 동의', 문제유형: '누락', 근거: '동의 칸 공란' }], 확인필요: [] } } };
+  await page.route('**/api/operations/submissions/agent4', route => route.fulfill({ json: detail }));
+  await page.goto('/#/teams/agent4');
+  await page.getByRole('heading', { name: 'Agent4 팀', exact: true }).waitFor();
+  assert.equal(await page.getByText('보완필요', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('radio', { name: '승인', exact: true }).isDisabled(), true);
+  const checklist = page.getByRole('complementary', { name: '검토 체크리스트' });
+  await checklist.getByText(label, { exact: true }).waitFor();
+  assert.doesNotMatch(await checklist.innerText(), /미제출/);
+});
+
 test('팀별 판정 행의 검토 열기는 현재 제출본을 열고 제출본 없는 팀에는 링크를 표시하지 않는다', async t => {
   const page = await newPage(t);
   const submission = { id: 'submission-v2', version: 2, state: 'done', verdict: '재제출요청', decision: null, count: 1 };

@@ -33,7 +33,7 @@ class ReviewWorkerJobs {
         }
     }
 
-    private static final Set<String> VERDICTS = Set.of("성공", "담당자확인", "재제출요청");
+    private static final Set<String> VERDICTS = Set.of("성공", "담당자확인", "재제출요청", "보완필요");
     private final JdbcTemplate db;
     private final TeamSubmissions submissions;
     private final ObjectMapper mapper;

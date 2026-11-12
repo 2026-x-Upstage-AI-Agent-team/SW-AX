@@ -7,6 +7,7 @@ import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when
 import { reviewEvidence, studioExplanation } from '../api/reviewEvidence';
 import {
   getSubmission,
+  needsSupplement,
   retrySubmission,
   reviewBody,
   saveReview,
@@ -371,7 +372,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
               className={cx(
                 'flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm',
                 decision === d ? (d === '승인' ? 'border-brand bg-brand-tint font-bold text-brand-deep' : 'border-alert-strong bg-alert-soft font-bold text-alert-strong') : 'border-line-2',
-                (locked ? decision !== d : d === '승인' && s.verdict === '재제출요청') && 'cursor-not-allowed opacity-40',
+                (locked ? decision !== d : d === '승인' && needsSupplement(s.verdict)) && 'cursor-not-allowed opacity-40',
               )}
             >
               <input
@@ -379,7 +380,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
                 name="decision"
                 value={d}
                 checked={decision === d}
-                disabled={locked || (d === '승인' && s.verdict === '재제출요청')}
+                disabled={locked || (d === '승인' && needsSupplement(s.verdict))}
                 onChange={() => setDecision(d)}
                 className="sr-only"
               />
@@ -387,7 +388,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
             </label>
           ))}
         </div>
-        {s.verdict === '재제출요청' && !locked && <p className="text-xs text-muted">재제출요청 판정은 보완본을 받아 다시 검토한 뒤 승인할 수 있습니다.</p>}
+        {needsSupplement(s.verdict) && !locked && <p className="text-xs text-muted">보완필요 판정은 보완본을 받아 다시 검토한 뒤 승인할 수 있습니다.</p>}
         {locked && <p className="text-xs text-muted">이미 안내한 결론은 바꿀 수 없습니다. 바꾸려면 보완본을 접수하세요.</p>}
         {decision === '보완 필요' && (
           <fieldset className="flex flex-col gap-2">

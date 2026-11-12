@@ -11,6 +11,7 @@ const verdictStyle: Record<Verdict, string> = {
   성공: 'bg-brand-tint text-brand-strong',
   담당자확인: 'bg-caution-tint text-caution',
   재제출요청: 'bg-alert-tint text-alert-strong',
+  보완필요: 'bg-alert-tint text-alert-strong',
 };
 
 const pill = 'inline-flex items-center rounded-md font-semibold whitespace-nowrap';

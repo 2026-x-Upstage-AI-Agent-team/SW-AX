@@ -1,7 +1,8 @@
 import { backend } from './backend';
 import { api, sendJson, ApiError, STAFF_HEADER, errorText } from './client';
 
-export type Verdict = '성공' | '담당자확인' | '재제출요청';
+export type Verdict = '성공' | '담당자확인' | '재제출요청' | '보완필요';
+export const needsSupplement = (verdict?: Verdict | null) => verdict === '재제출요청' || verdict === '보완필요';
 export type DocKey = '01' | '02' | '03' | '?';
 export type Decision = '승인' | '보완 필요';
 
@@ -114,6 +115,7 @@ export type StudioResult = {
   extracted?: Record<string, Record<string, unknown>[]>;
   extraction_sources?: Record<string, unknown[]>;
   extraction_warnings?: string[];
+  agent_decision?: Record<string, unknown>;
 };
 
 export type Fields = { members: Member[]; recipient: Recipient; award_type: string; support_amount: string };

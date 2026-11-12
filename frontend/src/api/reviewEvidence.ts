@@ -4,6 +4,15 @@ import type { Check, DocKey, Ref, StudioResult, Verdict } from './service';
 const kinds = ['01', '02', '03'] as const;
 type Kind = (typeof kinds)[number];
 
+function displayText(text: string) {
+  return text.replace(/【[^】]*】|\[(?:\+|[†‡])\s*\d+(?:\s*[,，-]\s*\d+)*\]/g, '').trim();
+}
+
+function shortText(text: string) {
+  const value = displayText(text).replace(/\s+/g, ' ');
+  return value.length > 64 ? value.slice(0, 63) + '…' : value;
+}
+
 // Only display labels from the form. Studio's observations can contain the actual account or ID.
 const reportFields: Record<string, [Kind, string]> = {
   program_name: ['01', '프로그램명'], team_name: ['01', '팀명'], written_date: ['01', '작성일'],
@@ -29,7 +38,7 @@ function reportedFields(report: StudioResult['staff_report']) {
   let field = -1, result = -1, observation = -1;
   for (const line of report.split(/\r?\n/)) {
     if (!line.trimStart().startsWith('|')) { field = -1; continue; }
-    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.replace(/【[^】]*】|[`*]/g, '').trim());
+    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => displayText(c).replace(/[`*]/g, '').trim());
     const verdict = cells.findIndex(c => /^(결과|판정|상태)$/.test(c));
     if (verdict >= 0) {
       result = verdict;
@@ -47,8 +56,7 @@ function reportedFields(report: StudioResult['staff_report']) {
 
 /** Use the saved Studio reason and report. Editable fields and receipt counts are not evidence here. */
 export function studioExplanation(result: StudioResult) {
-  const reason = result.reason
-    .replace(/【[^】]*】/g, '')
+  const reason = displayText(result.reason)
     .replace(/\bSub-doc\s+(\d+)\b/gi, '추출 문서 $1')
     .replace(/[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*/g, key => Object.hasOwn(reportFields, key) ? reportFields[key][1] : key)
     .replace(/\d[\d\s-]*\d/g, value => value.replace(/\D/g, '').length >= 8 ? '[추출 숫자값]' : value)
@@ -82,6 +90,7 @@ export function reviewEvidence(result?: StudioResult | null, verdict?: Verdict |
   const decision = verdict ?? result?.verdict;
   if (!decision) return { summary: '', problems, passed };
   function add(label: string, state: Check['passed'], refs: Ref[]) {
+    label = displayText(label);
     const list = state === true ? passed : problems;
     let entry = list.find(item => item.label === label);
     if (!entry) { entry = { label, passed: state, refs: [] }; list.push(entry); }
@@ -89,6 +98,24 @@ export function reviewEvidence(result?: StudioResult | null, verdict?: Verdict |
     for (const ref of refs) {
       if (!entry.refs.some(r => r.id === ref.id && r.page === ref.page && r.row === ref.row)) entry.refs.push(ref);
     }
+  }
+  if (result?.agent_decision) {
+    for (const check of result.checks) add(check.label, check.passed, check.refs);
+    const titles = ['확정오류', '확인필요'].flatMap(key => {
+      const findings = result.agent_decision?.[key];
+      return Array.isArray(findings) ? findings.flatMap(finding => {
+        if (!finding || typeof finding !== 'object') return [];
+        const title = ['문서유형', '대상자', '검사항목', '문제유형']
+          .map(field => typeof finding[field] === 'string' ? displayText(finding[field]) : '')
+          .filter(value => value && value !== '문서 전체').join(' · ');
+        return title ? [shortText(title)] : [];
+      }) : [];
+    });
+    const labels = titles.length ? titles : problems.map(c => shortText(c.label.split(/[:：]/)[0]));
+    const summary = decision === '성공' ? '보완 사항 없음' : labels.length
+      ? labels.slice(0, 2).join(' · ') + (labels.length > 2 ? ' 외 ' + (labels.length - 2) + '건' : '')
+      : shortText(result.reason) || '검토 상세에서 확인';
+    return { summary, problems, passed };
   }
   const docs = result?.documents;
   const missing = new Set<DocKey>();

@@ -115,7 +115,7 @@ def run_studio(s):
                            (state,dump(result),"추출된 팀·대표가 배정과 다릅니다. 원접수를 대조해 배정을 정정하세요." if conflict else "",now(),s["id"]))
                 audit(db,s["id"],"Studio 판정",{"verdict":result["verdict"],"job":s["job"]},"서비스")
                 if not conflict and t["current"] == s["id"]:
-                    if result["verdict"] == "재제출요청":
+                    if result["verdict"] in ("재제출요청", "보완필요"):
                         enqueue_mail(db,s["id"],"보완 요청")
                     elif result["verdict"] == "성공" and s["version"] > 1:
                         enqueue_mail(db,s["id"],"검토 완료")

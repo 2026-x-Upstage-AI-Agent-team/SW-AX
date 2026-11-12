@@ -73,7 +73,7 @@ def deliver(db, raw_cfg):
         AND m.approved_by IS NOT NULL AND m.approved_at IS NOT NULL AND m.subject IS NOT NULL AND m.body IS NOT NULL
         AND NOT r.needs_confirmation
         AND m.sent_to<>'' AND m.sent_to=t.email
-        AND ((m.kind='보완 요청' AND (s.verdict='재제출요청' OR s.decision='보완 필요'))
+        AND ((m.kind='보완 요청' AND (s.verdict IN ('재제출요청','보완필요') OR s.decision='보완 필요'))
           OR (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))) """
     with db.transaction():
         m = db.execute(query + "AND m.state='approved' ORDER BY m.created_at,m.id LIMIT 1 FOR UPDATE OF t,c,m").fetchone()

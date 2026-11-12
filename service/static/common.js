@@ -95,7 +95,7 @@ export function badge(value) {
           "보완 필요",
         ].includes(value)
       ? "warn"
-      : ["재제출요청", "failed", "error"].includes(value)
+      : ["재제출요청", "보완필요", "failed", "error"].includes(value)
         ? "bad"
         : ["polling", "preparing", "building", "creating", "preview"].includes(value)
           ? "blue"

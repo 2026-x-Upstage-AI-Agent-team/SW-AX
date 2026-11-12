@@ -446,7 +446,7 @@ def save_review(sid: str, body: Review):
         res = json.loads(s["result"])
         if body.decision == "승인" and res.get("program") != require(db,"events",t["event"])["name"] and not clean(body.note):
             raise HTTPException(422,"신청서 프로그램명과 선택 대회명이 다릅니다. 확인 근거를 기록하세요.")
-        if body.decision == "승인" and (res["verdict"] == "재제출요청" or
+        if body.decision == "승인" and (res["verdict"] in ("재제출요청", "보완필요") or
               any(not m.name.strip() for m in body.members) or
               sum(m.role == "대표" for m in body.members) != 1 or any(m.role not in ("대표","팀원") for m in body.members)):
             raise HTTPException(409,"보완된 원본과 대표 한 명을 포함한 명단을 확인하세요.")

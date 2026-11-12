@@ -9,8 +9,10 @@ import httpx
 from .documents import preview
 
 API = "https://api.upstage.ai/v2"
-CONFIG = "51"
-VERDICTS = ("성공", "담당자확인", "재제출요청")
+CONFIG = "4"
+VERDICTS = ("성공", "담당자확인", "재제출요청", "보완필요")
+FINAL_NODES = ("Instruct - 최종판정", "Instruct - 판정_성공", "Instruct - 판정_담당자확인",
+               "Instruct - 판정_보완필요", "Instruct - 판정_서류누락")
 ISSUES = {"application": "팀의 지급확인서를 확인해 제출해 주세요.",
           "consent": "전체 팀원의 개인정보 동의서와 작성자 명단을 확인해 주세요.",
           "identity": "팀 대표의 신분증·통장 사본을 확인해 주세요.",
@@ -167,7 +169,18 @@ def parse_result(job, files):
     def field(name):
         return unpack(first(name).get("text", {}))
 
-    final = field("Instruct - 최종판정")
+    finals = [(name, unpack(record.get("text", {}))) for name in FINAL_NODES for record in nodes.get(name, [])]
+    if len(finals) != 1:
+        raise ValueError("최종판정 응답이 한 건인지 확인하세요.")
+    final_name, raw_final = finals[0]
+    agent_decision = None
+    if final_name == "Instruct - 최종판정":
+        final = raw_final
+    else:
+        if not isinstance(raw_final, dict) or any(not isinstance(raw_final.get(key), list) for key in ("확정오류", "확인필요")):
+            raise ValueError("판정 분기의 최종판정·판정근거·오류 목록을 확인하세요.")
+        agent_decision = raw_final
+        final = {"enum": raw_final.get("최종판정"), "reason": raw_final.get("판정근거")}
     if not isinstance(final, dict) or final.get("enum") not in VERDICTS or not isinstance(final.get("reason"), str) or not final["reason"].strip():
         raise ValueError("최종판정 노드의 enum·reason을 확인하세요.")
     app = extract("Information Extract - 지급확인서")
@@ -213,8 +226,14 @@ def parse_result(job, files):
 
     for node in nodes.get("Information Extract - 지급확인서", []):
         form = unpack(node.get("text"))
-        if isinstance(form, dict) and isinstance(form.get("representative_email"), str):
-            emails.add(form["representative_email"].strip())
+        if isinstance(form, dict):
+            if "participants" in form:
+                people = form.get("participants") or []
+                email = people[0].get("email") if isinstance(people, list) and people and isinstance(people[0], dict) else None
+            else:
+                email = form.get("representative_email")
+            if isinstance(email, str):
+                emails.add(email.strip())
 
     def member_refs(kind, name, row):
         located = member_locations[kind].get(name)
@@ -237,12 +256,20 @@ def parse_result(job, files):
     recipient = {"rrn_display": text(rrn), "bank_name": text(identity.get("bank_name")),
                  "account_number": text(identity.get("account_number")), "account_holder": text(identity.get("account_holder"))}
     members = []
-    if any(present(value) and not isinstance(value, bool)
-           for key, value in app.items() if key.startswith("representative_")):
+    if "participants" in app:
+        people = app.get("participants")
+        if not isinstance(people, list) or any(not isinstance(person, dict) for person in people):
+            raise ValueError("지급확인서 participants 배열을 확인하세요.")
+        members.extend(dict(role="대표" if index == 0 else "팀원", name=text(person.get("name")),
+                            school=text(person.get("affiliation")), student_id=text(person.get("student_id")),
+                            major=text(person.get("department"))) for index, person in enumerate(people))
+    elif any(present(value) and not isinstance(value, bool)
+             for key, value in app.items() if key.startswith("representative_")):
         members.append(dict(role="대표", name=text(app.get("representative_name")), school=text(app.get("representative_affiliation")),
                             student_id=text(app.get("representative_student_id")), major=text(app.get("representative_department"))))
-    members.extend(dict(role="팀원", name=text(m.get("name")), school=text(m.get("affiliation")), student_id=text(m.get("student_id")),
-                        major=text(m.get("department"))) for m in (app.get("members") or []))
+    if "participants" not in app:
+        members.extend(dict(role="팀원", name=text(m.get("name")), school=text(m.get("affiliation")), student_id=text(m.get("student_id")),
+                            major=text(m.get("department"))) for m in (app.get("members") or []))
     for index, member in enumerate(members, 1):
         if not member["name"].strip():
             warnings.append(f"명단 {index}행의 성명이 비어 있습니다. 학번·전공과 원본을 대조해 주세요.")
@@ -253,32 +280,33 @@ def parse_result(job, files):
         if passed is False and issue and issue not in issues:
             issues.append(issue)
 
-    for k, title, key in (("01", "지급확인서", "application"), ("02", "동의서", "consent"), ("03", "신분증·통장", "identity")):
-        check(f"{title} {len(docs[k])}부 접수", len(docs[k]) == 1, [k], "duplicate" if len(docs[k]) > 1 else key)
-    if members and docs["02"]:
-        check("신청 명단과 동의서 작성자 일치", Counter(m["name"] for m in members) == Counter(m.get("name") for m in consent), ["01","02"], "consent")
-        majors = {b.get("name"): b.get("department") for b in consent}
-        check("신청서·동의서 소속 표기 일치", all(m["major"] == majors.get(m["name"]) for m in members), ["01","02"], "affiliation")
-        for i, member in enumerate(members, 1):
-            name = member["name"]
-            if not name.strip():
-                continue
-            found = [(j,b) for j,b in enumerate(consent,1) if b.get("name") == name]
-            refs = member_refs("01", name, i)
-            if not found:
-                checks.append({"label":name+" · 동의서 명단에 없음", "passed":False, "refs":refs+docs["02"]})
-            for j, b in found:
-                located = refs + member_refs("02", name, j)
-                if member["major"] != b.get("department"):
-                    checks.append({"label":name+" · 소속 표기 대조","passed":False,"refs":located})
-                if any(b.get(k) is not True for k in ("collection_consent","identifier_consent","third_party_consent","signed")):
-                    checks.append({"label":name+" · 동의 표시 또는 서명 확인","passed":False,"refs":located,"issue":"signature"})
-                    if "signature" not in issues:
-                        issues.append("signature")
-    if app and identity:
-        account = lambda value: re.sub(r"[^0-9]", "", str(value or ""))
-        left, right = account(app.get("representative_account")), account(identity.get("account_number"))
-        check("대표 계좌·예금주 일치", bool(left and left == right and app.get("representative_name") == identity.get("account_holder")), ["01","03"], "account")
+    if agent_decision is None:
+        for k, title, key in (("01", "지급확인서", "application"), ("02", "동의서", "consent"), ("03", "신분증·통장", "identity")):
+            check(f"{title} {len(docs[k])}부 접수", len(docs[k]) == 1, [k], "duplicate" if len(docs[k]) > 1 else key)
+        if members and docs["02"]:
+            check("신청 명단과 동의서 작성자 일치", Counter(m["name"] for m in members) == Counter(m.get("name") for m in consent), ["01","02"], "consent")
+            majors = {b.get("name"): b.get("department") for b in consent}
+            check("신청서·동의서 소속 표기 일치", all(m["major"] == majors.get(m["name"]) for m in members), ["01","02"], "affiliation")
+            for i, member in enumerate(members, 1):
+                name = member["name"]
+                if not name.strip():
+                    continue
+                found = [(j,b) for j,b in enumerate(consent,1) if b.get("name") == name]
+                refs = member_refs("01", name, i)
+                if not found:
+                    checks.append({"label":name+" · 동의서 명단에 없음", "passed":False, "refs":refs+docs["02"]})
+                for j, b in found:
+                    located = refs + member_refs("02", name, j)
+                    if member["major"] != b.get("department"):
+                        checks.append({"label":name+" · 소속 표기 대조","passed":False,"refs":located})
+                    if any(b.get(k) is not True for k in ("collection_consent","identifier_consent","third_party_consent","signed")):
+                        checks.append({"label":name+" · 동의 표시 또는 서명 확인","passed":False,"refs":located,"issue":"signature"})
+                        if "signature" not in issues:
+                            issues.append("signature")
+        if app and identity:
+            account = lambda value: re.sub(r"[^0-9]", "", str(value or ""))
+            left, right = account(app.get("representative_account")), account(identity.get("account_number"))
+            check("대표 계좌·예금주 일치", bool(left and left == right and app.get("representative_name") == identity.get("account_holder")), ["01","03"], "account")
     def agent_check(label, passed, sources=()):
         issue, refs = agent_evidence(label, docs, page_counts, sources)
         entry = {"label":label, "passed":passed, "refs":refs}
@@ -289,20 +317,32 @@ def parse_result(job, files):
         if passed is False and issue not in issues:
             issues.append(issue)
 
-    for c in unpack(first("Validate - 증빙검증").get("additional_values", {})).get("checks", []):
-        agent_check(str(c.get("name", "검사")), c.get("passed"), list(validation_sources(c.get("conditions"))))
-    if final["enum"] != "성공":
-        for statement in re.split(r"(?<!\d[.])(?<=[.!?])\s+|[\r\n]+",final["reason"].strip()):
-            if statement.strip():
-                # A reason can also describe a field that passed. Only explicit problems become student notices.
-                problem = re.sub(r"(?:이상|문제|누락|오류|불일치|중복)[이가은는]?\s*없[가-힣]*", "", statement)
-                failed = final["enum"]=="재제출요청" and re.search(
-                    r"누락|미제출|미기재|미작성|미서명|불일치|중복|없[습음어다]|빠[졌진져]|비어|다릅|다르|상이|되지 않",
-                    problem)
-                agent_check(statement.strip(), False if failed else None)
-    return {"verdict": final["enum"], "reason": final["reason"], "program": app.get("program_name") or "",
+    if agent_decision is not None:
+        for key, passed in (("확정오류", False), ("확인필요", None)):
+            for finding in agent_decision[key]:
+                if not isinstance(finding, dict) or any(not isinstance(finding.get(k), str) for k in ("문서유형", "대상자", "검사항목", "문제유형", "근거")):
+                    raise ValueError("판정 분기의 오류·확인사항 항목을 확인하세요.")
+                label = " · ".join(finding[k] for k in ("문서유형", "대상자", "검사항목", "문제유형") if finding[k])
+                agent_check(label + ": " + finding["근거"], passed)
+    else:
+        for c in unpack(first("Validate - 증빙검증").get("additional_values", {})).get("checks", []):
+            agent_check(str(c.get("name", "검사")), c.get("passed"), list(validation_sources(c.get("conditions"))))
+        if final["enum"] != "성공":
+            for statement in re.split(r"(?<!\d[.])(?<=[.!?])\s+|[\r\n]+",final["reason"].strip()):
+                if statement.strip():
+                    # A reason can also describe a field that passed. Only explicit problems become student notices.
+                    problem = re.sub(r"(?:이상|문제|누락|오류|불일치|중복)[이가은는]?\s*없[가-힣]*", "", statement)
+                    failed = final["enum"] in ("재제출요청", "보완필요") and re.search(
+                        r"누락|미제출|미기재|미작성|미서명|불일치|중복|없[습음어다]|빠[졌진져]|비어|다릅|다르|상이|되지 않",
+                        problem)
+                    agent_check(statement.strip(), False if failed else None)
+    result = {"verdict": final["enum"], "reason": final["reason"], "program": app.get("program_name") or "",
             "representative_emails": sorted(emails - {""}),
             "team_name": app.get("team_name") or "", "rep": app.get("representative_name") or "",
             "members": members, "recipient": recipient, "documents": docs, "checks": checks, "issues": issues or ["other"],
             "extracted": extracted, "extraction_sources": extraction_sources, "extraction_warnings": warnings,
-            "consent_names": [b.get("name") for b in consent], "staff_report": field("Instruct - 검토보고서") or ""}
+            "consent_names": [b.get("name") for b in consent],
+            "staff_report": field("Instruct - 검토보고서") or field("Instruct - 검사기록") or ""}
+    if agent_decision is not None:
+        result["agent_decision"] = agent_decision
+    return result
