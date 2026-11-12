@@ -1,4 +1,5 @@
-"""One sequential conversion worker, authenticated only to its paired staff account."""
+"""Two isolated Hancom task slots, authenticated only to their paired staff account."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -15,6 +16,8 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from .windows import APP_HOME,POWERSHELL,RESOURCES,SERVER,VERSION,confirm_connection,has_hancom,load_connection,save_connection,worker_lock
+
+_event_lock=threading.Lock()
 
 def connection_code(uri):
     parsed=urlsplit(uri)
@@ -42,22 +45,25 @@ def event(state,**fields):
     # Do not include document names, content, URLs, tokens or exception text.
     target=APP_HOME/'status.json'
     temp=APP_HOME/'status.tmp'
-    temp.write_text(json.dumps({'checked_at':time.time(),'state':state,**fields}),encoding='utf-8')
-    temp.replace(target)
+    with _event_lock:
+        temp.write_text(json.dumps({'checked_at':time.time(),'state':state,**fields}),encoding='utf-8')
+        temp.replace(target)
 
 def render(source,destination):
     from operations.native import render as native_render
     native_render(source,destination)
 
-def process(api,task,renderer=render):
+def process(api,task,renderer=render,cancel=None):
     if task.get('kind') not in ('file','report') or task.get('extension') not in ('.hwp','.hwpx'):
         raise ValueError('Unsupported conversion input')
     route='/api/pc-agent/'+task['kind']+'/'+task['id']
     headers={'X-Claim-Token':task['claim_token']}
     stop=threading.Event()
     lost=threading.Event()
+    def cancelled():return lost.is_set() or (cancel is not None and cancel.is_set())
     def heartbeat():
         while not stop.wait(10):
+            if cancelled():return
             try:
                 response=api.put(route+'/lease',headers=headers,timeout=10)
                 if response.status_code in (401,404,409):lost.set();return
@@ -88,10 +94,10 @@ def process(api,task,renderer=render):
                 if not pdf.is_file() or pdf.stat().st_size>120*1024*1024 or not len(PdfReader(pdf).pages):
                     raise ValueError('Invalid rendered PDF')
             except (OSError,ValueError,RuntimeError,subprocess.SubprocessError,PdfReadError):
-                if not lost.is_set():api.put(route+'/failure',headers=headers).raise_for_status()
+                if not cancelled():api.put(route+'/failure',headers=headers).raise_for_status()
                 event('conversion_failed',kind=task['kind'])
                 return
-            if lost.is_set():return
+            if cancelled():return
             if task['kind']=='file':api.put(route+'/metadata',json=metadata,headers=headers).raise_for_status()
             with pdf.open('rb') as stream:
                 api.put(route+'/pdf',content=stream,headers={**headers,'Content-Type':'application/pdf','X-Source-Sha256':task['sha256']}).raise_for_status()
@@ -113,6 +119,24 @@ def clear_interrupted_files():
             try:folder.rmdir()
             except OSError:pass
 
+def work_slot(credential,slot,active,active_lock,cancel):
+    if cancel.is_set():return False
+    with httpx.Client(base_url=SERVER,timeout=httpx.Timeout(connect=8,read=45,write=90,pool=8),trust_env=False,
+                      follow_redirects=False,headers={'Authorization':'Bearer '+credential['token']}) as api:
+        response=api.post('/api/pc-agent/claim',json={'slot':slot});response.raise_for_status()
+        if response.status_code==204:return False
+        task=response.json()
+        key=(task['kind'],task['id'])
+        with active_lock:
+            # Older servers may return the same outstanding task for both requests.
+            if key in active:return False
+            active.add(key)
+        try:
+            if not cancel.is_set():process(api,task,cancel=cancel)
+        finally:
+            with active_lock:active.remove(key)
+    return True
+
 def run():
     lock=worker_lock()
     if lock is None:return
@@ -122,39 +146,50 @@ def run():
     (APP_HOME/'work').mkdir(exist_ok=True)
     clear_interrupted_files()
     # The worker owns only its guarded conversion children; the renderer closes its own editor.
-    wait=3
     previous=None
-    while True:
-        try:
-            stage='credential'
-            credential=load_connection()
-            if not credential:
-                if previous!='unpaired':event('unpaired');previous='unpaired'
-                time.sleep(3);continue
-            stage='hancom'
-            ready=has_hancom()
-            stage='https'
-            with httpx.Client(base_url=SERVER,timeout=httpx.Timeout(connect=8,read=45,write=90,pool=8),trust_env=False,follow_redirects=False,
-                              headers={'Authorization':'Bearer '+credential['token']}) as api:
+    futures={}
+    active=set()
+    active_lock=threading.Lock()
+    identity=None
+    ready=False
+    with ThreadPoolExecutor(max_workers=2,thread_name_prefix='hancom-slot') as pool:
+        while True:
+            try:
+                stage='conversion'
+                for slot,(future,cancel) in list(futures.items()):
+                    if future.done():
+                        del futures[slot]
+                        future.result()
+                stage='credential'
+                credential=load_connection()
+                current=credential['token'] if credential else None
+                if current!=identity:
+                    for _,cancel in futures.values():cancel.set()
+                    identity=current
+                if not credential:
+                    if previous!='unpaired':event('unpaired');previous='unpaired'
+                    time.sleep(3);continue
+                stage='hancom'
+                if not futures:ready=has_hancom()
                 stage='heartbeat'
-                api.put('/api/pc-agent/heartbeat',json={'hancom_ready':ready,'version':VERSION}).raise_for_status()
-                event('connected' if ready else 'hancom_required',login=credential['login'])
+                with httpx.Client(base_url=SERVER,timeout=15,trust_env=False,follow_redirects=False,
+                                  headers={'Authorization':'Bearer '+credential['token']}) as api:
+                    api.put('/api/pc-agent/heartbeat',json={'hancom_ready':ready,'version':VERSION}).raise_for_status()
+                event('connected' if ready else 'hancom_required',login=credential['login'],
+                      active_tasks=sum(not f.done() for f,_ in futures.values()),capacity=2)
                 previous='connected'
                 if ready:
-                    stage='claim'
-                    response=api.post('/api/pc-agent/claim');response.raise_for_status()
-                    if response.status_code==200:
-                        stage='conversion'
-                        process(api,response.json());wait=1
-                    else:wait=8
-                else:wait=15
-            time.sleep(wait)
-        except httpx.HTTPStatusError as error:
-            event('reconnect_required' if error.response.status_code==401 else 'retrying')
-            time.sleep(15)
-        except Exception as error:
-            import traceback
-            event('retrying',error=type(error).__name__,stage=stage,
-                  frames=[Path(frame.filename).name+':'+frame.name+':'+str(frame.lineno)
-                          for frame in traceback.extract_tb(error.__traceback__)])
-            time.sleep(15)
+                    for slot in (0,1):
+                        if slot not in futures:
+                            cancel=threading.Event()
+                            futures[slot]=(pool.submit(work_slot,credential,slot,active,active_lock,cancel),cancel)
+                time.sleep(3 if ready else 15)
+            except httpx.HTTPStatusError as error:
+                event('reconnect_required' if error.response.status_code==401 else 'retrying')
+                time.sleep(15)
+            except Exception as error:
+                import traceback
+                event('retrying',error=type(error).__name__,stage=stage,
+                      frames=[Path(frame.filename).name+':'+frame.name+':'+str(frame.lineno)
+                              for frame in traceback.extract_tb(error.__traceback__)])
+                time.sleep(15)

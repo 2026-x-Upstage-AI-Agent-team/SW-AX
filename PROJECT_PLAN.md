@@ -29,7 +29,7 @@ SW중심대학 사업단 담당자는 한 팀에서 받은 서류를 한 묶음�
 | 서류 화면 탭의 화면 크기 | 서류 올리기·검토 진행·팀 배정 확인은 동일한 최대 폭과 좌우 여백을 사용한다. 탭을 전환해도 제목과 탭의 위치를 유지하고, 문서 미리보기에 필요한 넓은 작업 폭을 사용한다. |
 | 운영 스택 | 담당자 화면은 **React**, 백엔드 API는 **Spring Boot**, 운영 DB는 **PostgreSQL**이다. 판정 작업의 대기열과 워커 배정은 PostgreSQL이 관리한다. Spring Batch는 초기 도입을 보류하고 한글 변환·PDF 출력은 각 담당자의 Windows PC 연결 프로그램에 배치한다. [구현계획서](docs/IMPLEMENTATION_PLAN.md#운영판-전환) |
 | AWS 배포·담당자 로그인 확인 | 계정 416775509196, 배포 d1110a, 공개 주소 https://d3nkw8bzgv8pom.cloudfront.net이다. 공개 health·login·session API 200, 담당자 로그인, 원본 접수·다운로드를 확인했다. 11월 10일 최신 main c6f0167에 Agent 호환 수정과 AWS 실행 설정을 더한 릴리스를 배포했다. Config 5의 실제 Studio 판정부터 set01 HWPX·6쪽 PDF 생성·확정·다운로드까지 검증했다. 시연 대회 두 팀도 판정 완료다. Gmail은 mail_ready=false다. 최신 근거는 10.18절이다. |
-| AWS 시연 배치 결정 | 기존 `t3.medium`(2 vCPU·4 GiB)을 유지한다. AWS는 API·prepare·mail·studio·report, 각 담당자 PC 연결 프로그램은 해당 계정의 원본 변환·PDF 출력을 맡는다. 한글 작업 동안 해당 PC를 켜 둔다. 개발자 PC 공용 워커와 직접 DB 연결은 사용하지 않는다. 임의 사양 변경·추가 서버·유료 전환은 금지한다. 완료 후 메모리 표본은 총 4,036 MiB·여유 1,617 MiB였으며 최고점·축소 안전성은 확인하지 않았다. 10.25절 참조. |
+| AWS 시연 배치 결정 | 기존 `t3.medium`(2 vCPU·4 GiB)을 유지한다. AWS는 API·prepare·mail·studio·report, 각 담당자 PC 연결 프로그램은 해당 계정의 원본 변환·PDF 출력을 맡는다. 1.1.0부터 PC당 최대 두 작업을 병렬 처리한다. 한글 작업 동안 해당 PC를 켜 둔다. 개발자 PC 공용 워커와 직접 DB 연결은 사용하지 않는다. 임의 사양 변경·추가 서버·유료 전환은 금지한다. 최종 메모리 표본은 총 4,036 MiB·여유 1,779 MiB였으며 최고점·축소 안전성은 확인하지 않았다. 10.30절 참조. |
 | 1차 시연 범위 | 담당자 1명이 Windows PC 한 대에서 한 팀씩 서류를 묶어 접수하고 자동 팀번호 부여·신청서 팀명 반영·팀별 검토·팀장 메일 초안 검토·승인 발송·보완본 재검토·HWPX와 PDF 다운로드까지 진행. 11월 9일 담당자 브라우저에서 한글 문서의 본문·표·서식을 자유롭게 편집하고 수정본을 저장하는 기능을 시연 목표에 추가했다. 완료 기준은 10.1절 |
 | 운영판 1차 구현 | React → Spring Boot → PostgreSQL로 대회·팀 등록, 혼합 원본 접수, 접수 내역 조회와 원본 다운로드를 구현했다. 공식 ZIP 29개 원본의 SHA-256이 다운로드 결과와 일치했고, Chrome에서 set01·02의 원본 6개를 한 번에 접수해 다시 열었다. [실행 방법](README.md#운영판-원본-접수-실행) |
 | 담당자 화면 A안 | 2026년 11월 8일 A안(울산대 SW중심대학사업단 팔레트, TypeScript·Tailwind CSS·React Router)을 main에 병합했다. 같은 날 `feat/connect-review-api`에서 업무 현황·팀별 검토·팀 배정·이메일 발송·보고서 화면을 검토 서비스 API(`service/app.py`)에 연결했다. `npm run dev:service`로 검토 서비스에, `npm run dev`로 Spring Boot 접수 API에 붙는다. Windows PC에서 `npm install` 후 `npm run build`(타입 검사와 `vite build`)가 통과했다. 11월 8일에는 대역 서버로 경로·헤더·본문을 확인했다. [화면 구성](frontend/README.md) |
@@ -1064,6 +1064,34 @@ AWS 반영 SSM 명령은 `4148a01d-9091-40a8-8108-5213afd33112`이며 백업 후
 최종 확인에서 API·prepare·Studio·report·mail 작업은 모두 Running, Studio heartbeat는 최근 13초 이내였다. 메모리 표본은 총 4,036 MiB 중 1,727 MiB가 비었고 OS 포함 약 2,309 MiB를 사용했다. 부하 최고점은 측정하지 않았으며 이 표본만으로 2 GiB 서버로의 축소를 권하지 않는다. t3.medium을 유지했다.
 
 근거는 `var/studio-parallel-tests/result.json`, `var/studio-parallel-deployment/manifest.json`, `live-verification.json`, `upstream-node-timings.json`과 `runtime-verification.result.json`이다. 소스는 팀원 main의 UI·백엔드 변경과 대조한 뒤 Studio 병렬 처리 주제로 관리한다.
+
+### 10.30 같은 PC의 한글 변환·PDF 출력 병렬화 — 2026년 11월 12일
+
+사용자는 같은 PC에서도 원본 변환·최종 PDF 출력을 병렬로 처리하고 실제 충돌 여부를 검증하도록 요청했다. 기존 PC당 순차 처리를 최대 2개 작업으로 바꾸며 AWS t3.medium을 유지한다. 팀별 Studio 판정은 10.29절의 병렬 정책을 유지하고 한글 내부 문서 처리나 판정 로직을 다른 서비스로 옮기지 않는다.
+
+반영 완료: PC 작업 슬롯 0·1을 별도로 저장하고 재요청·임대 복구도 해당 슬롯에만 적용한다. 구버전 프로그램은 기본 슬롯 0을 사용한다. 한글 프로세스·작업 디렉터리는 작업마다 분리하며 PDFium의 동시 호출은 잠금으로 보호한다. 한글 프로세스의 신규 생성·독점 소유를 확인하고 변환기와 한글을 Windows Job Object에 연결해 워커 종료·시간 초과 시 자기 프로세스만 정리한다. 슬롯 1은 새 작업을 받을 때 보고서를 우선해 원본 대기열에 출력이 밀리지 않게 한다.
+
+발견·수정한 문제: 두 보고서 동시 출력에서 SaveAs가 성공을 반환했는데 PDF가 없는 사례가 반복됐다. 파일의 헤더·EOF·쓰기 종료를 확인한 뒤 한글을 닫도록 보강했으며, 공유 인쇄 보조 프로세스까지 정리 범위에 묶일 수 있던 Job Object의 자식 상속을 해제했다. `splwow64.exe`의 부모 PID가 시험 한글 PID와 일치하고 해당 한글 종료 뒤에도 보조 프로세스가 유지되는 것을 관측했다. 자식 프로세스의 기본 상속·해제 동작은 [Microsoft 설명](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)을 기준으로 판단했다. 첫 시험의 HWPX 확장자 오류와 부모 종료 시험 스크립트의 문자 인코딩 오류는 검증 코드에서 수정했다.
+
+검증: 별도 PostgreSQL·Spring API 계약 57개는 전체 소스 빌드와 필요한 클래스만 교체한 운영용 JAR에서 모두 통과했다. 연결 프로그램 Python 시험 14개와 JUnit 18개도 통과했다. 실제 원본+보고서, 원본 두 건, 내용이 다른 보고서 두 건에서 각각 별도 한글 PID가 겹쳐 실행되고 단독 변환과 모든 페이지의 픽셀이 같았다. 수정 후 서로 다른 두 보고서 동시 출력은 추가 3회 연속 통과했다. 시간 초과 시 해당 한글만 종료되고 다른 보고서는 계속 출력됐으며, 부모 Python 강제 종료 뒤 변환기·한글이 정리되고 기존에 열어 둔 시험 문서 내용도 보존됐다. 실제 물리 PC는 현재 Windows 11 PC 한 대에서 시험했다.
+
+AWS 반영: SSM 명령 `4c4d2032-9e1e-4b4c-80ec-49a5211a2dd2`로 기존 JAR의 `PcTasks.class`, `PcAgentController.class`만 교체하고 Claim 레코드와 V7 마이그레이션을 추가했다. 다른 클래스·프론트·Studio 워커는 보존했다. 이전 API와 V7 리소스를 포함한 롤백 JAR도 V7 적용 DB에서 health UP으로 기동했다. 서버는 t3.medium, Agent `agt_XEC5wJoDrbbfSvR3c5U9ML`, Config 5 그대로다. 새 설치 EXE는 1.1.0, SHA-256 `68708e2633514d90c64124e4c0026be51bdb5185a5eaefd0cf1ab6b66e049be2`, JAR은 `7b106989f1253ad28f65ed6f50f7f739b37ca58d46b47d437fd81da17d662297`이다. EXE의 알려진 비밀값 4종·금지 설정·AWS/DB SDK 검사는 모두 0건이었다.
+
+공개 주소 실증: 현재 PC의 계정·장치·토큰을 보존해 1.1.0으로 업데이트했다. 승인된 가상 set01을 새 대회 `PC 병렬 실증 20261112 b8a3b780`(690c3a0e-2c79-4925-a364-a78842b001e9)에 접수해 원본 변환과 기존 가상 검증 팀의 0원 보고서를 동시에 처리했다. 원본 3개는 같은 장치의 슬롯 0·1에서 모두 완료됐고 새 제출본 b41381d6-1f9d-4e5e-b204-c933218d2a8e는 `job_iKXQwpwcH5bew2e8cPirjG`로 성공 판정을 받았다. 보고서 7843c8b8-f28a-4a03-a96a-0dc6fcfcafba는 슬롯 1에서 출력돼 서버 증빙 검증·확정을 마쳤다. HWPX 3,081,980바이트·PDF 283,234바이트·6쪽이며 원본 3개의 다운로드 해시 일치와 PDF 전 페이지의 시각 확인을 마쳤다. 실제 메일 발송·지급은 하지 않았다.
+
+프로그램 자식 프로세스를 유휴 중 강제 종료한 뒤 예약 작업이 같은 1.1.0을 자동 재시작했고 AWS 로그인 없이 연결을 복구했다. 관측 시점 기준 143.31초 이내 복구를 확인했으며 정확한 복구 지연을 연속 측정한 값은 아니다. Windows 재부팅·로그아웃은 하지 않았다. 최종 서버 API·prepare·studio·report·mail 작업 모두 Running, health UP, PC 1.1.0·한글 준비·최근 heartbeat를 확인했다. 서버 메모리 표본은 4,036 MiB 중 1,779 MiB 여유였고 최고점은 측정하지 않았다. 이 표본만으로 2 GiB 축소를 권하지 않는다.
+
+현재 PC는 업데이트를 마쳤다. 다른 담당자의 1.0.0 프로그램은 최신 설치 파일로 한 번 업데이트해야 PC 병렬 처리가 적용되며 웹의 계정·PC 등록은 유지된다. 근거는 `var/pc-parallel-native/20261112-212258/result.json`, `breakaway-check/result.json`, `var/pc-parallel-deployment/manifest.json`, `rollback-verification.json`, `e2e/result.json`, `recovery-verification.json`, `runtime-verification.result.json`에 있다. 소스는 PC 워커 1.1.0 주제로 관리하며, 팀원 main과의 결합 결과는 10.31절에 기록했다.
+
+### 10.31 팀원 main과 병렬 처리 변경 결합 — 2026년 11월 12일
+
+사용자는 팀원이 푸시한 프런트·디자인을 그대로 사용하고 백엔드 변경을 먼저 보고한 뒤 Studio 병렬 처리와 PC 워커 1.1.0을 두 주제로 커밋·main 푸시하도록 승인했다. 비교 기준은 로컬 `95667cf`와 팀원 main `438610f`이며 팀원 쪽 24개 커밋·82개 변경 파일을 확인했다. 프런트 전체와 Spring 로그인 HTML·CSS·JS 84개 파일의 Git 콘텐츠를 유지했다.
+
+팀원 카테고리·워크스페이스 API, 서류 유무 표시, 로그인·로그아웃 복귀 주소, V8·V9 마이그레이션을 보존했다. `operations/native.py`에는 팀원의 Windows 파일 잠금 재시도와 PC 1.1.0 격리 실행을 함께 반영했다. 문서의 팀원 UI 기록 10.27·10.28을 유지하고 병렬 처리 기록은 10.29·10.30으로 옮겼다.
+
+V8·V9가 먼저 적용된 DB에 V7을 추가하면 기본 Flyway 설정에서 기동이 거절되는 문제를 재현했다. 이미 배포한 V7의 내용·체크섬을 유지하고 `spring.flyway.out-of-order=true`를 추가했다. 격리 DB에서 V7→V9와 V9 후 V7 적용 모두 대회·원본 바이트·완료 작업을 보존했고, 보완 설정을 끈 대조 시험에서는 예상대로 기동을 거절했다. 회귀 검증은 `scripts/verify_pc_migration_upgrade.py --jar <빌드 JAR>`로 실행한다.
+
+결합본의 프런트 빌드·Spring Boot 빌드와 JUnit, Python 시험 29개, Chrome 시험 22개, PC API 계약 56개, Studio 병렬 계약 3개가 통과했다. PC API의 설치 파일 다운로드 항목은 결합 시험 폴더에 EXE를 복사하지 않아 생략했다. 통합 변경 30개 파일에서 저장된 키·키 형식 패턴이 발견되지 않았다. 이번 작업은 소스 결합과 Git 이력 정리이며 AWS 재배포·연결 프로그램 재설치를 수행하지 않았다. AWS는 기존 t3.medium을 유지한다. 비교·검증 근거는 `var/git-main-sync-20261112/`에 보관한다.
 
 ## 11 근거와 참고 자료
 

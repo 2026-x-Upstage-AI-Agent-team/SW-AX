@@ -12,6 +12,7 @@ import tools.jackson.databind.ObjectMapper;
 @RequestMapping("/api/pc-agent")
 class PcAgentController {
     record Heartbeat(boolean hancomReady,String version) {}
+    record Claim(Integer slot) {}
     private final PcDevices devices;
     private final PcTasks tasks;
     private final ObjectMapper json;
@@ -31,8 +32,12 @@ class PcAgentController {
     }
 
     @PostMapping("/claim")
-    ResponseEntity<PcTasks.Task> claim(@RequestHeader(value="Authorization",required=false) String auth) {
-        var task=tasks.claim(devices.authenticate(auth));
+    ResponseEntity<PcTasks.Task> claim(@RequestHeader(value="Authorization",required=false) String auth,
+                                     @RequestBody(required=false) Claim request) {
+        var device=devices.authenticate(auth);
+        int slot=request==null || request.slot()==null ? 0 : request.slot();
+        if(slot<0 || slot>1) throw ApiErrors.error(422,"PC 동시 작업 번호를 확인하세요.");
+        var task=tasks.claim(device,slot);
         return task==null ? ResponseEntity.noContent().build() : ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(task);
     }
 

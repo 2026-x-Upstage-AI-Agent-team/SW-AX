@@ -3,6 +3,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from pypdf import PdfReader
 from .db import DATA, ROOT
 
 KINDS = {"01": "지급확인서", "02": "개인정보 동의서", "03": "신분증·통장 사본", "?": "종류 확인"}
+_pdfium_lock = threading.Lock()
 
 
 def source(f):
@@ -24,14 +26,17 @@ def preview(f):
     return source(f).with_suffix(".pdf")
 
 
-def powershell(script, *arguments, timeout, legacy=False):
+def powershell(script, *arguments, timeout, legacy=False, isolated=False):
     exe = "powershell.exe" if legacy else "pwsh.exe"
     bundled = Path(sys.base_prefix).parent / "native/powershell/pwsh.exe"
     binary = shutil.which(exe) or str(bundled if bundled.is_file() else Path(os.environ["ProgramFiles"]) / "PowerShell/7/pwsh.exe")
     if not legacy and os.environ.get("AWARDS_POWERSHELL"):
         binary = os.environ["AWARDS_POWERSHELL"]
-    return subprocess.run([binary, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                           "-File", str(script), *map(str, arguments)], capture_output=True,
+    command = [binary, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script), *map(str, arguments)]
+    if isolated:
+        from operations.processes import run_owned
+        return run_owned([*command, "-WaitForOwner"], timeout=timeout)
+    return subprocess.run(command, capture_output=True,
                           creationflags=subprocess.CREATE_NO_WINDOW, timeout=timeout, check=True)
 
 
@@ -42,10 +47,18 @@ def convert(src, dest):
 def ocr_page(pdf, index):
     image = pdf.with_suffix(".ocr.png")
     try:
-        with pdfium.PdfDocument(str(pdf)) as document:
+        # PDFium forbids simultaneous calls even for different documents.
+        with _pdfium_lock, pdfium.PdfDocument(str(pdf)) as document:
             page = document[index]
-            page.render(scale=2.5).to_pil().save(image)
-            page.close()
+            bitmap = None
+            try:
+                bitmap = page.render(scale=2.5)
+                rendered = bitmap.to_pil()
+                try: rendered.save(image)
+                finally: rendered.close()
+            finally:
+                if bitmap is not None: bitmap.close()
+                page.close()
         result = powershell(ROOT / "service/ocr.ps1", image, timeout=35, legacy=True)
         return result.stdout.decode("utf-8").strip()
     except (OSError, subprocess.SubprocessError, ValueError):

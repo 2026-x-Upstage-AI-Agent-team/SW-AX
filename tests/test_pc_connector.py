@@ -2,6 +2,8 @@ import hashlib
 from io import BytesIO
 import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -14,6 +16,50 @@ from pc_connector import agent,windows
 from pc_connector.main import action_for,main
 
 class ConnectorTests(unittest.TestCase):
+    def test_two_slots_process_different_claims_at_the_same_time(self):
+        rendezvous=threading.Barrier(2)
+        processed=[]
+        active=set();lock=threading.Lock()
+        def handler(request):
+            slot=json.loads(request.content)['slot']
+            return httpx.Response(200,json={'kind':'file','id':str(slot)})
+        client=httpx.Client
+        def factory(**kwargs):return client(**kwargs,transport=httpx.MockTransport(handler))
+        def process(api,task,**kwargs):
+            processed.append(task['id']);rendezvous.wait(timeout=5)
+        with patch.object(agent.httpx,'Client',side_effect=factory),patch.object(agent,'process',side_effect=process),ThreadPoolExecutor(max_workers=2) as pool:
+            futures=[pool.submit(agent.work_slot,{'token':'fixture'},slot,active,lock,threading.Event()) for slot in (0,1)]
+            self.assertTrue(all(f.result(timeout=8) for f in futures))
+        self.assertEqual(set(processed),{'0','1'});self.assertEqual(active,set())
+
+    def test_old_servers_cannot_make_both_slots_render_the_same_claim(self):
+        entered=threading.Event();release=threading.Event()
+        active=set();lock=threading.Lock()
+        client=httpx.Client
+        def factory(**kwargs):return client(**kwargs,transport=httpx.MockTransport(lambda r:httpx.Response(200,json={'kind':'file','id':'same'})))
+        def process(*args,**kwargs):entered.set();self.assertTrue(release.wait(5))
+        with patch.object(agent.httpx,'Client',side_effect=factory),patch.object(agent,'process',side_effect=process) as convert,ThreadPoolExecutor(max_workers=2) as pool:
+            first=pool.submit(agent.work_slot,{'token':'fixture'},0,active,lock,threading.Event())
+            self.assertTrue(entered.wait(3))
+            second=pool.submit(agent.work_slot,{'token':'fixture'},1,active,lock,threading.Event())
+            try:self.assertFalse(second.result(timeout=3))
+            finally:release.set()
+            self.assertTrue(first.result(timeout=3));self.assertEqual(convert.call_count,1)
+
+    def test_cancelled_slot_does_not_claim_work_for_the_previous_account(self):
+        cancel=threading.Event();cancel.set()
+        with patch.object(agent.httpx,'Client') as client:
+            self.assertFalse(agent.work_slot({'token':'fixture'},0,set(),threading.Lock(),cancel))
+            client.assert_not_called()
+
+    def test_parallel_status_updates_remain_atomic(self):
+        with TemporaryDirectory() as folder,patch.object(agent,'APP_HOME',Path(folder)),ThreadPoolExecutor(max_workers=2) as pool:
+            def write(slot):
+                for _ in range(20):agent.event('connected',slot=slot)
+            list(pool.map(write,(0,1)))
+            record=json.loads((Path(folder)/'status.json').read_text(encoding='utf-8'))
+            self.assertEqual(record['state'],'connected');self.assertIn(record['slot'],(0,1))
+
     def test_renamed_download_installs_and_installed_binary_only_opens(self):
         with patch.object(sys,'frozen',True,create=True),patch.object(sys,'argv',['connector']),\
                 patch.object(windows,'install') as install,patch.object(windows,'notice') as notice,\

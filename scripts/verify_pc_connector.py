@@ -169,6 +169,43 @@ def run():
             check(len({task['id'] for task in concurrent})==2,'two PCs cannot claim the same file concurrently')
             for pc,task in zip((pc_a,pc_a2),concurrent):
                 pc.put('/api/pc-agent/file/'+task['id']+'/failure',headers={'X-Claim-Token':task['claim_token']}).raise_for_status()
+            for slot in (-1,2):
+                check(pc_a2.post('/api/pc-agent/claim',json={'slot':slot}).status_code==422,'slot outside the two-worker limit is rejected: '+str(slot))
+            upload(a,'slot-zero.hwp');upload(a,'slot-one.hwp')
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                slots=list(pool.map(lambda slot:pc_a2.post('/api/pc-agent/claim',json={'slot':slot}).raise_for_status().json(),(0,1)))
+            check(len({t['id'] for t in slots})==2,'same PC receives different files in two concurrent slots')
+            check({r['worker_slot'] for r in db.execute('SELECT worker_slot FROM pc_file_conversion WHERE file_id=ANY(%s::uuid[])',([t['id'] for t in slots],))}=={0,1},'slot ownership is durable in PostgreSQL')
+            for slot,task in enumerate(slots):
+                resumed=pc_a2.post('/api/pc-agent/claim',json={'slot':slot}).raise_for_status().json()
+                check(resumed==task,'a repeated slot claim resumes exactly its own file: '+str(slot))
+            check(pc_a2.post('/api/pc-agent/claim').json()==slots[0],'old clients without a slot still resume slot zero')
+            def finish_file(task):
+                route='/api/pc-agent/file/'+task['id'];headers={'X-Claim-Token':task['claim_token']}
+                pc_a2.put(route+'/metadata',json=metadata,headers=headers).raise_for_status()
+                pc_a2.put(route+'/pdf',content=pdf,headers={**headers,'Content-Type':'application/pdf','X-Source-Sha256':task['sha256']}).raise_for_status()
+            finish_file(slots[0])
+            report_zero=db.execute("INSERT INTO award_report(event_id,version,created_by,selection,snapshot,state,hwpx) VALUES(%s,2,'pc-fixture-a','{}','{}','printing',%s) RETURNING id",(event,b'first parallel report')).fetchone()['id']
+            first_report=pc_a2.post('/api/pc-agent/claim',json={'slot':0}).raise_for_status().json()
+            check(first_report['kind']=='report' and first_report['id']==str(report_zero),'report printing can start while the other slot converts a file')
+            check(pc_a2.post('/api/pc-agent/claim',json={'slot':1}).json()==slots[1],'report printing does not replace the other slot file')
+            old=slots[1]
+            db.execute("UPDATE pc_file_conversion SET lease_until=clock_timestamp()-interval '1 second' WHERE file_id=%s",(old['id'],))
+            slots[1]=pc_a2.post('/api/pc-agent/claim',json={'slot':1}).raise_for_status().json()
+            check(slots[1]['id']==old['id'] and slots[1]['claim_token']!=old['claim_token'],'expired slot is reclaimed with a fresh token')
+            check(pc_a2.get('/api/pc-agent/file/'+old['id']+'/input',headers={'X-Claim-Token':old['claim_token']}).status_code==404,'expired parallel claim is rejected')
+            finish_file(slots[1])
+            report_one=db.execute("INSERT INTO award_report(event_id,version,created_by,selection,snapshot,state,hwpx) VALUES(%s,3,'pc-fixture-a','{}','{}','printing',%s) RETURNING id",(event,b'second parallel report')).fetchone()['id']
+            second_report=pc_a2.post('/api/pc-agent/claim',json={'slot':1}).raise_for_status().json()
+            check(second_report['kind']=='report' and second_report['id']==str(report_one),'same PC can print two independent reports')
+            check(pc_a2.post('/api/pc-agent/claim',json={'slot':1}).json()==second_report,'slot-one report resumes without a second output job')
+            report_route='/api/pc-agent/report/'+second_report['id'];report_headers={'X-Claim-Token':second_report['claim_token']}
+            check(pc_b.get(report_route+'/input',headers=report_headers).status_code==404,'another account cannot access a parallel report')
+            check(pc_a2.get(report_route+'/input',headers={'X-Claim-Token':first_report['claim_token']}).status_code==404,'parallel report tokens cannot be swapped')
+            pc_a2.put('/api/pc-agent/report/'+first_report['id']+'/failure',headers={'X-Claim-Token':first_report['claim_token']}).raise_for_status()
+            check(pc_a2.get(report_route+'/input',headers=report_headers).raise_for_status().content==b'second parallel report','failure in one slot does not invalidate the other report')
+            pc_a2.put(report_route+'/pdf',content=pdf,headers={**report_headers,'Content-Type':'application/pdf','X-Source-Sha256':second_report['sha256']}).raise_for_status()
+            check(db.execute('SELECT state FROM award_report WHERE id=%s',(report_one,)).fetchone()['state']=='verifying','slot-one PDF reaches server evidence verification')
             if (ROOT/'var/pc-connector-build/dist/SWAX-PC-Setup.exe').is_file():
                 response=a.get('/api/pc-connections/installer').raise_for_status()
                 check(hashlib.sha256(response.content).digest()==hashlib.sha256((ROOT/'var/pc-connector-build/dist/SWAX-PC-Setup.exe').read_bytes()).digest(),'downloaded installer matches the built artifact')

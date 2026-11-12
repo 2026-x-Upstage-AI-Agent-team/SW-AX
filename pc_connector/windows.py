@@ -12,7 +12,7 @@ import time
 import winreg
 from uuid import uuid4
 
-VERSION='1.0.0'
+VERSION='1.1.0'
 SERVER='https://d3nkw8bzgv8pom.cloudfront.net'
 APP_HOME=Path(os.environ['LOCALAPPDATA'])/'SWAX/PCConnector'
 RESOURCES=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[1]))
@@ -140,10 +140,10 @@ def has_hancom():
                 output=work/'output.pdf'
                 tag=hashlib.sha256(str(home).upper().encode('utf-8')).hexdigest()[:24].upper()
                 try:
-                    result=subprocess.run([str(POWERSHELL),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-                        '-File',str(RESOURCES/'pc_connector/probe.ps1'),'-Destination',str(output),'-Guard','SWAX-Reports-'+tag],
-                        stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=45,
-                        creationflags=subprocess.CREATE_NO_WINDOW)
+                    from operations.processes import run_owned
+                    result=run_owned([str(POWERSHELL),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+                        '-File',str(RESOURCES/'pc_connector/probe.ps1'),'-Destination',str(output),'-Guard','SWAX-Reports-'+tag,
+                        '-WaitForOwner'],timeout=45)
                     if result.returncode==0 and output.is_file():
                         from pypdf import PdfReader
                         _probe_ready=bool(len(PdfReader(output).pages))

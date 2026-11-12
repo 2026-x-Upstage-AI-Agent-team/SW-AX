@@ -30,6 +30,7 @@ $work = [IO.Path]::GetFullPath([IO.Path]::Combine($parent, $workName))
 $result = [IO.Path]::Combine($work, 'result')
 $null = [IO.Directory]::CreateDirectory($result)
 $editor = $null
+$ownsEditor = $false
 
 function Open-HangulDocument([string]$path) {
     $format = [IO.Path]::GetExtension($path).TrimStart('.').ToUpperInvariant()
@@ -46,6 +47,7 @@ try {
     $editor = New-Object -ComObject HWPFrame.HwpObject
     . (Join-Path $PSScriptRoot 'guard_hancom.ps1')
     Protect-ConverterEditor $editor
+    $ownsEditor = $true
     $editor.XHwpWindows.Item(0).Visible = $false
     $null = $editor.RegisterModule('FilePathCheckDLL', 'FilePathCheckerModule')
 
@@ -121,7 +123,7 @@ try {
     Write-Output "Report saved in $destination ($coverPages cover pages, $sourcePages evidence pages)."
 } finally {
     try {
-        if ($editor) { $editor.Quit() }
+        if ($editor -and $ownsEditor) { $editor.Quit() }
     } finally {
         if (Test-Path -LiteralPath $work) {
             $owned = (Resolve-Path -LiteralPath $work).Path

@@ -34,7 +34,9 @@ SmartScreen은 발행자와 파일의 평판을 확인한다. 정식 코드 서�
 
 개발자 PC를 끈 상태에서도 다른 담당자는 자기 PC를 연결해 사용할 수 있다. 변환할 담당자의 PC까지 모두 꺼져 있으면 해당 계정의 한글 변환·PDF 출력은 대기한다. 웹/API와 이미 만들어진 결과물 조회·다운로드는 AWS에서 제공한다.
 
-팀별 검토용 PDF가 준비되면 AWS가 각 팀을 별도 Studio 작업으로 실행한다. 한 팀씩 업로드해도 앞 팀의 판정 완료를 기다리지 않고 다음 팀의 판정을 시작한다. 같은 PC의 한글 변환·PDF 출력은 순차로 진행하므로 아직 변환되지 않은 팀은 변환을 기다린다. Studio의 요청 제한이 발생하면 안내된 대기 시간 후 재시도한다.
+팀별 검토용 PDF가 준비되면 AWS가 각 팀을 별도 Studio 작업으로 실행한다. 한 팀씩 업로드해도 앞 팀의 판정 완료를 기다리지 않고 다음 팀의 판정을 시작한다. 연결 프로그램 **1.1.0부터 같은 PC에서 최대 두 작업을 동시에 처리**한다. 원본 두 개, 원본과 보고서, 보고서 두 개를 각각 별도 한글 프로세스로 처리하며 세 번째 작업부터는 자리가 날 때까지 기다린다. Studio의 요청 제한이 발생하면 안내된 대기 시간 후 재시도한다.
+
+기존 1.0.0 사용자는 웹에서 최신 설치 파일을 내려받아 한 번 업데이트해야 PC 병렬 처리가 적용된다. 기존 계정 연결은 유지되며 AWS 로그인은 필요 없다. 최신 버전을 설치한 PC에 반복 설치를 요구하지 않는다.
 
 ## 작업 범위와 보관
 
@@ -54,11 +56,11 @@ SmartScreen은 발행자와 파일의 평판을 확인한다. 정식 코드 서�
 | PC 연결 상태 확인 실패 | 서비스 로그인과 인터넷 연결을 확인하고 연결 확인을 누른다. |
 | 원본 판독 실패 | 원본을 열 수 있는지 확인한 뒤 기존 파일 판독 재시도 기능을 사용한다. |
 
-사용자별 설치 위치는 `%LOCALAPPDATA%\SWAX\PCConnector`, 실행 파일은 `1.0.0\SWAX-PC.exe`다. 작업 스케줄러의 `SWAX-PC-Connector-<사용자 식별값>` 하나에 로그인 자동 실행과 1분 간격 복구 트리거를 등록한다. [Microsoft의 작업 트리거 설명](https://learn.microsoft.com/en-us/powershell/module/scheduledtasks/new-scheduledtasktrigger?view=windowsserver2025-ps)에 따라 둘 중 하나가 발생하면 실행하며, `IgnoreNew`와 파일 잠금으로 중복 처리를 막는다. 연결 해제 후 제거하려면 해당 작업과 사용자 프로토콜 등록 및 설치 폴더를 제거한다. `connection.bin`은 암호화된 인증 파일이므로 공유하거나 다른 PC에 복사하지 않는다.
+사용자별 설치 위치는 `%LOCALAPPDATA%\SWAX\PCConnector`, 실행 파일은 `1.1.0\SWAX-PC.exe`다. 작업 스케줄러의 `SWAX-PC-Connector-<사용자 식별값>` 하나에 로그인 자동 실행과 1분 간격 복구 트리거를 등록한다. [Microsoft의 작업 트리거 설명](https://learn.microsoft.com/en-us/powershell/module/scheduledtasks/new-scheduledtasktrigger?view=windowsserver2025-ps)에 따라 둘 중 하나가 발생하면 실행하며, `IgnoreNew`와 파일 잠금으로 중복 처리를 막는다. 연결 해제 후 제거하려면 해당 작업과 사용자 프로토콜 등록 및 설치 폴더를 제거한다. `connection.bin`은 암호화된 인증 파일이므로 공유하거나 다른 PC에 복사하지 않는다.
 
 ## 개발·배포 검증
 
-주요 소스는 `pc_connector/`, `PcDevices.java`, `PcTasks.java`, `PcAgentController.java`, `PcAgentAccess.java`, `V6__pc_connectors.sql`, `frontend/src/pages/PcConnect.tsx`다. 설치 패키지는 개발 PC의 자격증명을 포함하지 않는다.
+주요 소스는 `pc_connector/`, `PcDevices.java`, `PcTasks.java`, `PcAgentController.java`, `PcAgentAccess.java`, `V6__pc_connectors.sql`, `V7__pc_parallel_slots.sql`, `operations/processes.py`, `frontend/src/pages/PcConnect.tsx`다. 설치 패키지는 개발 PC의 자격증명을 포함하지 않는다. `/api/pc-agent/claim`의 선택 본문 `{"slot":0}` 또는 `{"slot":1}`로 작업별 배정과 복구를 구분하며, 본문 없는 구버전 요청은 슬롯 0으로 처리한다.
 
 ```powershell
 # 연결 프로그램 단위 검증
@@ -72,7 +74,7 @@ cd ..
 # 빌드 전용 Python 3.12 환경: 서비스 자격증명은 넣지 않는다.
 .\.venv\Scripts\python.exe -m venv var/pc-connector-build/tools
 .\var\pc-connector-build\tools\Scripts\python.exe -m pip install -r pc_connector/requirements-build.txt
-.\var\pc-connector-build\tools\Scripts\python.exe pc_connector/build.py
+.\var\pc-connector-build\tools\Scripts\python.exe -m pc_connector.build
 .\var\pc-connector-build\tools\Scripts\python.exe scripts/audit_pc_installer.py
 
 # 한글 경로에서 Gradle 시험 워커가 클래스를 못 찾는 환경은 ASCII 임시 사본 사용
@@ -80,6 +82,9 @@ cd ..
 
 # 별도 로컬 시험 DB에서 장치·계정 범위·임대·재시도·동시성·다운로드 검증
 .\.venv\Scripts\python.exe scripts/verify_pc_connector.py --jar <검증할-JAR> --port 18886
+
+# 설치된 한글로 출력 일치·시간 초과·부모 종료·기존 문서 보존 검증
+.\.venv\Scripts\python.exe tests/verify_pc_parallel_native.py --guard-dir "$env:LOCALAPPDATA/SWAX/PCConnector/hancom"
 ```
 
 실제 AWS 적용 기록은 `var/pc-connector-deployment/`에, 가상 set01의 실제 연결 검증 결과는 그 아래 `e2e/result.json`에 보관한다. `scripts/verify_pc_connector_cloud.py --pair-only`는 설치 파일·장치 등록을 확인하고, 이어서 옵션 없이 실행하면 승인받은 가상 set01로 실제 문서 흐름을 확인한다. 시연 계정 비밀번호는 실행 시 직접 입력하며 결과 파일에 저장하지 않는다. 실제 메일 발송이나 지급은 실행하지 않는다.
@@ -93,3 +98,5 @@ cd ..
 11월 12일 가상 set01의 원본 3개를 새 대회에 접수해 Studio Config 5의 성공 판정 → HWPX 4개 구역 → 원본 증빙 검증 → 최종 PDF 6쪽의 확정·다운로드를 확인했다. 원본 다운로드 3개의 SHA-256도 일치했고 최종 PDF 전 페이지를 렌더링해 확인했다. 장치·계정 분리 등 HTTP 계약 40개, Python 10개, JUnit 18개와 Chrome PC 안내 시험 4개가 통과했다. 실제 물리 PC는 현재 PC 한 대에서 시험했으며, 다른 계정·두 PC의 배정 범위와 동시성은 별도 DB의 API 시험으로 검증했다.
 
 기존 화면 전체 회귀 시험에서는 18개 중 17개가 통과했다. 수정 HWPX 미리보기 1개는 이전 배포 JAR의 정적 파일에서도 같은 실패가 재현돼 이번 연결 작업과 별도로 남겼다. Gmail의 기존 Google 콜백 설정 문제도 이번 작업의 해결 범위에 포함하지 않았다.
+
+1.1.0 병렬 전환은 `deploy/pc-parallel/apply.ps1`로 기존 t3.medium에 적용했다. HTTP 계약 57개와 Python 시험 14개, 실제 한글 세 조합의 동시 출력·단독 출력과의 페이지별 픽셀 일치, 서로 다른 두 보고서의 동시 출력 3회, 시간 초과·부모 종료 격리와 기존 문서 보존을 확인했다. 검증 중 발견한 PDF 누락은 PDF 파일 완료 확인과 공유 인쇄 보조 프로세스를 포함하지 않는 종료 범위로 보강했다. 이 PC의 기존 연결을 유지해 1.1.0으로 업데이트한 뒤 공개 주소에서도 원본 3개와 6쪽 최종 PDF·서버 증빙 검증·자동 복구가 통과했다. 검증 범위는 현재 Windows PC이며 근거는 `var/pc-parallel-deployment/`와 `var/pc-parallel-native/`에 있다.

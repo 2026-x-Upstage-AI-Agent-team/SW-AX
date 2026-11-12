@@ -20,23 +20,27 @@ class PcTasks {
     PcTasks(JdbcTemplate db,ObjectMapper json,OutputJobs output) { this.db=db;this.json=json;this.output=output; }
     private static RuntimeException lost() { return ApiErrors.error(409,"문서 배정이 만료됐습니다. 다시 연결해 주세요."); }
 
-    Task claim(PcDevices.Device device) {
+    Task claim(PcDevices.Device device,int slot) {
         if (db.queryForList("SELECT id FROM pc_device WHERE id=? AND NOT revoked AND hancom_ready AND seen_at>clock_timestamp()-interval '45 seconds' FOR UPDATE",
                 UUID.class,device.id()).isEmpty()) return null;
         var resume=db.query("""
             SELECT f.id,c.claim_token,encode(sha256(f.original),'hex'),lower(substring(f.name from '\\.[^.]+$'))
             FROM pc_file_conversion c JOIN intake_file f ON f.id=c.file_id JOIN intake_batch b ON b.id=f.batch_id
             JOIN event_staff s ON s.event_id=b.event_id AND s.login=?
-            WHERE c.device_id=? AND b.uploaded_by=? AND c.state='running' AND c.lease_until>clock_timestamp()
+            WHERE c.device_id=? AND c.worker_slot=? AND b.uploaded_by=? AND c.state='running' AND c.lease_until>clock_timestamp()
             ORDER BY c.lease_until LIMIT 1
-            """,(rs,n)->new Task("file",rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4)),device.login(),device.id(),device.login());
+            """,(rs,n)->new Task("file",rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4)),device.login(),device.id(),slot,device.login());
         if (!resume.isEmpty()) return resume.getFirst();
         var report=db.query("""
             SELECT r.id,r.print_token,encode(sha256(r.hwpx),'hex') FROM award_report r
             JOIN event_staff s ON s.event_id=r.event_id AND s.login=?
             WHERE r.created_by=? AND r.printer=? AND r.state='printing' AND r.print_until>clock_timestamp() LIMIT 1
-            """,(rs,n)->new Task("report",rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),".hwpx"),device.login(),device.login(),printer(device));
+            """,(rs,n)->new Task("report",rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),".hwpx"),device.login(),device.login(),printer(device,slot));
         if (!report.isEmpty()) return report.getFirst();
+        if(slot==1) {
+            var printed=claimReport(device,slot);
+            if(printed!=null) return printed;
+        }
         var files=db.query("""
             SELECT f.id FROM intake_file f JOIN intake_batch b ON b.id=f.batch_id
             JOIN intake_preparation p ON p.batch_id=b.id
@@ -49,19 +53,23 @@ class PcTasks {
         if (!files.isEmpty()) {
             UUID id=files.getFirst();
             db.update("""
-                INSERT INTO pc_file_conversion(file_id,device_id,lease_until,state) VALUES(?,?,clock_timestamp()+interval '300 seconds','running')
+                INSERT INTO pc_file_conversion(file_id,device_id,worker_slot,lease_until,state) VALUES(?,?,?,clock_timestamp()+interval '300 seconds','running')
                 ON CONFLICT(file_id) DO UPDATE SET device_id=excluded.device_id,claim_token=gen_random_uuid(),
-                    lease_until=excluded.lease_until,state='running',attempts=pc_file_conversion.attempts+1,metadata=NULL
-                """,id,device.id());
+                    worker_slot=excluded.worker_slot,lease_until=excluded.lease_until,state='running',attempts=pc_file_conversion.attempts+1,metadata=NULL
+                """,id,device.id(),slot);
             db.update("INSERT INTO file_preparation_log(file_id,stage,display_name) VALUES(?,'담당자 PC에서 PDF 변환 중','접수 원본')",id);
             return db.query("SELECT c.file_id,c.claim_token,encode(sha256(f.original),'hex'),lower(substring(f.name from '\\.[^.]+$')) FROM pc_file_conversion c JOIN intake_file f ON f.id=c.file_id WHERE c.file_id=?",
                 (rs,n)->new Task("file",rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4)),id).getFirst();
         }
-        var printed=output.claimFor(new OutputJobs.Printer(printer(device)),device.login()).getBody();
+        return slot==0 ? claimReport(device,slot) : null;
+    }
+
+    private Task claimReport(PcDevices.Device device,int slot) {
+        var printed=output.claimFor(new OutputJobs.Printer(printer(device,slot)),device.login()).getBody();
         return printed==null ? null : new Task("report",printed.id(),printed.claimToken(),printed.sha256(),".hwpx");
     }
 
-    private static String printer(PcDevices.Device device) { return "pc:"+device.id(); }
+    private static String printer(PcDevices.Device device,int slot) { return "pc:"+device.id()+(slot==0 ? "" : ":1"); }
 
     private void scope(PcDevices.Device device,String kind,UUID id,UUID token,boolean completed) {
         if (db.queryForList("SELECT id FROM pc_device WHERE id=? AND NOT revoked FOR UPDATE",UUID.class,device.id()).isEmpty())
@@ -80,9 +88,9 @@ class PcTasks {
             allowed=!db.queryForList("""
                 SELECT r.id FROM award_report r JOIN event_staff s ON s.event_id=r.event_id AND s.login=?
                     JOIN pc_device d ON d.id=? AND NOT d.revoked
-                    WHERE r.id=? AND r.created_by=? AND r.printer=? AND r.print_token=?
+                    WHERE r.id=? AND r.created_by=? AND r.printer IN (?,?) AND r.print_token=?
                 FOR UPDATE OF r FOR SHARE OF d FOR KEY SHARE OF s
-                """,UUID.class,device.login(),device.id(),id,device.login(),printer(device),token).isEmpty();
+                """,UUID.class,device.login(),device.id(),id,device.login(),printer(device,0),printer(device,1),token).isEmpty();
         } else throw ApiErrors.error(404,"문서 배정을 찾을 수 없습니다.");
         if (!allowed) throw ApiErrors.error(404,"문서 배정을 찾을 수 없습니다.");
     }

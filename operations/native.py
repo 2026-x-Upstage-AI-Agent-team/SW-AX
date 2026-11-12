@@ -22,7 +22,7 @@ def render(src, dest):
     pdf = work / "output.pdf"
     try:
         shutil.copyfile(src,source)
-        powershell(ROOT/"service/convert.ps1",source,pdf,"-Guard",module,timeout=180)
+        powershell(ROOT/"service/convert.ps1",source,pdf,"-Guard",module,timeout=180,isolated=True)
         shutil.copyfile(pdf,dest)
     finally:
         # Windows can keep the input locked briefly after Hancom exits.
