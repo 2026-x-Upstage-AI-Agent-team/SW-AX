@@ -163,12 +163,24 @@ def run():
             check(pc_b.get(report_route+'/input',headers=report_headers).raise_for_status().content==b'fixture report','report download is scoped and byte-identical')
             pc_b.put(report_route+'/pdf',content=pdf,headers={**report_headers,'Content-Type':'application/pdf','X-Source-Sha256':b_report['sha256']}).raise_for_status()
             check(db.execute('SELECT state FROM award_report WHERE id=%s',(report,)).fetchone()['state']=='verifying','report PDF enters the existing evidence-verification queue')
-            upload(a,'parallel-one.hwp');upload(a,'parallel-two.hwp')
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                concurrent=list(pool.map(lambda pc:pc.post('/api/pc-agent/claim').raise_for_status().json(),[pc_a,pc_a2]))
-            check(len({task['id'] for task in concurrent})==2,'two PCs cannot claim the same file concurrently')
-            for pc,task in zip((pc_a,pc_a2),concurrent):
-                pc.put('/api/pc-agent/file/'+task['id']+'/failure',headers={'X-Claim-Token':task['claim_token']}).raise_for_status()
+            def finish_file(task,pc=pc_a2):
+                route='/api/pc-agent/file/'+task['id'];headers={'X-Claim-Token':task['claim_token']}
+                pc.put(route+'/metadata',json=metadata,headers=headers).raise_for_status()
+                pc.put(route+'/pdf',content=pdf,headers={**headers,'Content-Type':'application/pdf','X-Source-Sha256':task['sha256']}).raise_for_status()
+            def claim_file(pc):
+                for _ in range(100):
+                    response=pc.post('/api/pc-agent/claim').raise_for_status()
+                    if response.status_code==200:return response.json()
+                    check(response.status_code==204,'a contested claim returns no work')
+                    time.sleep(0.02)
+                raise TimeoutError('A PC did not receive its independent pending file')
+            for attempt in range(20):
+                upload(a,'parallel-one-'+str(attempt)+'.hwp');upload(a,'parallel-two-'+str(attempt)+'.hwp')
+                for pc in (pc_a,pc_a2):pc.put('/api/pc-agent/heartbeat',json={'hancom_ready':True,'version':'1.1.0'}).raise_for_status()
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    concurrent=list(pool.map(claim_file,(pc_a,pc_a2)))
+                check(len({task['id'] for task in concurrent})==2,'two PCs receive different files concurrently: '+str(attempt))
+                for pc,task in zip((pc_a,pc_a2),concurrent):finish_file(task,pc)
             for slot in (-1,2):
                 check(pc_a2.post('/api/pc-agent/claim',json={'slot':slot}).status_code==422,'slot outside the two-worker limit is rejected: '+str(slot))
             upload(a,'slot-zero.hwp');upload(a,'slot-one.hwp')
@@ -180,10 +192,6 @@ def run():
                 resumed=pc_a2.post('/api/pc-agent/claim',json={'slot':slot}).raise_for_status().json()
                 check(resumed==task,'a repeated slot claim resumes exactly its own file: '+str(slot))
             check(pc_a2.post('/api/pc-agent/claim').json()==slots[0],'old clients without a slot still resume slot zero')
-            def finish_file(task):
-                route='/api/pc-agent/file/'+task['id'];headers={'X-Claim-Token':task['claim_token']}
-                pc_a2.put(route+'/metadata',json=metadata,headers=headers).raise_for_status()
-                pc_a2.put(route+'/pdf',content=pdf,headers={**headers,'Content-Type':'application/pdf','X-Source-Sha256':task['sha256']}).raise_for_status()
             finish_file(slots[0])
             report_zero=db.execute("INSERT INTO award_report(event_id,version,created_by,selection,snapshot,state,hwpx) VALUES(%s,2,'pc-fixture-a','{}','{}','printing',%s) RETURNING id",(event,b'first parallel report')).fetchone()['id']
             first_report=pc_a2.post('/api/pc-agent/claim',json={'slot':0}).raise_for_status().json()

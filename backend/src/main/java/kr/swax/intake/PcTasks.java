@@ -52,11 +52,14 @@ class PcTasks {
             """,(rs,n)->rs.getObject(1,UUID.class),device.login(),device.login());
         if (!files.isEmpty()) {
             UUID id=files.getFirst();
-            db.update("""
+            int claimed=db.update("""
                 INSERT INTO pc_file_conversion(file_id,device_id,worker_slot,lease_until,state) VALUES(?,?,?,clock_timestamp()+interval '300 seconds','running')
                 ON CONFLICT(file_id) DO UPDATE SET device_id=excluded.device_id,claim_token=gen_random_uuid(),
                     worker_slot=excluded.worker_slot,lease_until=excluded.lease_until,state='running',attempts=pc_file_conversion.attempts+1,metadata=NULL
+                WHERE pc_file_conversion.state='failed'
+                    OR (pc_file_conversion.state='running' AND pc_file_conversion.lease_until<=clock_timestamp())
                 """,id,device.id(),slot);
+            if(claimed==0) return null;
             db.update("INSERT INTO file_preparation_log(file_id,stage,display_name) VALUES(?,'담당자 PC에서 PDF 변환 중','접수 원본')",id);
             return db.query("SELECT c.file_id,c.claim_token,encode(sha256(f.original),'hex'),lower(substring(f.name from '\\.[^.]+$')) FROM pc_file_conversion c JOIN intake_file f ON f.id=c.file_id WHERE c.file_id=?",
                 (rs,n)->new Task("file",rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4)),id).getFirst();
