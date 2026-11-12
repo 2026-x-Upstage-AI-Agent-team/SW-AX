@@ -47,8 +47,10 @@ CREATE TABLE IF NOT EXISTS studio_execution (
 -- An accessible config does not prove permission to create Jobs under the same rejected key.
 ALTER TABLE studio_execution ADD COLUMN IF NOT EXISTS rejected_create_key_hash bytea;
 ALTER TABLE studio_execution ADD COLUMN IF NOT EXISTS last_polled_at timestamptz;
+ALTER TABLE studio_execution ADD COLUMN IF NOT EXISTS last_http_status smallint;
 CREATE UNIQUE INDEX IF NOT EXISTS studio_distinct_id ON studio_execution(remote_id) WHERE remote_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS studio_one_remote ON studio_execution (occupies_slot) WHERE occupies_slot;
+-- Studio runs teams asynchronously; only a team's remote execution id must be unique.
+DROP INDEX IF EXISTS studio_one_remote;
 CREATE TABLE IF NOT EXISTS workflow_audit (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, submission_id uuid NOT NULL REFERENCES team_submission,
     at timestamptz NOT NULL DEFAULT clock_timestamp(), actor text NOT NULL, action text NOT NULL,

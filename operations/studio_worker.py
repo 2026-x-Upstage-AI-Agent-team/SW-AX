@@ -15,9 +15,9 @@ ACCESS_CHECK_SECONDS = 60
 
 def status(db, task, phase, error="", *, delay=0, failures=0, slot=False, remote=None, http_status=None, error_code=None, rejected_key=None):
     with db.transaction():
-        db.execute("""UPDATE studio_execution SET phase=%s,error=%s,failures=%s,occupies_slot=%s,
+        db.execute("""UPDATE studio_execution SET phase=%s,error=%s,failures=%s,occupies_slot=%s,last_http_status=%s,
             remote_id=coalesce(%s,remote_id),updated_at=now(),due=now()+%s*interval '1 second',rejected_create_key_hash=%s WHERE job_id=%s""",
-                   (phase, error, failures, slot, remote, delay, rejected_key, task["id"]))
+                   (phase, error, failures, slot, http_status, remote, delay, rejected_key, task["id"]))
         if task["phase"] != phase or error != task["error"] or failures or error_code:
             db.execute("""INSERT INTO workflow_audit(submission_id,actor,action,stage,remote_id,attempts,due,http_status,error_code)
                 SELECT %s,'@workflow',%s,phase,remote_id,failures,due,%s,%s FROM studio_execution WHERE job_id=%s""",
@@ -32,12 +32,18 @@ def choose(db):
         (e.due IS NULL OR e.due<=now()) AS ready
         FROM review_job j JOIN review_job_status r ON r.review_job_id=j.id
         JOIN team_submission s ON s.id=j.submission_id LEFT JOIN studio_execution e ON e.job_id=j.id
-        WHERE e.occupies_slot OR e.phase='access' OR (r.state IN ('queued','running') AND NOT ops_team_held(s.team_id)
+        WHERE (e.due IS NULL OR e.due<=now())
+            AND NOT EXISTS(SELECT FROM studio_execution WHERE last_http_status=429 AND failures>0 AND due>now())
+            AND (coalesce(e.remote_id,j.studio_job_id) IS NOT NULL OR e.phase IN ('creating','access')
+                OR NOT EXISTS(SELECT FROM studio_execution WHERE phase='access'))
+            AND (e.phase IN ('creating','access') OR r.state NOT IN ('queued','running')
+                OR j.work_state='queued' OR j.lease_until<=now() OR j.worker_id='studio-dispatch')
+            AND ((e.occupies_slot AND e.phase NOT IN ('uncertain','paused','invalid')) OR e.phase='access'
+            OR (r.state IN ('queued','running') AND NOT ops_team_held(s.team_id)
             AND EXISTS(SELECT FROM intake_team_confirmation c JOIN intake_preparation p ON p.batch_id=c.batch_id
                 WHERE c.submission_id=s.id AND c.state='confirmed' AND p.state IN ('ready','prepared'))
-            AND (e.phase IS NULL OR e.phase IN ('queued','polling')) AND (e.due IS NULL OR e.due<=now())
-            AND (j.work_state='queued' OR j.lease_until<=now() OR j.worker_id='studio-dispatch'))
-        ORDER BY coalesce(e.occupies_slot,false) DESC,coalesce(e.phase='access',false) DESC,j.registered_at,j.id LIMIT 1""").fetchone()
+            AND (e.phase IS NULL OR e.phase IN ('queued','polling'))))
+        ORDER BY coalesce(e.due,j.registered_at),j.registered_at,j.id LIMIT 1""").fetchone()
 
 
 def backoff(db, task, exc, creating, api_key):
@@ -57,9 +63,6 @@ def backoff(db, task, exc, creating, api_key):
         status(db, task, "uncertain", "생성 응답이 불명확합니다. Studio에서 기존 실행을 확인하세요.", slot=True, **audit)
     elif not code or code in (408, 429) or code >= 500:
         count = task["failures"] + 1
-        if count > 3:
-            status(db, task, "paused", "통신 재시도 한도에 도달했습니다. 실행 이력을 확인하세요.", failures=count, slot=remote, **audit)
-            return
         delay = 2 ** count + random.random()
         after = response.headers.get("Retry-After", "") if response is not None else ""
         try:
@@ -67,6 +70,10 @@ def backoff(db, task, exc, creating, api_key):
             delay = max(delay, wait)
         except (ValueError, TypeError, OverflowError):
             pass
+        if count > 3:
+            status(db, task, "paused", "통신 재시도 한도에 도달했습니다. 실행 이력을 확인하세요.",
+                   failures=count, slot=remote, delay=delay if code==429 else 0, **audit)
+            return
         status(db, task, "polling" if remote else "queued", "통신 오류로 재시도를 기다립니다.",
                failures=count, delay=delay, slot=remote, **audit)
     else:

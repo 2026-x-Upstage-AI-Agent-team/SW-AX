@@ -104,7 +104,8 @@ class Recovery(unittest.TestCase):
             return db.execute("""SELECT e.*,extract(epoch FROM due-updated_at) AS delay FROM studio_execution e
                               JOIN review_job j ON j.id=e.job_id WHERE j.submission_id=%s""",(sid,)).fetchone()
         def due():
-            db.execute("UPDATE studio_execution SET due=now() WHERE job_id=(SELECT id FROM review_job WHERE submission_id=%s)",(sid,))
+            # Advance this job ahead of other eligible teams when checking its recovery.
+            db.execute("UPDATE studio_execution SET due=now()-interval '1 day' WHERE job_id=(SELECT id FROM review_job WHERE submission_id=%s)",(sid,))
         def retry(**body):
             return staff.post("/api/submissions/"+sid+"/retry", json=body)
         def submission_status():
