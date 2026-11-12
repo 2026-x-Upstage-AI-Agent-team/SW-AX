@@ -47,12 +47,12 @@
       transition-delay: 0s, 0s, var(--motion-enter);
     }
 
-    :is(.motion-results, .deletion-dialog[open], .preview-dialog[open], .workspace-help-panel:popover-open, .tour-copy-content),
+    :is(.motion-results, .deletion-dialog[open], .logout-dialog[open], .preview-dialog[open], .workspace-help-panel:popover-open, .tour-copy-content),
     details[open] > :not(summary) {
       animation: motion-rise-in var(--motion-enter) var(--motion-ease);
     }
     :is(.workspace-page, .motion-feedback, .drop-overlay, .mobile-menu[open]),
-    :is(.mobile-menu, .preview-dialog, .deletion-dialog)[open]::backdrop {
+    :is(.mobile-menu, .preview-dialog, .deletion-dialog, .logout-dialog)[open]::backdrop {
       animation: motion-fade-in var(--motion-enter) var(--motion-ease);
     }
     .workspace[data-tour-active="true"] .motion-results { animation-name: motion-fade-in; }

@@ -275,7 +275,7 @@ test('확인할 일 배지는 현황의 같은 목록으로 이동하고 계정 
   assert.ok(buttonBox && panelBox);
   assert.ok(panelBox.y >= buttonBox.y + buttonBox.height && panelBox.y - buttonBox.y - buttonBox.height < 16);
   assert.ok(Math.abs(panelBox.x + panelBox.width - buttonBox.x - buttonBox.width) < 1);
-  assert.equal(await account.getByRole('link', { name: '로그아웃' }).getAttribute('href'), '/logout');
+  await account.getByRole('button', { name: '로그아웃', exact: true }).waitFor();
   await page.keyboard.press('Tab');
   assert.ok(await account.getByRole('link', { name: '업무 선택' }).evaluate(link => link === document.activeElement));
   await page.keyboard.press('Escape');
@@ -292,6 +292,16 @@ test('확인할 일 배지는 현황의 같은 목록으로 이동하고 계정 
   await page.keyboard.press('Escape');
   await search.waitFor({ state: 'hidden' });
 
+  const current = page.url();
+  const logout = page.getByRole('dialog', { name: '로그아웃 하시겠습니까?' });
+  await trigger.click();
+  await account.getByRole('button', { name: '로그아웃', exact: true }).click();
+  await logout.waitFor();
+  await logout.getByRole('button', { name: '취소', exact: true }).click();
+  await logout.waitFor({ state: 'hidden' });
+  assert.equal(page.url(), current);
+  assert.ok(await trigger.evaluate(button => button === document.activeElement));
+
   await page.setViewportSize({ width: 320, height: 1000 });
   await page.getByRole('button', { name: '메뉴 열기', exact: true }).click();
   const drawer = page.getByRole('dialog', { name: '작업 메뉴' });
@@ -299,6 +309,13 @@ test('확인할 일 배지는 현황의 같은 목록으로 이동하고 계정 
   await drawer.getByRole('group', { name: '계정 메뉴' }).getByRole('link', { name: '업무 선택' }).waitFor();
   await page.keyboard.press('Escape');
   await account.waitFor({ state: 'hidden' });
+  assert.ok(await drawer.isVisible());
+  await drawer.getByRole('button', { name: '계정 메뉴' }).click();
+  await drawer.getByRole('button', { name: '로그아웃', exact: true }).click();
+  await logout.waitFor();
+  await page.keyboard.press('Escape');
+  await logout.waitFor({ state: 'hidden' });
+  assert.equal(page.url(), current);
   assert.ok(await drawer.isVisible());
 });
 

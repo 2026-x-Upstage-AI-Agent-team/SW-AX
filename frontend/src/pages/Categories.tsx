@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet } from 'react-router';
-import { ClipboardCheck, FileStack, FileText, GraduationCap, Handshake, LogOut, Receipt, type LucideIcon } from 'lucide-react';
+import { ClipboardCheck, FileStack, FileText, GraduationCap, Handshake, Receipt, type LucideIcon } from 'lucide-react';
 import BrandMark from '../components/BrandMark';
+import LogoutButton from '../components/LogoutButton';
 import { isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { categoryPath, type Category } from '../api/workspaces';
@@ -24,7 +25,7 @@ export function PortalLayout() {
       </Link>
       {!isDemoBackend && <div className="flex flex-wrap items-center gap-3">
         {session.data?.login && <span className="text-sm text-ink-2">{session.data.login}</span>}
-        <a href="/logout" className={buttonStyles.secondary}><LogOut size={16} aria-hidden="true" />로그아웃</a>
+        <LogoutButton className={buttonStyles.secondary} />
       </div>}
     </header>
     <main id="workspace-content" tabIndex={-1} className="mx-auto flex w-full max-w-280 flex-1 flex-col gap-7 px-[clamp(1rem,3.5vw,2.5rem)] py-12 focus:outline-none"><Outlet /></main>

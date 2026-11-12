@@ -24,7 +24,7 @@ import AccountMenu from './AccountMenu';
 
 type NavigationControl = {
   compact: boolean;
-  search: () => void; toggleRail: () => void;
+  search: () => void;
 };
 
 function Brand({ subtitle, compact = false, onNavigate }: { subtitle: string; compact?: boolean; onNavigate?: () => void }) {
@@ -82,19 +82,18 @@ function WorkspaceNav({ worker, pc, control, onNavigate, account }: {
     </nav>
     <div className="sidebar-foot">
       {!control.compact && <p className="rail-label">설정</p>}
-      {pc.status?.enabled && <NavLink to={pcConnectionMenu.to} onClick={onNavigate} aria-label={`${pcConnectionMenu.label} · ${pcState}`} title={pcState}
+      {!isDemoBackend && <NavLink to={pcConnectionMenu.to} onClick={onNavigate} aria-label={`${pcConnectionMenu.label} · ${pcState}`} title={pcState}
         className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}>
         <MonitorCheck size={19} aria-hidden="true" />
         <span className={control.compact ? 'sr-only' : undefined}>{pcConnectionMenu.label}</span>
-        {!control.compact && <span className={cx('pc-connection-indicator ml-auto', pcReady && 'is-active')} aria-hidden="true" />}
+        {pc.status?.enabled && !control.compact && <span className={cx('pc-connection-indicator ml-auto', pcReady && 'is-active')} aria-hidden="true" />}
       </NavLink>}
       <NavLink to="/gmail" onClick={onNavigate} aria-label="Gmail 연결" title="Gmail 연결" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><AtSign size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>Gmail 연결</span></NavLink>
       <NavLink to="/manage" onClick={onNavigate} aria-label="워크스페이스 설정" title="워크스페이스 설정" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><Settings2 size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>워크스페이스 설정</span></NavLink>
-      <div className={cx('flex items-center justify-between', control.compact && 'flex-col')}>
-        <button type="button" className="icon-button min-[60rem]:hidden" onClick={control.search} aria-label="현재 워크스페이스 검색" title="검색 · Ctrl+K"><Search size={20} aria-hidden="true" /></button>
-        <button type="button" className="icon-button hidden min-[60rem]:grid" onClick={control.toggleRail} aria-label={control.compact ? '사이드바 펼치기' : '사이드바 접기'} title={control.compact ? '사이드바 펼치기' : '사이드바 접기'}>{control.compact ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}</button>
+      {account && <div className="flex items-center justify-between">
+        <button type="button" className="icon-button" onClick={control.search} aria-label="현재 워크스페이스 검색" title="검색 · Ctrl+K"><Search size={20} aria-hidden="true" /></button>
         {account}
-      </div>
+      </div>}
       <WorkerStatus control={worker} />
     </div>
   </>;
@@ -158,14 +157,21 @@ function WorkspaceLayout() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [openSearch]);
-  const control: NavigationControl = {
-    compact: collapsed, search: openSearch, toggleRail: () => setCollapsed(value => !value),
-  };
+  const control: NavigationControl = { compact: collapsed, search: openSearch };
+  const railToggleLabel = collapsed ? '사이드바 펼치기' : '사이드바 접기';
   const needsPc = pc.status?.enabled && /^\/(?:intake|report)(?:\/|$)/.test(workspaceSection(pathname)) &&
     (!pc.status.device?.online || !pc.status.device.hancom_ready || Boolean(pc.error));
   return <div className="workspace" data-rail-collapsed={collapsed} data-tour-active={active}>
     <a className="skip-link" href="#workspace-content" onClick={event => { event.preventDefault(); document.getElementById('workspace-content')?.focus(); }}>본문으로 바로가기</a>
-    <aside className="workspace-rail" aria-label="작업 공간"><Brand subtitle={brandSubtitle} compact={collapsed} /><WorkspaceNav worker={worker} pc={pc} control={control} /></aside>
+    <aside className="workspace-rail" aria-label="작업 공간">
+      <div className={cx('flex items-center justify-between gap-2', collapsed && 'flex-col')}>
+        <Brand subtitle={brandSubtitle} compact={collapsed} />
+        <button type="button" className="icon-button" onClick={() => setCollapsed(value => !value)} aria-label={railToggleLabel} title={railToggleLabel}>
+          {collapsed ? <PanelLeftOpen size={20} aria-hidden="true" /> : <PanelLeftClose size={20} aria-hidden="true" />}
+        </button>
+      </div>
+      <WorkspaceNav worker={worker} pc={pc} control={control} />
+    </aside>
     <header className="mobile-bar"><Brand subtitle={brandSubtitle} /><button type="button" className="icon-button" aria-label="메뉴 열기" aria-haspopup="dialog" data-tour="menu-open" aria-controls="workspace-menu" onClick={openMenu}><Menu size={22} aria-hidden="true" /></button></header>
     <dialog ref={menuDialog} id="workspace-menu" className="mobile-menu" aria-label="작업 메뉴" onClose={close} onClick={event => { if (event.target === event.currentTarget) close(); }}>
       <div className="mobile-menu-body">
@@ -190,7 +196,7 @@ function WorkspaceLayout() {
       <Outlet context={pc} />
     </div>
     {!active && <WorkspaceHelp onStartGuide={startGuide} />}
-    <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} pcEnabled={pc.status?.enabled} />
+    <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} showPcConnection={!isDemoBackend} />
   </div>;
 }
 

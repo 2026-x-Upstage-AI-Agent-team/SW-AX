@@ -9,7 +9,7 @@ import { pcConnectionMenu, primaryMenu, teamAssignmentMenu, workflowLabels } fro
 
 type SearchFile = FileInfo & { batch: string };
 
-export default function WorkspaceSearch({ open, onClose, pcEnabled }: { open: boolean; onClose: () => void; pcEnabled?: boolean }) {
+export default function WorkspaceSearch({ open, onClose, showPcConnection }: { open: boolean; onClose: () => void; showPcConnection: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { dashboard } = useEvent();
   const [query, setQuery] = useState('');
@@ -53,7 +53,7 @@ export default function WorkspaceSearch({ open, onClose, pcEnabled }: { open: bo
   const teams = dashboard?.teams.filter(team => matches(`${receiptName(team.name, team.intake_number)} ${team.rep}`)) ?? [];
   const matchingFiles = useMemo(() => text ? files.filter(file => file.name.toLocaleLowerCase().includes(text)) : [], [files, text]);
   const menus = [...primaryMenu, teamAssignmentMenu];
-  if (pcEnabled) menus.push(pcConnectionMenu);
+  if (showPcConnection) menus.push(pcConnectionMenu);
   const pages = menus.filter(item => matches(item.label));
 
   return <dialog ref={dialog} className="deletion-dialog" aria-labelledby="workspace-search-title" onClose={onClose}

@@ -134,8 +134,9 @@ test('로그인은 이전 작업 주소나 실패 이력과 관계없이 카테�
       await page.waitForURL(baseURL + '/#/');
       await page.getByRole('heading', { name: '문서 업무', exact: true }).waitFor();
       assert.equal(await page.getByRole('navigation', { name: '주 메뉴' }).count(), 0);
-      await page.getByRole('link', { name: '로그아웃', exact: true }).click();
       await page.getByRole('button', { name: '로그아웃', exact: true }).click();
+      await page.getByRole('dialog', { name: '로그아웃 하시겠습니까?' })
+        .getByRole('button', { name: '로그아웃', exact: true }).click();
       const notice = page.getByRole('dialog', { name: '로그아웃했습니다.' });
       await notice.waitFor();
       assert.deepEqual(await inputBoxes(), before, 'The logout notice must not move either input.');

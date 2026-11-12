@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
-import { FileStack, LogOut, Plus } from 'lucide-react';
+import { FileStack, Plus } from 'lucide-react';
 import BrandMark from '../components/BrandMark';
+import LogoutButton from '../components/LogoutButton';
 import { isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
 import { buttonStyles } from '../components/ui';
@@ -20,7 +21,7 @@ export default function Hub() {
         {!isDemoBackend && (
           <div className="flex flex-wrap items-center gap-3">
             {session.data?.login && <span className="text-sm text-ink-2">{session.data.login}</span>}
-            <a href="/logout" className={buttonStyles.secondary}><LogOut size={16} aria-hidden="true" />로그아웃</a>
+            <LogoutButton className={buttonStyles.secondary} />
           </div>
         )}
       </header>

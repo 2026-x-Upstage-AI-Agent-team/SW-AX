@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef } from 'react';
-import { ChevronDown, Grid2X2, LogOut, UserRound } from 'lucide-react';
+import { ChevronDown, Grid2X2, UserRound } from 'lucide-react';
 import { Link } from 'react-router';
 import { isDemoBackend } from '../api/backend';
+import LogoutButton from './LogoutButton';
 
 export default function AccountMenu({ login, open, onOpenChange, compact = false }: {
   login: string;
@@ -49,9 +50,7 @@ export default function AccountMenu({ login, open, onOpenChange, compact = false
       <Link to="/" className="account-menu-item" onClick={() => onOpenChange(false)}>
         <Grid2X2 size={17} aria-hidden="true" />업무 선택
       </Link>
-      {!isDemoBackend && <a href="/logout" className="account-menu-item" onClick={() => onOpenChange(false)}>
-        <LogOut size={17} aria-hidden="true" />로그아웃
-      </a>}
+      {!isDemoBackend && <LogoutButton className="account-menu-item w-full text-left" onOpen={() => onOpenChange(false)} returnFocus={trigger} />}
     </div>
   </div>;
 }

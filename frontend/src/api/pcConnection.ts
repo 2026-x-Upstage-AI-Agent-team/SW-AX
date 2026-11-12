@@ -46,8 +46,10 @@ export function usePcConnection() {
         }
       } catch (cause) {
         if (active) {
-          if (cause instanceof ApiError && cause.status === 404) setStatus({ enabled: false });
-          else setError('PC 연결 상태를 확인하지 못했습니다.');
+          if (cause instanceof ApiError && cause.status === 404) {
+            setStatus({ enabled: false });
+            setError('');
+          } else setError('PC 연결 상태를 확인하지 못했습니다.');
         }
       } finally { reading = false; }
     };
@@ -65,6 +67,7 @@ export function pairPc() {
 
 export function pcLabel(status?: PcStatus) {
   if (!status) return 'PC 연결 확인 중';
+  if (!status.enabled) return '기존 한글 워커 사용';
   const device = status.device;
   if (device?.online && device.hancom_ready) return 'PC 연결됨';
   if (device?.online) return '한글 설치·실행 확인 필요';

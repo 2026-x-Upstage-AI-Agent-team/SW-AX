@@ -25,7 +25,7 @@ async function fixture(t,device,width=1440){
   const event={id:'event',name:'연결 안내 시험'};
   await page.route('**/api/**',route=>{
     const path=new URL(route.request().url()).pathname;
-    if(path==='/api/pc-connections')return route.fulfill({json:state});
+    if(path==='/api/pc-connections')return state ? route.fulfill({json:state}) : route.fulfill({status:404,json:{}});
     if(path==='/api/pc-connections/installer')return route.fulfill({headers:{'Content-Disposition':'attachment; filename=SWAX-PC-Setup.exe','Content-Type':'application/octet-stream'},body:'fixture installer, do not execute'});
     const replies={'/api/events':[event],'/api/events/event/teams':[],
       '/api/categories':[{id:'awards',name:'시상금 서류 검토',enabled:true}],
@@ -96,4 +96,27 @@ test('한글이 확인되지 않은 연결 PC와 좁은 화면에서도 재설�
   assert.equal(await page.getByRole('link',{name:'PC 연결 프로그램 다운로드'}).isVisible(),false);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:output+'/hancom-required-mobile.png',fullPage:true});
+});
+
+test('PC 연결을 지원하지 않는 접수 API에서도 설정을 열고 워커 안내를 확인한다',async t=>{
+  const {page,change}=await fixture(t,{});
+  for (const state of [{enabled:false},null]) {
+    change(state);
+    await page.goto('about:blank');
+    await page.goto(workspace + '/intake');
+    const rail=page.getByRole('complementary',{name:'작업 공간'});
+    const pcLink=rail.getByRole('link',{name:'내 PC 연결 · 기존 한글 워커 사용'});
+    await pcLink.waitFor();
+    assert.equal(await page.locator('.pc-connection-notice').count(),0);
+    await pcLink.click();
+    await page.getByRole('heading',{name:'기존 한글 워커 사용'}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'이 PC 연결',exact:true}).count(),0);
+    await page.getByText('담당자 PC 연결 방법',{exact:true}).click();
+    await page.getByText('PC 연결이 활성화된 서비스 주소에 로그인한 뒤 내 PC 연결 메뉴를 엽니다.',{exact:true}).waitFor();
+    assert.equal(await page.getByRole('link',{name:'PC 연결 프로그램 다운로드'}).count(),0);
+    await page.getByRole('button',{name:'현재 워크스페이스 검색',exact:true}).click();
+    const search=page.getByRole('dialog',{name:'현재 워크스페이스 검색'});
+    await search.getByRole('searchbox').fill('내 PC');
+    assert.equal(await search.getByRole('link',{name:'내 PC 연결'}).getAttribute('href'),workspace.slice(1) + '/pc-connect');
+  }
 });
