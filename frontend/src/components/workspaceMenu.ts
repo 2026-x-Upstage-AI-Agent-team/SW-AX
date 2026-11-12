@@ -23,6 +23,7 @@ export const workflowMenu = [
 export const dashboardMenu = { to: '/', label: '업무 현황', Icon: LayoutDashboard, tour: 'nav-dashboard' };
 export const mailMenu = { to: '/mail', label: workflowLabels.mail, Icon: Mail, tour: undefined };
 export const teamAssignmentMenu = { to: '/assign', label: '팀 배정 확인' };
+export const pcConnectionMenu = { to: '/pc-connect', label: '내 PC 연결' };
 export const primaryMenu = [dashboardMenu, ...workflowMenu, mailMenu];
 
 export function workspaceSection(pathname: string) {
@@ -41,6 +42,7 @@ export function breadcrumb(section: string) {
   if (section.startsWith('/teams/')) return { parent: workflowLabels.review, to: '/review', label: '검토 상세' };
   if (section.startsWith('/intake/batches/')) return { parent: workflowLabels.progress, to: '/intake/batches', label: '검토 진행 상세' };
   if (section === '/assign') return { parent: workflowLabels.progress, to: '/intake/batches', label: teamAssignmentMenu.label };
+  if (section === pcConnectionMenu.to) return { parent: '설정', to: '/manage', label: pcConnectionMenu.label };
   if (section === '/gmail' || section === '/manage') return { parent: '설정', to: '/manage', label: section === '/gmail' ? 'Gmail 연결' : '워크스페이스 설정' };
   return { parent: '워크스페이스', to: '/', label: primaryMenu.find(item => currentMenu(item.to, section))?.label ?? '페이지' };
 }

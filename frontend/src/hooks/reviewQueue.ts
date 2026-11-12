@@ -1,5 +1,5 @@
 import { busyStates, recoverableStates, stateLabel } from '../api/labels';
-import { isMailDraft, type DashTeam, type MailRow } from '../api/service';
+import { isMailDraft, needsSupplement, type DashTeam, type MailRow } from '../api/service';
 import { workflowLabels } from '../components/workspaceMenu';
 import type { TeamRow } from './useOverview';
 
@@ -19,7 +19,7 @@ export function reviewStage(team: DashTeam): ReviewStage {
   if (busyStates.has(submission.state)) return 'processing';
   if (recoverableStates.has(submission.state) || submission.state !== 'done') return 'review';
   if (submission.decision === '승인') return 'approved';
-  if (submission.decision === '보완 필요' || submission.verdict === '재제출요청') return 'supplement';
+  if (submission.decision === '보완 필요' || needsSupplement(submission.verdict)) return 'supplement';
   return 'review';
 }
 

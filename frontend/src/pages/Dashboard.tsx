@@ -2,7 +2,7 @@ import { Link } from '../components/workspaceNavigation';
 import { useEffect, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { ArrowRight, Check, ChevronDown, CircleAlert, FileUp, Sparkles } from 'lucide-react';
-import type { Verdict } from '../api/service';
+import { needsSupplement, type Verdict } from '../api/service';
 import { Page } from '../components/Layout';
 import { Notice, PageHeader, buttonStyles } from '../components/ui';
 import WorkflowProgress from '../components/WorkflowProgress';
@@ -15,7 +15,7 @@ import type { TeamRow } from '../hooks/useOverview';
 const verdicts: Array<{ key: Verdict; label: string; color: string }> = [
   { key: '성공', label: '성공', color: 'var(--chart-success)' },
   { key: '담당자확인', label: '담당자 확인', color: 'var(--chart-review)' },
-  { key: '재제출요청', label: '재제출 요청', color: 'var(--chart-return)' },
+  { key: '보완필요', label: '보완 필요', color: 'var(--chart-return)' },
 ];
 
 export default function Dashboard() {
@@ -116,7 +116,7 @@ function hasVerdict(row: TeamRow) {
 function VerdictSummary({ rows }: { rows: TeamRow[] }) {
   const done = rows.filter(hasVerdict);
   const groups = verdicts.map(({ key, label, color }) => ({
-    label, color, count: done.filter((r) => r.submission?.verdict === key).length,
+    label, color, count: done.filter((r) => key === '보완필요' ? needsSupplement(r.submission?.verdict) : r.submission?.verdict === key).length,
   }));
   if (done.length < rows.length) groups.push({ label: '판정 전', color: 'var(--chart-pending)', count: rows.length - done.length });
   let end = 0;

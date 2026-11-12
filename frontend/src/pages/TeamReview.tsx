@@ -9,6 +9,7 @@ import { busyStates, docLabels, issueLabels, recoverableStates, stateLabel, when
 import { reviewEvidence, studioExplanation } from '../api/reviewEvidence';
 import {
   getSubmission,
+  needsSupplement,
   retrySubmission,
   reviewBody,
   saveReview,
@@ -376,7 +377,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
   const needsNote = s.verdict === '담당자확인' && !!decision;
   const supplementMail = dashboard?.mail.find(mail => isSupplementMail(mail, s.id))
     ?? s.mail?.find(mail => isSupplementMail(mail, s.id));
-  const mailAction = canSave && s.decision !== '승인' && (s.decision === '보완 필요' || s.verdict === '재제출요청')
+  const mailAction = canSave && s.decision !== '승인' && (s.decision === '보완 필요' || needsSupplement(s.verdict))
     ? supplementMailAction(s.id, supplementMail)
     : null;
 
@@ -412,7 +413,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
               key={d}
               className={cx(
                 'team-review-decision',
-                (locked ? decision !== d : d === '승인' && s.verdict === '재제출요청') && 'cursor-not-allowed opacity-40',
+                (locked ? decision !== d : d === '승인' && needsSupplement(s.verdict)) && 'cursor-not-allowed opacity-40',
               )}
               data-selected={decision === d}
             >
@@ -421,7 +422,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
                 name="decision"
                 value={d}
                 checked={decision === d}
-                disabled={locked || (d === '승인' && s.verdict === '재제출요청')}
+                disabled={locked || (d === '승인' && needsSupplement(s.verdict))}
                 onChange={() => setDecision(d)}
                 className="size-[18px] shrink-0 accent-brand-strong"
               />
@@ -429,7 +430,7 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
             </label>
           ))}
         </div>
-        {s.verdict === '재제출요청' && !locked && <p className="text-xs text-muted">재제출요청 판정은 보완본을 받아 다시 검토한 뒤 승인할 수 있습니다.</p>}
+        {needsSupplement(s.verdict) && !locked && <p className="text-xs text-muted">보완 서류를 받아 다시 검토한 뒤 승인할 수 있습니다.</p>}
         {locked && <p className="text-xs text-muted">이미 저장한 검토 결과를 바꾸려면 보완 서류를 올리세요.</p>}
         {decision === '보완 필요' && (
           <fieldset className="flex flex-col gap-2">

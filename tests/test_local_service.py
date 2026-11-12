@@ -289,6 +289,17 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(detail["fields"]["members"][0]["name"],"가상대표")
         self.assertEqual(detail["fields"]["recipient"]["account_number"],"001-0002")
 
+    def test_supplement_required_verdict_cannot_be_approved(self):
+        with db.database(True) as con:
+            con.execute("INSERT INTO teams(id,event,name,current) VALUES('supplement','wave','가상팀','supplement')")
+            con.execute("""INSERT INTO submissions(id,team,version,files,digest,created,updated,state,result)
+                VALUES('supplement','supplement',1,'[]','test',1,1,'done',?)""",
+                (db.dump({"verdict":"보완필요", "program":db.WAVE}),))
+        body = {"revision":0, "decision":"승인", "note":"원본 대조", "members":[{"role":"대표", "name":"가상대표"}], "recipient":{}}
+        self.assertEqual(self.client.put('/api/submissions/supplement/review',json=body).status_code,409)
+        body.update(decision="보완 필요", issues=["consent"])
+        self.client.put('/api/submissions/supplement/review',json=body).raise_for_status()
+
     def test_explicit_same_origin_requests(self):
         self.assertEqual(403,self.client.post("/api/events",headers={"Origin":"https://outside.test"},json={"name":"x"}).status_code)
         self.assertEqual(400,self.client.get("/api/dashboard",headers={"Host":"outside.test"}).status_code)

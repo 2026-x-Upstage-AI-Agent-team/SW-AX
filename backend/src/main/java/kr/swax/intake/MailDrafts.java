@@ -32,7 +32,7 @@ class MailDrafts {
                 'recipient',t.email,
                 'eligible',s.state='done' AND NOT ops_team_held(t.id) AND EXISTS(SELECT FROM intake_team_confirmation c
                     WHERE c.submission_id=s.id AND c.state='confirmed') AND NOT r.needs_confirmation AND
-                    ((m.kind='보완 요청' AND (s.verdict='재제출요청' OR s.decision='보완 필요')) OR
+                    ((m.kind='보완 요청' AND (s.verdict IN ('재제출요청','보완필요') OR s.decision='보완 필요')) OR
                      (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))))
             FROM review_mail m JOIN ops_mail o ON o.id=m.id JOIN ops_submission s ON s.id=m.submission_id
             JOIN award_team t ON t.id=s.team_id JOIN ops_leader_recipient r ON r.submission_id=s.id WHERE m.id=?

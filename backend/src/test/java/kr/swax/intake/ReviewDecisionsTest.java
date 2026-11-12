@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ReviewDecisionsTest {
     final JsonMapper json = JsonMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build();
     ObjectNode saved;
+    String verdict = "성공";
     final JdbcTemplate db = new JdbcTemplate() {
         @Override public int update(String sql, Object... args) {
             if (sql.contains("INSERT INTO review_resolution")) saved = (ObjectNode)json.readTree((String)args[3]);
@@ -27,9 +28,9 @@ class ReviewDecisionsTest {
         @Override UUID scope(String staff, Resource resource, UUID id) { return id; }
         @Override void lockCurrent(UUID id) {}
         @Override ObjectNode one(String sql, Object... args) {
-            return (ObjectNode)json.readTree("""
+            return ((ObjectNode)json.readTree("""
                 {"revision":0,"state":"done","decision":null,"verdict":"성공"}
-                """);
+                """)).put("verdict",verdict);
         }
         @Override void audit(UUID id, String staff, String action) {}
     };
@@ -51,6 +52,13 @@ class ReviewDecisionsTest {
 
     @Test void incompleteMemberCannotBeApproved() {
         assertThatThrownBy(() -> new ReviewDecisions(data).review(() -> "staff", UUID.randomUUID(), form("승인", "", "")))
+            .isInstanceOf(ResponseStatusException.class).hasMessageContaining("409");
+        assertThat(saved).isNull();
+    }
+
+    @Test void supplementRequiredVerdictCannotBeApproved() {
+        verdict = "보완필요";
+        assertThatThrownBy(() -> new ReviewDecisions(data).review(() -> "staff", UUID.randomUUID(), form("승인", "가상대표", "")))
             .isInstanceOf(ResponseStatusException.class).hasMessageContaining("409");
         assertThat(saved).isNull();
     }

@@ -31,15 +31,21 @@ class OutputJobs {
 
     @PostMapping("/claim")
     ResponseEntity<Claim> claim(@RequestBody Printer printer) {
+        return claimFor(printer,null);
+    }
+
+    ResponseEntity<Claim> claimFor(Printer printer,String owner) {
         if (printer.workerId() == null || printer.workerId().isBlank() || printer.workerId().length() > 80)
             throw ApiErrors.error(422, "출력 PC의 식별자를 입력하세요.");
         var rows = db.query("""
             WITH available AS (SELECT id FROM award_report WHERE state='printing' AND hwpx IS NOT NULL
-                AND (print_until IS NULL OR print_until<=now()) ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED)
+                AND (print_until IS NULL OR print_until<=now())
+                AND (?::text IS NULL OR (created_by=? AND EXISTS(SELECT FROM event_staff s WHERE s.event_id=award_report.event_id AND s.login=?)))
+                ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED)
             UPDATE award_report r SET printer=?,print_token=gen_random_uuid(),print_until=clock_timestamp()+?*interval '1 second'
             FROM available a WHERE r.id=a.id RETURNING r.id,version,print_token,encode(sha256(hwpx),'hex'),print_until
             """, (rs,n) -> new Claim(rs.getObject(1,UUID.class),rs.getInt(2),rs.getObject(3,UUID.class),
-                    rs.getString(4),rs.getObject(5,OffsetDateTime.class)),printer.workerId().strip(),lease);
+                    rs.getString(4),rs.getObject(5,OffsetDateTime.class)),owner,owner,owner,printer.workerId().strip(),lease);
         recordPrinterContact();
         return rows.stream().findFirst().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
@@ -73,11 +79,20 @@ class OutputJobs {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void complete(@PathVariable UUID id,@RequestHeader(TOKEN) UUID token,@RequestHeader("X-Hwpx-Sha256") String digest,
                   HttpServletRequest request) throws IOException {
+        byte[] pdf=readPdf(request);
+        completePdf(id,token,digest,pdf);
+    }
+
+    static byte[] readPdf(HttpServletRequest request) throws IOException {
         if (request.getContentLengthLong()>MAX_PDF) throw ApiErrors.error(413,"PDF가 출력 한도를 초과했습니다.");
         byte[] pdf = request.getInputStream().readNBytes(MAX_PDF+1);
         if (pdf.length>MAX_PDF) throw ApiErrors.error(413,"PDF가 출력 한도를 초과했습니다.");
         if (pdf.length<5 || !new String(pdf,0,5,java.nio.charset.StandardCharsets.US_ASCII).equals("%PDF-"))
             throw ApiErrors.error(422,"PDF 출력을 확인하세요.");
+        return pdf;
+    }
+
+    void completePdf(UUID id,UUID token,String digest,byte[] pdf) {
         int updated = db.update("""
             UPDATE award_report SET state='verifying',pdf=?,print_until=NULL WHERE id=? AND print_token=?
                 AND state='printing' AND print_until>now() AND encode(sha256(hwpx),'hex')=?

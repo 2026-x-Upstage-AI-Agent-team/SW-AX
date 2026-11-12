@@ -46,7 +46,7 @@ export default defineConfig(({ mode }) => {
   const reviewOrigin = service ? new URL(loadEnv(mode, '.', 'VITE_').VITE_REVIEW_SERVICE_URL || REVIEW_SERVICE).origin : '';
   const testAccountFile = loadEnv(mode, '.', 'SWAX_LOCAL_TEST_ACCOUNT_FILE').SWAX_LOCAL_TEST_ACCOUNT_FILE;
   return {
-    plugins: [react(), tailwindcss(), !service && testAccountFile && localTestAccount(testAccountFile)],
+    plugins: [react(), tailwindcss(), !service && testAccountFile ? localTestAccount(testAccountFile) : false],
     server: {
       host: '127.0.0.1',
       proxy: {

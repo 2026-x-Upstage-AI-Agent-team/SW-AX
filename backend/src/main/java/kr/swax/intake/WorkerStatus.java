@@ -20,6 +20,7 @@ class WorkerStatus {
     private final WorkflowData data;
     private final Environment env;
     private final boolean remotePrinter;
+    private final boolean managed;
     private volatile Process worker;
     private volatile Process printer;
 
@@ -27,6 +28,7 @@ class WorkerStatus {
         this.data = data;
         this.env = env;
         this.remotePrinter = env.getRequiredProperty("awards.worker.remote-printer", Boolean.class);
+        this.managed = env.getProperty("awards.worker.managed",Boolean.class,false);
     }
 
     @GetMapping("/api/operations/worker-status")
@@ -44,6 +46,7 @@ class WorkerStatus {
             )) FROM printer
             """);
         List<String> online = online(result);
+        result.put("managed",managed);
         if (online.containsAll(WORK) && (remotePrinter || online.contains("printer"))) result.put("state", "running");
         return result;
     }
@@ -51,6 +54,7 @@ class WorkerStatus {
     @PostMapping("/api/operations/worker-start")
     @Transactional
     public ObjectNode start() {
+        if (managed) throw ApiErrors.error(409,"서버 워커는 운영 환경에서 자동 관리합니다.");
         // Concurrent tabs or API instances share this transaction lock. A crash or rollback releases it.
         boolean owner = Boolean.TRUE.equals(data.db.queryForObject(
                 "SELECT pg_try_advisory_xact_lock(175703111,4)", Boolean.class));

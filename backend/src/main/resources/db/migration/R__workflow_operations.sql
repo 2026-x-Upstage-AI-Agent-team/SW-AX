@@ -143,10 +143,12 @@ SELECT s.id AS submission_id, candidates.emails,
 FROM ops_submission s JOIN award_team t ON t.id=s.team_id
 CROSS JOIN LATERAL (SELECT ARRAY(
     SELECT DISTINCT btrim(raw) FROM (
-        SELECT record->>'representative_email' AS raw
-        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(s.output#>'{extracted,Information Extract - 지급확인서}')='array'
-            THEN s.output#>'{extracted,Information Extract - 지급확인서}' ELSE '[]'::jsonb END) AS extracted(record)
-        WHERE jsonb_typeof(record->'representative_email')='string'
+        SELECT address #>> '{}' AS raw FROM (
+            SELECT CASE WHEN record ? 'participants' THEN record#>'{participants,0,email}'
+                        ELSE record->'representative_email' END AS address
+            FROM jsonb_array_elements(CASE WHEN jsonb_typeof(s.output#>'{extracted,Information Extract - 지급확인서}')='array'
+                THEN s.output#>'{extracted,Information Extract - 지급확인서}' ELSE '[]'::jsonb END) AS extracted(record)
+        ) application WHERE jsonb_typeof(address)='string'
     ) addresses WHERE btrim(raw)<>'' ORDER BY 1) AS emails) candidates;
 
 CREATE OR REPLACE VIEW ops_mail AS
@@ -183,11 +185,11 @@ DECLARE current_review ops_submission%ROWTYPE;
 BEGIN
     SELECT * INTO current_review FROM ops_submission WHERE id=NEW.submission_id;
     IF current_review.state <> 'done' THEN RETURN NULL; END IF;
-    IF current_review.verdict='재제출요청' OR (current_review.verdict='성공' AND EXISTS(
+    IF current_review.verdict IN ('재제출요청','보완필요') OR (current_review.verdict='성공' AND EXISTS(
         SELECT FROM intake_team_confirmation c JOIN intake_batch b ON b.id=c.batch_id
         WHERE c.submission_id=NEW.submission_id AND (b.base_submission<>NEW.submission_id OR b.inherited_files IS NOT NULL))) THEN
         INSERT INTO review_mail(submission_id,kind) VALUES (NEW.submission_id,
-            CASE WHEN current_review.verdict='재제출요청' THEN '보완 요청' ELSE '검토 완료' END) ON CONFLICT DO NOTHING;
+            CASE WHEN current_review.verdict IN ('재제출요청','보완필요') THEN '보완 요청' ELSE '검토 완료' END) ON CONFLICT DO NOTHING;
     END IF;
     RETURN NULL;
 END;

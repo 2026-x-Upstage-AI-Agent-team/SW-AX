@@ -5,11 +5,11 @@ import { receiptName } from '../api/intake';
 import { useEvent } from '../context/EventContext';
 import { Link } from './workspaceNavigation';
 import { buttonStyles, inputStyle } from './ui';
-import { primaryMenu, teamAssignmentMenu, workflowLabels } from './workspaceMenu';
+import { pcConnectionMenu, primaryMenu, teamAssignmentMenu, workflowLabels } from './workspaceMenu';
 
 type SearchFile = FileInfo & { batch: string };
 
-export default function WorkspaceSearch({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function WorkspaceSearch({ open, onClose, pcEnabled }: { open: boolean; onClose: () => void; pcEnabled?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { dashboard } = useEvent();
   const [query, setQuery] = useState('');
@@ -52,7 +52,9 @@ export default function WorkspaceSearch({ open, onClose }: { open: boolean; onCl
   const matches = (value: string) => value.toLocaleLowerCase().includes(text);
   const teams = dashboard?.teams.filter(team => matches(`${receiptName(team.name, team.intake_number)} ${team.rep}`)) ?? [];
   const matchingFiles = useMemo(() => text ? files.filter(file => file.name.toLocaleLowerCase().includes(text)) : [], [files, text]);
-  const pages = [...primaryMenu, teamAssignmentMenu].filter(item => matches(item.label));
+  const menus = [...primaryMenu, teamAssignmentMenu];
+  if (pcEnabled) menus.push(pcConnectionMenu);
+  const pages = menus.filter(item => matches(item.label));
 
   return <dialog ref={dialog} className="deletion-dialog" aria-labelledby="workspace-search-title" onClose={onClose}
     onCancel={event => { event.preventDefault(); onClose(); }}

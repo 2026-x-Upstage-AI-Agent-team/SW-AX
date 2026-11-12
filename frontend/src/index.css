@@ -249,6 +249,14 @@
   .workspace :is(textarea, select, input:not([type="checkbox"], [type="radio"], [type="file"])) { font-size: max(1rem, 16px); }
 }
 
+.pc-connection-notice {
+  max-width: 84rem;
+  margin-inline: auto;
+  padding: clamp(1rem, 2vw, 1.75rem) clamp(1rem, 2vw, 1.75rem) 0;
+}
+.pc-connection-indicator { display: inline-block; width: .625rem; height: .625rem; flex-shrink: 0; border-radius: 50%; background: var(--color-subtle); }
+.pc-connection-indicator.is-active { background: var(--color-brand); }
+
 @container team-list (max-width: 55rem) {
   .team-table-scroll table, .team-table-scroll tbody { display: block; width: 100%; min-width: 0; }
   .team-table-scroll thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

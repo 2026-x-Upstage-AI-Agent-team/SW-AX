@@ -76,7 +76,7 @@ class ReviewDecisions {
                 || Objects.toString(m.studentId(),"").length()>60||Objects.toString(m.major(),"").length()>150||Objects.toString(m.school(),"").length()>100))
             throw ApiErrors.error(422,"확정할 팀원 명단을 확인하세요.");
         String verdict=sub.path("verdict").asString("");
-        if(choice.equals("승인") && (verdict.equals("재제출요청") || members.stream().anyMatch(m->m.name().isBlank())
+        if(choice.equals("승인") && (Set.of("재제출요청","보완필요").contains(verdict) || members.stream().anyMatch(m->m.name().isBlank())
                 || members.stream().filter(m->m.role().equals("대표")).count()!=1))
             throw ApiErrors.error(409,"보완된 원본과 대표 한 명을 포함한 명단을 확인하세요.");
         if (!choice.equals("작성 중") && note.isEmpty() && (verdict.equals("담당자확인") || (choice.equals("승인") &&

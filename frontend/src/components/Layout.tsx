@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link as PortalLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from 'react-router';
-import { AtSign, FolderOpen, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings2 } from 'lucide-react';
+import { AtSign, FolderOpen, Menu, MonitorCheck, PanelLeftClose, PanelLeftOpen, Search, Settings2 } from 'lucide-react';
 import { backend, isDemoBackend } from '../api/backend';
 import { useApi } from '../api/client';
+import { pcLabel, usePcConnection } from '../api/pcConnection';
 import { isLeaderMail, isMailDraft } from '../api/service';
 import { categoryPath, workspacePath, type Category } from '../api/workspaces';
 import { useEvent } from '../context/EventContext';
@@ -10,9 +11,10 @@ import { WorkspaceOverviewProvider, useWorkspaceOverview } from '../context/Work
 import { queueGroups } from '../hooks/reviewQueue';
 import { workspaceTasks } from '../hooks/workspaceTasks';
 import { Link, NavLink } from './workspaceNavigation';
-import { currentMenu, dashboardMenu, mailMenu, workflowMenu, workspaceSection } from './workspaceMenu';
-import { cx } from './ui';
+import { currentMenu, dashboardMenu, mailMenu, pcConnectionMenu, workflowMenu, workspaceSection } from './workspaceMenu';
+import { buttonStyles, cx } from './ui';
 import WorkerStatus, { useWorkerControl } from './WorkerStatus';
+import WorkflowProgress from './WorkflowProgress';
 import { WorkspaceTourProvider, useWorkspaceTour } from './WorkspaceTour';
 import WorkspaceHelp from './WorkspaceHelp';
 import WorkspacePicker from './WorkspacePicker';
@@ -32,7 +34,13 @@ function Brand({ subtitle, compact = false, onNavigate }: { subtitle: string; co
   </PortalLink>;
 }
 
-function WorkspaceNav({ worker, control, onNavigate, account }: { worker: ReturnType<typeof useWorkerControl>; control: NavigationControl; onNavigate?: () => void; account?: ReactNode }) {
+function WorkspaceNav({ worker, pc, control, onNavigate, account }: {
+  worker: ReturnType<typeof useWorkerControl>;
+  pc: ReturnType<typeof usePcConnection>;
+  control: NavigationControl;
+  onNavigate?: () => void;
+  account?: ReactNode;
+}) {
   const { events, eventsError, event, dashboard } = useEvent();
   const { rows } = useWorkspaceOverview();
   const { categoryId = 'awards' } = useParams();
@@ -43,6 +51,8 @@ function WorkspaceNav({ worker, control, onNavigate, account }: { worker: Return
   const drafts = dashboard?.mail.filter(m => isLeaderMail(m) && isMailDraft(m)).length ?? 0;
   const reviewCount = queueGroups(rows ?? []).review.length;
   const tasks = workspaceTasks(dashboard, rows).length;
+  const pcState = pc.error ? 'PC 연결 확인 필요' : pcLabel(pc.status);
+  const pcReady = Boolean(pc.status?.device?.online && pc.status.device.hancom_ready && !pc.error);
   const renderMenu = (item: typeof workflowMenu[number] | typeof dashboardMenu | typeof mailMenu) => {
     const count = item.to === '/mail' ? drafts : item.to === '/review' ? reviewCount : item.to === '/' ? tasks : 0;
     const link = <Link key={item.to} to={item.to} onClick={onNavigate} aria-label={item.label}
@@ -72,6 +82,12 @@ function WorkspaceNav({ worker, control, onNavigate, account }: { worker: Return
     </nav>
     <div className="sidebar-foot">
       {!control.compact && <p className="rail-label">설정</p>}
+      {pc.status?.enabled && <NavLink to={pcConnectionMenu.to} onClick={onNavigate} aria-label={`${pcConnectionMenu.label} · ${pcState}`} title={pcState}
+        className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}>
+        <MonitorCheck size={19} aria-hidden="true" />
+        <span className={control.compact ? 'sr-only' : undefined}>{pcConnectionMenu.label}</span>
+        {!control.compact && <span className={cx('pc-connection-indicator ml-auto', pcReady && 'is-active')} aria-hidden="true" />}
+      </NavLink>}
       <NavLink to="/gmail" onClick={onNavigate} aria-label="Gmail 연결" title="Gmail 연결" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><AtSign size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>Gmail 연결</span></NavLink>
       <NavLink to="/manage" onClick={onNavigate} aria-label="워크스페이스 설정" title="워크스페이스 설정" className={({ isActive }) => cx('nav-item', isActive && 'is-current', control.compact && 'justify-center')}><Settings2 size={19} aria-hidden="true" /><span className={control.compact ? 'sr-only' : undefined}>워크스페이스 설정</span></NavLink>
       <div className={cx('flex items-center justify-between', control.compact && 'flex-col')}>
@@ -90,6 +106,7 @@ export default function Layout() {
 
 function WorkspaceLayout() {
   const worker = useWorkerControl();
+  const pc = usePcConnection();
   const { active, start, menuDialog, openMenu, closeMenu } = useWorkspaceTour();
   const { event } = useEvent();
   const { categoryId = 'awards' } = useParams();
@@ -144,14 +161,16 @@ function WorkspaceLayout() {
   const control: NavigationControl = {
     compact: collapsed, search: openSearch, toggleRail: () => setCollapsed(value => !value),
   };
+  const needsPc = pc.status?.enabled && /^\/(?:intake|report)(?:\/|$)/.test(workspaceSection(pathname)) &&
+    (!pc.status.device?.online || !pc.status.device.hancom_ready || Boolean(pc.error));
   return <div className="workspace" data-rail-collapsed={collapsed} data-tour-active={active}>
     <a className="skip-link" href="#workspace-content" onClick={event => { event.preventDefault(); document.getElementById('workspace-content')?.focus(); }}>본문으로 바로가기</a>
-    <aside className="workspace-rail" aria-label="작업 공간"><Brand subtitle={brandSubtitle} compact={collapsed} /><WorkspaceNav worker={worker} control={control} /></aside>
+    <aside className="workspace-rail" aria-label="작업 공간"><Brand subtitle={brandSubtitle} compact={collapsed} /><WorkspaceNav worker={worker} pc={pc} control={control} /></aside>
     <header className="mobile-bar"><Brand subtitle={brandSubtitle} /><button type="button" className="icon-button" aria-label="메뉴 열기" aria-haspopup="dialog" data-tour="menu-open" aria-controls="workspace-menu" onClick={openMenu}><Menu size={22} aria-hidden="true" /></button></header>
     <dialog ref={menuDialog} id="workspace-menu" className="mobile-menu" aria-label="작업 메뉴" onClose={close} onClick={event => { if (event.target === event.currentTarget) close(); }}>
       <div className="mobile-menu-body">
         <div className="flex items-center justify-between gap-2"><Brand subtitle={brandSubtitle} onNavigate={close} /><button type="button" className="icon-button" aria-label="메뉴 닫기" onClick={close} autoFocus><PanelLeftClose size={20} aria-hidden="true" /></button></div>
-        <WorkspaceNav worker={worker} control={{ ...control, compact: false }} onNavigate={close}
+        <WorkspaceNav worker={worker} pc={pc} control={{ ...control, compact: false }} onNavigate={close}
           account={<AccountMenu compact login={login} open={accountOpen === 'drawer'} onOpenChange={open => setAccountOpen(open ? 'drawer' : null)} />} />
       </div>
     </dialog>
@@ -164,10 +183,14 @@ function WorkspaceLayout() {
         </button>
         <AccountMenu login={login} open={accountOpen === 'toolbar'} onOpenChange={open => setAccountOpen(open ? 'toolbar' : null)} />
       </header>
-      <Outlet />
+      {needsPc && <div className="pc-connection-notice">
+        <WorkflowProgress title={pc.error || pcLabel(pc.status)} description="PC가 연결되면 대기 중인 서류를 자동으로 처리합니다."
+          tone="attention" action={<Link to={pcConnectionMenu.to} className={buttonStyles.secondary}>PC 연결 확인</Link>} />
+      </div>}
+      <Outlet context={pc} />
     </div>
     {!active && <WorkspaceHelp onStartGuide={startGuide} />}
-    <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+    <WorkspaceSearch open={searchOpen} onClose={() => setSearchOpen(false)} pcEnabled={pc.status?.enabled} />
   </div>;
 }
 

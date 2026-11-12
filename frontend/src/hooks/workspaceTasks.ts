@@ -1,5 +1,5 @@
 import { recoverableStates, stateLabel } from '../api/labels';
-import type { Dashboard } from '../api/service';
+import { needsSupplement, type Dashboard } from '../api/service';
 import type { TeamRow } from './useOverview';
 import { supplementMailAction } from './reviewQueue';
 
@@ -27,7 +27,7 @@ export function workspaceTasks(dashboard?: Dashboard, list: TeamRow[] = []): Wor
       alerts.push({ key: r.id + 'check', text: `${r.name} · 원본 대조가 필요합니다.`, sub: r.reviewSummary ?? '검토할 서류를 확인해 주세요.', to: `/teams/${s.id}`, action: '원본 대조하기' });
     else if (r.leaderMail?.state === 'recipient_check')
       alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 수신 주소를 확인해 주세요.`, sub: '팀장 안내 메일이 보류 중입니다. 신청서와 제출 경로의 주소를 대조해 주세요.', to: '/mail?mail=' + encodeURIComponent(r.leaderMail.id), action: '주소 확인' });
-    else if (s.verdict === '재제출요청' && !r.email)
+    else if (needsSupplement(s.verdict) && !r.email)
       alerts.push({ key: r.id + 'mail', text: `${r.name} · 팀장 이메일이 없습니다.`, sub: '보완 요청 메일이 수신자 확인을 기다립니다.', to: supplementMailAction(s.id).to, action: '이메일 입력' });
     else if (!r.held && s.state === 'done' && s.verdict === '성공' && !s.decision)
       alerts.push({ key: r.id + 'approval', text: `${r.name} · 담당자 승인 대기`, sub: '성공 판정의 원본과 근거를 검토하고 담당자 결정을 기록하세요.', to: `/teams/${s.id}`, action: '판정 검토' });
