@@ -56,7 +56,7 @@ function MailWorkspace({ requested, supplement }: { requested: string | null; su
         <>
           {dashboard.smtp && !dashboard.mail_ready && (
             <div role="status" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 rounded-xl border border-caution-line bg-caution-bg py-2.5 pl-[18px] pr-3 text-sm">
-              <span className="flex-[1_1_320px] font-medium">발신 계정 연결을 기다리고 있습니다. 승인한 메일은 계정이 연결되면 발송됩니다.</span>
+              <span className="flex-[1_1_320px] font-medium">팀장에게 메일을 보내려면 먼저 내 Gmail 계정을 연결해 주세요.</span>
               <Link to="/gmail" className="action border border-caution-line bg-white text-brand-strong">Gmail 연결</Link>
             </div>
           )}
@@ -199,6 +199,7 @@ function MailDetail({ m, emailTeamId, onSaved, onApproved }: {
               </button>
             )}
           </p>
+          {view.sender_address && <p className="text-sm text-muted">보내는 사람 <strong className="break-all text-ink">{view.sender_address}</strong></p>}
           {m.state === 'recipient_check' && !emailTeamId && <RecipientCheck submission={m.submission} onSaved={onSaved} />}
           {editable ? (
             <>

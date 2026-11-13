@@ -7,7 +7,7 @@ import httpx
 
 from service import gmail_oauth
 from service.db import DATA, smtp_enabled
-from service.mailing import discard_revoked_oauth, mail_settings, smtp_connection
+from service.mailing import GMAIL_HOST, mail_settings, smtp_connection
 
 
 def send(msg, cfg, path):
@@ -31,7 +31,6 @@ def send(msg, cfg, path):
             path.with_suffix(".part").replace(path)
             return "local"
     except gmail_oauth.ReconnectRequired:
-        discard_revoked_oauth(cfg)
         return "waiting"
     except (smtplib.SMTPRecipientsRefused, smtplib.SMTPResponseException, smtplib.SMTPNotSupportedError):
         return "sent" if accepted else "failed"
@@ -43,7 +42,8 @@ def send(msg, cfg, path):
 
 
 def deliver(db, raw_cfg):
-    cfg = mail_settings(raw_cfg)
+    personal_gmail = raw_cfg.get("MAIL_MODE", "").lower() == "gmail"
+    cfg = dict(raw_cfg) if personal_gmail else mail_settings(raw_cfg)
     mailbox = DATA / "operations" / "mail"
     # A prior process may have died after SMTP accepted its message.
     for item in db.execute("SELECT id FROM review_mail WHERE state='sending'").fetchall():
@@ -58,13 +58,17 @@ def deliver(db, raw_cfg):
         WHERE m.submission_id=j.submission_id AND j.state='superseded' AND m.state IN ('draft','approved','failed')""")
     db.execute("""UPDATE review_mail SET state='obsolete',sent_to=NULL,approved_by=NULL,approved_at=NULL
         WHERE kind='담당자 알림' AND state IN ('draft','approved','failed','uncertain')""")
-    if not cfg.get("MAIL_READY"):
+    if not personal_gmail and not cfg.get("MAIL_READY"):
         return False
     reopen = "state='draft',sent_to=NULL,approved_by=NULL,approved_at=NULL,revision=m.revision+1"
+    if personal_gmail:
+        # An approval is tied to the sender the staff member reviewed, never a later account.
+        db.execute(f"""UPDATE review_mail m SET {reopen} FROM staff_gmail g
+            WHERE m.state='approved' AND m.approved_by=g.login AND m.sender_address IS DISTINCT FROM g.address""")
     db.execute(f"""UPDATE review_mail m SET {reopen} FROM ops_submission s JOIN award_team t ON t.id=s.team_id
         JOIN ops_leader_recipient r ON r.submission_id=s.id WHERE m.submission_id=s.id AND m.state='approved'
         AND (m.sent_to IS DISTINCT FROM t.email OR r.needs_confirmation)""")
-    query = """SELECT m.id,m.submission_id,m.subject,m.body,t.id AS team,
+    query = """SELECT m.id,m.submission_id,m.subject,m.body,m.approved_by,m.sender_address,t.id AS team,
         t.email AS address
         FROM review_mail m JOIN ops_submission s ON s.id=m.submission_id JOIN award_team t ON t.id=s.team_id
         JOIN intake_team_confirmation c ON c.submission_id=s.id AND c.state='confirmed'
@@ -76,11 +80,13 @@ def deliver(db, raw_cfg):
         AND ((m.kind='보완 요청' AND (s.verdict IN ('재제출요청','보완필요') OR s.decision='보완 필요'))
           OR (m.kind='검토 완료' AND (s.decision='승인' OR s.verdict='성공'))) """
     with db.transaction():
-        m = db.execute(query + "AND m.state='approved' ORDER BY m.created_at,m.id LIMIT 1 FOR UPDATE OF t,c,m").fetchone()
+        ready = """AND EXISTS(SELECT FROM staff_gmail g WHERE g.login=m.approved_by AND g.address=m.sender_address
+            AND (g.credential<>'' OR g.oauth<>'')) """ if personal_gmail else ""
+        m = db.execute(query + ready + "AND m.state='approved' ORDER BY m.created_at,m.id LIMIT 1 FOR UPDATE OF t,c,m").fetchone()
         if not m:
             return False
         msg = EmailMessage(policy=SMTP)
-        msg["From"] = cfg.get("SMTP_FROM") or "review@award.test"
+        msg["From"] = m["sender_address"] if personal_gmail else cfg.get("SMTP_FROM") or "review@award.test"
         msg["To"] = m["address"]
         msg["Subject"] = m["subject"]
         msg["Message-ID"] = f"<{m['id']}@{msg['From'].addresses[0].domain}>"
@@ -91,8 +97,21 @@ def deliver(db, raw_cfg):
         db.execute("SELECT id FROM award_team WHERE id=%s FOR NO KEY UPDATE", (m["team"],))
         valid = db.execute(query + "AND m.id=%s AND m.state='sending' FOR UPDATE OF t,c,m", (m["id"],)).fetchone()
         if valid and valid["address"] == m["address"]:
-            final = send(msg,cfg,mailbox / (str(m["id"])+".eml"))
+            account = db.execute("SELECT * FROM staff_gmail WHERE login=%s FOR SHARE", (m["approved_by"],)).fetchone() if personal_gmail else None
+            changed = personal_gmail and (not account or account["address"] != m["sender_address"])
+            waiting = personal_gmail and account and not (account["credential"] or account["oauth"])
+            if changed:
+                db.execute(f"UPDATE review_mail m SET {reopen} WHERE id=%s", (m["id"],))
+                return True
+            if account:
+                cfg = dict(raw_cfg, MAIL_MODE="smtp", SMTP_HOST=GMAIL_HOST, SMTP_PORT="465", SMTP_USER=account["address"],
+                           SMTP_FROM=account["address"], ADMIN_EMAIL=account["address"], GMAIL_CREDENTIAL=account["credential"],
+                           GMAIL_OAUTH=account["oauth"])
+            final = "waiting" if waiting else send(msg,cfg,mailbox / (str(m["id"])+".eml"))
             if final == "waiting":  # Gmail will resume this approved envelope after reconnection.
+                if account and not waiting:
+                    db.execute("""UPDATE staff_gmail SET credential='',oauth='',generation=generation+1,updated_at=clock_timestamp()
+                        WHERE login=%s AND generation=%s""", (m["approved_by"],account["generation"]))
                 final = "approved"
             db.execute("""UPDATE review_mail SET state=%s,sent_at=CASE WHEN %s THEN clock_timestamp() END WHERE id=%s""",
                        (final,final in ("sent","local"),m["id"]))

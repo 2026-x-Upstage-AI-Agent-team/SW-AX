@@ -34,7 +34,10 @@ def serve(role, cfg, once=False):
                                 if role == "studio":
                                     cfg = configuration()
                                     remote.headers["Authorization"] = "Bearer " + cfg.get("UPSTAGE_API_KEY", "")
-                                mail = mail_settings(cfg) if role == "mail" else {}
+                                personal_gmail = role == "mail" and cfg.get("MAIL_MODE", "").lower() == "gmail"
+                                mail = (dict(MAIL_MODE="gmail", MAIL_READY=db.execute(
+                                    "SELECT EXISTS(SELECT FROM staff_gmail WHERE credential<>'' OR oauth<>'') AS ready").fetchone()["ready"])
+                                    if personal_gmail else mail_settings(cfg) if role == "mail" else {})
                                 configured = bool(cfg.get("UPSTAGE_API_KEY") and cfg.get("UPSTAGE_AGENT_ID")) if role=="studio" else bool(mail.get("MAIL_READY"))
                                 db.execute("""INSERT INTO workflow_health(role,configured,config,mail_mode) VALUES(%s,%s,%s,%s)
                                     ON CONFLICT(role) DO UPDATE SET updated_at=now(),configured=excluded.configured,

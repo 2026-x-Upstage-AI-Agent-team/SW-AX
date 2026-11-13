@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS review_mail (
     UNIQUE (submission_id,kind)
 );
 ALTER TABLE review_mail ADD COLUMN IF NOT EXISTS sent_at timestamptz;
+ALTER TABLE review_mail ADD COLUMN IF NOT EXISTS sender_address text;
 ALTER TABLE review_mail ADD COLUMN IF NOT EXISTS revision integer NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS approved_by varchar(64) REFERENCES staff_account,
     ADD COLUMN IF NOT EXISTS approved_at timestamptz,

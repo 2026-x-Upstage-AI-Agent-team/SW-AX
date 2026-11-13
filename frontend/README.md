@@ -56,7 +56,9 @@ Spring Boot가 `dist/`를 정적 파일로 내보내므로 해시 라우팅(`/#/
 
 사이드바나 모바일 메뉴에서 **Gmail 연결**을 연다. **이메일 발송 → Gmail 연결**로도 들어갈 수 있다. 검토 서비스 모드에서는 등록된 발신 주소와 인증 상태를 확인하고 Google 로그인 또는 16자리 앱 비밀번호로 연결한다. Google 로그인에는 웹 클라이언트 JSON을 사용한다. [계정 준비 방법](../docs/IMPLEMENTATION_PLAN.md#51-담당자-gmail-연결)
 
-Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:18765/#/gmail)에서 계정 상태를 확인한다. **Google로 연결**은 같은 탭에서 Google 승인을 열고 완료·취소 후 이 화면으로 돌아온다. Google 계정이 연결되면 버튼이 **연결 해제**로 바뀐다. 해제가 완료되면 새 Gmail 발송은 대기하고 같은 버튼으로 다시 연결할 수 있다. Google 클라이언트는 서버에서 읽으며, 앱 비밀번호 설정도 18765에서 처리한다. 두 방법 모두 8765 실행이 필요 없다. `VITE_REVIEW_SERVICE_URL`은 `dev:service`에서 별도 검토 서비스에 연결할 때만 사용한다.
+Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:18765/#/gmail)에서 **내 발신 계정**을 확인한다. 발신 주소를 서버에 미리 등록하지 않아도 **Google 계정 연결**로 본인 계정을 선택할 수 있다. 연결 후에도 **다른 Google 계정으로 변경**과 **연결 해제**를 표시한다. 변경을 취소하거나 인증에 실패하면 기존 연결을 유지한다. 앱 비밀번호 방식은 본인의 Google 이메일과 16자리 코드를 입력한다. 연결 정보는 로그인한 담당자별로 저장되며 다른 담당자의 계정을 조회·변경·해제하지 않는다. 메일은 발송을 승인한 담당자의 계정으로 보내고, 발신 주소가 변경된 대기 메일은 초안으로 돌아가 다시 승인받는다. Google 클라이언트는 서버에서 읽으며 두 방법 모두 8765 실행이 필요 없다. `VITE_REVIEW_SERVICE_URL`은 `dev:service`에서 별도 검토 서비스에 연결할 때만 사용한다.
+
+`npm run build` 후 `node --test tests/gmail-accounts.mjs`를 실행하면 연결 전 계정 선택, 기존 계정 변경, 인증 실패 보존, Google·앱 비밀번호 연결 해제와 320px 화면을 검증한다. Google 인증과 API 응답은 대역으로 처리하며 실제 계정 연결·메일 발송은 하지 않는다.
 
 ## 화면과 API
 
@@ -73,7 +75,7 @@ Spring Boot 접수 모드에서는 [18765의 Gmail 연결](http://127.0.0.1:1876
 | `/intake/batches[/:id]` | 검토 진행 목록 · 묶음 상세 | `GET /api/intake-batches/{id}` |
 | `/assign` | 팀 배정 확인 (배정·보류·대상 외, 판독 재시도) | `PUT .../files/{id}/assignment`, `POST .../files/{id}/retry` |
 | `/mail` | 메일 목록과 초안 검토(제목·본문 수정, 승인 후 발송), 발송 이력, 팀장 수신 주소 확인·입력 | `PUT /api/teams/{id}/email`, `GET /api/mail/{id}`, `PUT /api/mail/{id}/draft`, `POST /api/mail/{id}/approve`, `POST /api/mail/{id}/retry` |
-| `/gmail` | 담당자 Gmail 연결·해제·재인증 | Spring Boot 상태 `GET /api/settings/gmail`, Google 연결 해제 `POST /api/settings/gmail/oauth/disconnect`. 양쪽 서비스 `POST /api/settings/gmail/oauth/start`, `GET /api/settings/gmail/callback`, `POST /api/settings/gmail/connect` |
+| `/gmail` | 내 Gmail 연결·계정 변경·연결 해제 | Spring Boot 상태 `GET /api/settings/gmail`, 해제 `POST /api/settings/gmail/disconnect`(기존 `/oauth/disconnect`도 허용). Google 시작 `POST /api/settings/gmail/oauth/start`, 복귀 `GET /api/settings/gmail/callback`, 앱 비밀번호 `POST /api/settings/gmail/connect`(`address`, `app_password`) |
 | `/report` | 보고서 확정 (팀 순서, 지급 정보 입력, 두 표 미리보기, 생성·확정·다운로드) | `GET /api/events/{id}/draft`, `POST /api/reports`, `GET·POST /api/reports/{id}[/confirm|/edited|/preview|/hwpx|/pdf]` |
 | `/manage` | 현재 워크스페이스 설정, 지급내역서 행사 정보, 삭제 | `PUT /api/events/{id}/overview`, `DELETE /api/events/{id}` |
 

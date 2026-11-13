@@ -259,17 +259,19 @@ Job 생성 직전에 ‘생성 요청 중’을 DB에 기록한다. 요청 전�
 
 ### 5.1 담당자 Gmail 연결
 
-운영 데이터 폴더의 Gmail 프로필에는 담당자 주소를 지정한다. 새 PC에서는 서버 환경에 `MAIL_MODE=gmail`과 `GMAIL_ADDRESS`를 설정해 처음 연결할 주소를 지정할 수도 있다. 한 팀이 보완 대상이면 담당자와 팀장에게 각각 한 통을 예약한다. 원본 대조가 필요한 팀은 먼저 담당자에게만 보내고 담당자가 결론을 저장하면 팀장에게 한 통을 보낸다.
+운영판은 로그인한 담당자별로 본인 Google 계정을 연결한다. 서버의 `MAIL_MODE=gmail`과 공통 Google 웹 클라이언트를 준비한 뒤 각 담당자가 Gmail 연결 화면에서 계정을 선택한다. `GMAIL_ADDRESS`는 운영판 담당자 계정의 기본값으로 사용하지 않는다. 팀장 안내 초안은 담당자가 수신자·내용·발신 계정을 확인하고 승인한 뒤 발송한다.
 
-1. 담당자 계정으로 Google Cloud에서 프로젝트를 만들고 상단에서 그 프로젝트를 선택한다. Gmail API의 **사용**을 누른다. [프로젝트 만들기](https://console.cloud.google.com/projectcreate) · [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com)
+1. 관리자가 Google Cloud에서 공통 프로젝트를 만들고 상단에서 그 프로젝트를 선택한다. Gmail API의 **사용**을 누른다. 담당자마다 별도 Google Cloud 프로젝트를 만들 필요는 없다. [프로젝트 만들기](https://console.cloud.google.com/projectcreate) · [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com)
 2. **Google 인증 플랫폼 → 브랜딩 → 시작하기**에서 앱 이름, 사용자 지원 이메일, 대상 **외부**, 연락처 이메일을 입력하고 만든다. **대상 → 테스트 사용자 → 사용자 추가**에 담당자 주소를 저장한다. **데이터 액세스 → 범위 추가 또는 삭제**에서 메일은 `gmail.send`, 로그인 주소 확인은 `openid`와 `userinfo.email`을 사용한다. 외부 앱이 테스트 게시 상태이면 Gmail 권한의 갱신 토큰은 7일 후 만료되므로 지속 운영 전 게시 상태와 Google의 앱 요건을 확인한다. [대상 설정](https://console.cloud.google.com/auth/audience) · [Gmail 권한](https://developers.google.com/workspace/gmail/api/auth/scopes) · [Google 토큰 만료 기준](https://developers.google.com/identity/protocols/oauth2#expiration)
 3. [Google 인증 플랫폼 → 클라이언트](https://console.cloud.google.com/auth/clients)에서 기존 **웹 애플리케이션**을 열거나 새로 만든다. **승인된 리디렉션 URI**에 `http://127.0.0.1:18765/api/settings/gmail/callback`을 정확히 추가한다. Windows 시연판도 쓰면 기존 `http://127.0.0.1:8765/api/settings/gmail/callback`을 함께 둔다. 다른 호스트에 배포할 때는 서버의 `AWARDS_GMAIL_REDIRECT_URI`와 Google 설정 양쪽에 동일한 공개 HTTPS 콜백 주소를 지정하고 담당자도 그 호스트로 접속한다. [Google의 클라이언트 생성 안내](https://developers.google.com/workspace/guides/create-credentials)
-4. [운영판 Gmail 연결](http://127.0.0.1:18765/#/gmail)에서 **Google로 연결**을 누르고 담당자 계정의 **이메일 보내기**를 승인한다. 승인하거나 취소하면 같은 탭의 Gmail 연결 화면으로 돌아온다. Spring Boot는 담당자 로그인 세션, 일회용 요청 값과 PKCE를 확인하고, 발송 권한과 인증된 이메일 주소가 일치한 경우에만 갱신 토큰을 교체한다. 앱 비밀번호 방식도 같은 화면에서 설정할 수 있다. [Google 웹 서버 인증](https://developers.google.com/identity/protocols/oauth2/web-server) · [Google 앱 비밀번호 안내](https://support.google.com/accounts/answer/185833?hl=ko)
+4. [운영판 Gmail 연결](http://127.0.0.1:18765/#/gmail)에서 **Google 계정 연결**을 누르고 본인 계정을 선택한 뒤 **이메일 보내기**를 승인한다. 연결 후에도 **다른 Google 계정으로 변경**을 사용할 수 있다. Spring Boot는 담당자 로그인 세션, 일회용 요청 값, PKCE, 발송 권한과 Google이 확인한 이메일을 검사한 뒤 그 담당자의 연결 정보만 교체한다. 취소·인증 실패 시 기존 연결을 유지한다. 앱 비밀번호 방식은 같은 화면에서 이메일과 16자리 코드를 입력한다. [Google 웹 서버 인증](https://developers.google.com/identity/protocols/oauth2/web-server) · [Google 앱 비밀번호 안내](https://support.google.com/accounts/answer/185833?hl=ko)
 5. **팀별 서류 검토 → 팀장 수신 주소 확인**에서 원접수 주소 한 개를 저장한다. 학교·네이버·다음·Gmail 등 도메인과 관계없이 사용할 수 있다. 연결 전에는 대기하고, 연결 후에는 해당 팀의 현재 버전에서 발송을 승인한 메일만 처리한다. `발송 접수`는 메일 서버가 메시지를 받아들인 상태다. 도착은 수신함에서 확인한다. 별도 테스트 데이터 폴더에서 `MAIL_MODE=local`을 지정하면 로컬 메일함으로 시험할 수 있다.
 
 운영판에서 **연결 해제**를 누르면 서버가 Google에 갱신 토큰 철회를 요청한다. 철회가 확인되면 발송 프로필에서 토큰을 지우고, 재연결용 웹 클라이언트 설정만 Windows DPAPI로 보호해 보관한다. 담당자는 **Google로 연결**로 다시 승인할 수 있다. Google이 일시적으로 응답하지 않으면 화면에서 해제를 다시 시도한다. [Google 권한 철회](https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke)
 
-이 PC에서 두 서비스는 같은 Windows 사용자와 `AWARD_DATA_DIR`(기본: 프로젝트의 `var`)을 사용한다. Spring Boot는 기존 Google 연결이 있으면 DPAPI로 암호화된 프로필에 있는 클라이언트를 재사용한다. 최초 설정이나 클라이언트 교체 때만 서버 환경에 `GMAIL_ADDRESS`와 `AWARDS_GMAIL_CLIENT_FILE`(웹 클라이언트 JSON의 절대 경로)을 지정한 뒤 재시작한다. JSON은 저장소 밖에 보관한다. 18765의 계정 상태 조회·Google 승인·앱 비밀번호 설정은 8765가 꺼져 있어도 된다. 운영판 워커는 PostgreSQL과 Spring Boot에 연결하며 `./start-intake.ps1`로 시작한다. 시연판은 `./start-service.ps1`과 별도의 SQLite 대기열을 사용한다.
+Spring Boot와 운영판 메일 워커는 같은 Windows 실행 계정을 사용한다. API는 Windows DPAPI로 암호화한 인증 정보를 PostgreSQL `staff_gmail`에 담당자 로그인별로 저장하고, 워커는 `review_mail.approved_by`에 해당하는 연결만 읽는다. 원문 토큰·앱 비밀번호는 상태 API에 반환하지 않는다. `AWARDS_GMAIL_CLIENT_FILE`에는 공통 웹 클라이언트 JSON의 절대 경로를 설정하고 JSON은 저장소 밖에 보관한다. 기존 `gmail.json`의 공용 연결은 소유자를 추정해 자동 배정하지 않으므로 담당자는 최초 한 번 직접 연결한다. `service/app.py`의 SQLite 시연판은 기존 공용 계정 방식을 유지한다.
+
+계정 조회·연결 시작·앱 비밀번호 연결·해제 API의 소유자는 요청 본문이 아닌 로그인 세션으로 정한다. 연결 버전은 DB에 저장해 오래된 인증 응답이 새 연결을 덮어쓰지 못하게 한다. 발송 승인에는 확인한 `sender_address`를 함께 보내고 서버가 현재 연결 주소와 대조한다. 워커는 승인 주소가 변경됐으면 해당 대기 메일을 초안으로 돌리며, 연결만 해제됐다면 같은 주소로 재연결할 때까지 발송을 보류한다. 한 담당자의 연결 대기는 다른 담당자의 발송을 막지 않는다. 로컬 검증은 `scripts/verify_staff_gmail.py --jar <후보 JAR> --baseline <기존 V9 JAR>`로 실행하며, 별도 시험 DB와 가상 계정만 사용하고 실제 메일은 보내지 않는다.
 
 운영판의 업무 현황에는 대기 중인 제출본을 처음 접수한 시각을 표시한다. 안내 메일의 초안 생성 시각과 메일 서버가 메시지를 수락한 시각(로컬 시험은 메일함 저장 시각)을 각각 기록한다. 기존 메일의 발송 시각을 확인할 수 없으면 화면에 '발송 시각 기록 없음'으로 표시한다.
 

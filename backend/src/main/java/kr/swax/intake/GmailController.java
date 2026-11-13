@@ -45,25 +45,24 @@ class GmailController {
     record Status(String gmailAccount, boolean gmailOauthConnected, boolean mailReady, String redirectUri) {}
 
     @GetMapping
-    Status status() {
-        var a = profile.current();
-        return new Status(a.address(), !a.oauth().isEmpty(), !a.oauth().isEmpty() || !a.credential().isEmpty(), redirect.toString());
+    Status status(Principal staff) {
+        var a = profile.current(staff.getName());
+        return new Status(a.address(), !a.oauth().isEmpty(), a.ready(), redirect.toString());
     }
 
     @PostMapping("/oauth/start")
     Map<String, String> start(HttpSession session, Principal staff) {
-        long generation = profile.generation();
-        var account = profile.requireAccount();
-        var attempt = google.begin(staff.getName(), account.address(), profile.client(account), redirect.toString(), generation);
+        var account = profile.current(staff.getName());
+        var attempt = google.begin(staff.getName(), account.address(), profile.client(), redirect.toString(), account.generation());
         synchronized (WebUtils.getSessionMutex(session)) { session.setAttribute(ATTEMPT, attempt); }
         return Map.of("url", google.authorize(attempt));
     }
 
-    @PostMapping("/oauth/disconnect")
-    Status disconnect(HttpSession session) {
-        profile.disconnectGoogle(google::revoke);
+    @PostMapping({"/disconnect", "/oauth/disconnect"})
+    Status disconnect(HttpSession session, Principal staff) {
+        profile.disconnect(staff.getName(), google::revoke);
         synchronized (WebUtils.getSessionMutex(session)) { session.removeAttribute(ATTEMPT); }
-        return status();
+        return status(staff);
     }
 
     @GetMapping("/callback")
@@ -77,7 +76,7 @@ class GmailController {
             if (attempt == null || !attempt.staff().equals(staff.getName()) || !attempt.matches(state)) return back("expired");
             session.removeAttribute(ATTEMPT);
         }
-        if (!Instant.now().isBefore(attempt.expires()) || attempt.generation() != profile.generation()) return back("expired");
+        if (!Instant.now().isBefore(attempt.expires()) || attempt.generation() != profile.current(staff.getName()).generation()) return back("expired");
         if ("access_denied".equals(providerError)) return back("cancelled");
         if (providerError != null || code == null || code.isBlank()) return back("failed");
         try {
@@ -92,11 +91,12 @@ class GmailController {
                 .cacheControl(CacheControl.noStore()).header("Referrer-Policy", "no-referrer").build();
     }
 
-    record Password(String appPassword) {}
+    record Password(String address, String appPassword) {}
 
     @PostMapping("/connect")
-    Map<String, Object> connect(@RequestBody Password input) {
-        String address = profile.requireAccount().address();
+    Map<String, Object> connect(Principal staff, @RequestBody Password input) {
+        String address = GmailProfile.address(input.address());
+        long generation = profile.current(staff.getName()).generation();
         String password = input.appPassword() == null ? "" : input.appPassword().replace(" ", "").strip();
         if (!password.matches("[A-Za-z0-9]{16}")) throw error(422, "Google이 발급한 16자리 앱 비밀번호를 입력하세요.");
         var settings = new Properties();
@@ -110,7 +110,7 @@ class GmailController {
         } catch (MessagingException ex) {
             throw error(503, "Gmail에 연결하지 못했습니다. 잠시 후 다시 시도하세요.");
         }
-        profile.savePassword(address, password);
+        profile.savePassword(staff.getName(), generation, address, password);
         return Map.of("connected", true, "address", address);
     }
 }

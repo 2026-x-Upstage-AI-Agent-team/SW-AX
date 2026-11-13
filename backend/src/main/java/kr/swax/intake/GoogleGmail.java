@@ -52,7 +52,7 @@ class GoogleGmail {
         try { hash = MessageDigest.getInstance("SHA-256").digest(a.verifier().getBytes(US_ASCII)); }
         catch (NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
         var params = Map.of("client_id", a.client().id(), "redirect_uri", a.redirect(), "response_type", "code",
-                "scope", "openid email " + SEND_SCOPE, "access_type", "offline", "prompt", "consent",
+                "scope", "openid email " + SEND_SCOPE, "access_type", "offline", "prompt", "select_account consent",
                 "login_hint", a.address(), "state", a.state(), "code_challenge_method", "S256", "code_challenge", base64(hash));
         return "https://accounts.google.com/o/oauth2/v2/auth?" + params.entrySet().stream()
                 .map(e -> e.getKey() + "=" + URLEncoder.encode(e.getValue(), UTF_8)).collect(Collectors.joining("&"));
@@ -71,8 +71,8 @@ class GoogleGmail {
         JsonNode identity = http.get().uri("https://openidconnect.googleapis.com/v1/userinfo")
                 .headers(h -> h.setBearerAuth(token.path("access_token").asString())).retrieve().body(JsonNode.class);
         if (identity == null || !identity.path("email_verified").isBoolean() || !identity.path("email_verified").asBoolean()
-                || !a.address().equalsIgnoreCase(identity.path("email").asString(""))) return "account";
-        profile.saveOAuth(a.generation(), a.address(), a.client(), refresh);
+                || identity.path("email").asString("").isBlank()) return "account";
+        profile.saveOAuth(a.staff(), a.generation(), GmailProfile.address(identity.path("email").asString()), a.client(), refresh);
         return "connected";
     }
 

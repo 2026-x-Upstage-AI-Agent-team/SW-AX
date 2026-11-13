@@ -2,6 +2,7 @@ package kr.swax.intake;
 
 import java.security.Principal;
 import java.util.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.node.ObjectNode;
@@ -11,22 +12,24 @@ import static kr.swax.intake.WorkflowData.Resource.MAIL;
 @Transactional
 @RequestMapping("/api/mail/{id}")
 class MailDrafts {
-    record Edit(Integer revision, String subject, String body, String recipient) {}
+    record Edit(Integer revision, String subject, String body, String recipient, String senderAddress) {}
     private final WorkflowData data;
-    MailDrafts(WorkflowData data) {
-        this.data=data;
+    private final GmailProfile gmail;
+    private final boolean personalGmail;
+    MailDrafts(WorkflowData data, GmailProfile gmail, @Value("${MAIL_MODE:local}") String mailMode) {
+        this.data=data; this.gmail=gmail; this.personalGmail="gmail".equalsIgnoreCase(mailMode);
     }
 
     @GetMapping
     Object view(Principal staff, @PathVariable UUID id) {
         data.scope(staff.getName(),MAIL,id);
-        return detail(id);
+        return detail(staff.getName(),id);
     }
 
-    private ObjectNode detail(UUID id) {
+    private ObjectNode detail(String login, UUID id) {
         var row = data.one("""
             SELECT jsonb_build_object('info',o.info||jsonb_build_object('subject',m.subject,'body',m.body,'revision',m.revision,
-                    'approved_by',m.approved_by,'approved_at',extract(epoch FROM m.approved_at)),
+                    'approved_by',m.approved_by,'approved_at',extract(epoch FROM m.approved_at),'sender_address',m.sender_address),
                 'source',jsonb_build_object('name',coalesce(s.output->>'team_name',''),'kind',m.kind,'version',s.version,'verdict',s.verdict,
                     'decision',s.decision,'issues',s.issues,'output',s.output,
                     'files',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',f.id,'name',f.name) ORDER BY sf.position),'[]')
@@ -51,7 +54,13 @@ class MailDrafts {
             recipient=row.path("recipient").asString("");
         }
         info.put("recipient",recipient);
-        info.put("can_approve",draft && !recipient.isBlank() && row.path("eligible").asBoolean(false));
+        boolean ready=true;
+        if (personalGmail && draft) {
+            var sender=gmail.current(login);
+            info.put("sender_address",sender.address());
+            ready=sender.ready();
+        }
+        info.put("can_approve",draft && ready && !recipient.isBlank() && row.path("eligible").asBoolean(false));
         return info;
     }
 
@@ -73,7 +82,7 @@ class MailDrafts {
     }
     private Object edit(Principal staff, UUID id, Edit form, boolean approve) {
         UUID sid=lock(staff,id);
-        var mail=detail(id);
+        var mail=detail(staff.getName(),id);
         if (!Set.of("draft","recipient_check").contains(mail.path("state").asString()) || form.revision()==null
                 || form.revision()!=mail.path("revision").asInt()) throw ApiErrors.error(409,"초안이 변경되었습니다. 다시 열어 확인하세요.");
         String subject=Objects.toString(form.subject(),"");
@@ -82,17 +91,25 @@ class MailDrafts {
                 || body.isBlank() || body.length()>50000 || body.indexOf('\0')>=0)
             throw ApiErrors.error(422,"한 줄 제목과 본문을 입력하세요. 제목은 255자, 본문은 50,000자까지 입력할 수 있습니다.");
         if (approve) {
+            String sender=null;
+            if (personalGmail) {
+                var accounts=data.db.query("SELECT address FROM staff_gmail WHERE login=? AND (credential<>'' OR oauth<>'') FOR SHARE",
+                        (rs,row) -> rs.getString(1),staff.getName());
+                if (accounts.isEmpty()) throw ApiErrors.error(409,"먼저 내 Gmail 계정을 연결한 뒤 발송을 승인하세요.");
+                sender=accounts.getFirst();
+                if (!sender.equals(form.senderAddress())) throw ApiErrors.error(409,"발신 계정이 변경되었습니다. 초안을 다시 열어 확인하세요.");
+            }
             if (!mail.path("can_approve").asBoolean() || !mail.path("recipient").asString().equals(form.recipient()))
                 throw ApiErrors.error(409,"현재 제출본의 수신 주소를 다시 확인한 뒤 승인하세요.");
             data.db.update("""
-                UPDATE review_mail SET subject=?,body=?,state='approved',sent_to=?,approved_by=?,approved_at=clock_timestamp(),
+                UPDATE review_mail SET subject=?,body=?,state='approved',sent_to=?,approved_by=?,sender_address=?,approved_at=clock_timestamp(),
                     revision=revision+1 WHERE id=?
-                """,subject,body,form.recipient(),staff.getName(),id);
+                """,subject,body,form.recipient(),staff.getName(),sender,id);
             data.audit(sid,staff.getName(),mail.path("kind").asString()+" 메일 발송 승인");
         } else {
             data.db.update("UPDATE review_mail SET subject=?,body=?,revision=revision+1 WHERE id=?",subject,body,id);
         }
-        return detail(id);
+        return detail(staff.getName(),id);
     }
 
     @PostMapping("/retry")

@@ -179,6 +179,7 @@ export type ReportView = {
 export type MailView = MailRow & {
   subject: string; body: string; revision: number; recipient: string | null; can_approve: boolean;
   approved_by?: string | null; approved_at?: number | null;
+  sender_address?: string | null;
 };
 export const isMailDraft = (m: MailRow) => m.state === 'draft' || m.state === 'recipient_check';
 
@@ -203,7 +204,7 @@ export const getDraft = (event: string) => api<{ teams: DraftTeam[] }>(`/api/eve
 export const getMail = (mid: string) => api<MailView>(`/api/mail/${enc(mid)}`);
 export const saveMailDraft = (mail: MailView, approve: boolean) =>
   sendJson<MailView>(`/api/mail/${enc(mail.id)}/${approve ? 'approve' : 'draft'}`,
-    { revision: mail.revision, subject: mail.subject, body: mail.body, recipient: mail.recipient ?? '' }, approve ? 'POST' : 'PUT');
+    { revision: mail.revision, subject: mail.subject, body: mail.body, recipient: mail.recipient ?? '', sender_address: mail.sender_address ?? null }, approve ? 'POST' : 'PUT');
 export const getReport = (rid: string) => api<ReportView>(`/api/reports/${enc(rid)}`);
 export const reviewBatchConflict = (id: string) => sendJson<{ saved: boolean }>(`/api/intake-batches/${enc(id)}/conflict-review`, {}, 'PUT');
 
@@ -249,14 +250,14 @@ export const uploadEditedReport = async (rid: string, file: File) => {
     return data as { id: string; version: number };
 };
 
-export const connectGmail = (appPassword: string) =>
-  sendJson<{ connected: boolean; address: string }>('/api/settings/gmail/connect', { app_password: appPassword });
+export const connectGmail = (appPassword: string, address?: string) =>
+  sendJson<{ connected: boolean; address: string }>('/api/settings/gmail/connect', { app_password: appPassword, address });
 
 export const startGmailOAuth = (clientJson?: string) =>
   sendJson<{ url: string }>('/api/settings/gmail/oauth/start', clientJson ? { client_json: clientJson } : {});
 
-export const disconnectGmailOAuth = () =>
-  api<Pick<Dashboard, 'gmail_account' | 'gmail_oauth_connected' | 'mail_ready'>>('/api/settings/gmail/oauth/disconnect', { method: 'POST' });
+export const disconnectGmail = () =>
+  api<Pick<Dashboard, 'gmail_account' | 'gmail_oauth_connected' | 'mail_ready'>>('/api/settings/gmail/disconnect', { method: 'POST' });
 
 // ── 보조 ─────────────────────────────────────────────
 

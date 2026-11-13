@@ -18,7 +18,7 @@ class MailDraftsTest {
             @Override UUID scope(String staff, Resource resource, UUID id) { return id; }
             @Override ObjectNode one(String sql, Object... args) { return row.deepCopy(); }
         };
-        return (ObjectNode)new MailDrafts(data).view(() -> "staff",UUID.randomUUID());
+        return (ObjectNode)new MailDrafts(data,null,"local").view(() -> "staff",UUID.randomUUID());
     }
 
     ObjectNode row() {

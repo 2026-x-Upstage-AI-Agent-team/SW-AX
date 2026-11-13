@@ -65,11 +65,11 @@ class WorkflowOverview {
             SELECT jsonb_build_object('id',id,'version',version,'state',state,'error',error,'created',extract(epoch FROM created_at))
             FROM award_report WHERE event_id=? AND created_by=? ORDER BY version DESC
             """,event,login));
-        var account=gmail.current();
+        var account=gmail.current(login);
         result.put("gmail_account",account.address());
         result.put("gmail_oauth_connected",!account.oauth().isBlank());
         result.put("smtp","smtp".equalsIgnoreCase(mailMode)||"gmail".equalsIgnoreCase(mailMode));
-        result.put("mail_ready",!"gmail".equalsIgnoreCase(mailMode)||!account.oauth().isBlank()||!account.credential().isBlank());
+        result.put("mail_ready",!"gmail".equalsIgnoreCase(mailMode)||account.ready());
         var health = data.list("SELECT to_jsonb(h) FROM workflow_health h WHERE updated_at>now()-interval '2 minutes'");
         boolean connected=false;
         result.put("config",config);
@@ -77,7 +77,7 @@ class WorkflowOverview {
             if (row.path("role").asString().equals("studio")) {
                 connected=row.path("configured").asBoolean();
                 result.put("config",row.path("config").asString());
-            } else if (row.path("role").asString().equals("mail")) {
+            } else if (row.path("role").asString().equals("mail") && !"gmail".equalsIgnoreCase(mailMode)) {
                 result.put("smtp",row.path("mail_mode").asString().equals("smtp"));
                 result.put("mail_ready",row.path("configured").asBoolean());
             }
