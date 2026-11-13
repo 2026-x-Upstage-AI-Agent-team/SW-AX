@@ -28,7 +28,9 @@ class MailDrafts {
             SELECT jsonb_build_object('info',o.info||jsonb_build_object('subject',m.subject,'body',m.body,'revision',m.revision,
                     'approved_by',m.approved_by,'approved_at',extract(epoch FROM m.approved_at)),
                 'source',jsonb_build_object('name',coalesce(s.output->>'team_name',''),'kind',m.kind,'version',s.version,'verdict',s.verdict,
-                    'decision',s.decision,'issues',s.issues,'output',s.output),
+                    'decision',s.decision,'issues',s.issues,'output',s.output,
+                    'files',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',f.id,'name',f.name) ORDER BY sf.position),'[]')
+                        FROM team_submission_file sf JOIN intake_file f ON f.id=sf.file_id WHERE sf.submission_id=s.id)),
                 'recipient',t.email,
                 'eligible',s.state='done' AND NOT ops_team_held(t.id) AND EXISTS(SELECT FROM intake_team_confirmation c
                     WHERE c.submission_id=s.id AND c.state='confirmed') AND NOT r.needs_confirmation AND
