@@ -452,8 +452,10 @@ function DecisionCard({ s, onSaved }: { s: SubmissionDetail; onSaved: () => void
           </fieldset>
         )}
         <label className="flex flex-col gap-1.5 text-xs text-muted">
-          확인 메모{needsNote && <span className="text-caution"> · 원본과 대조한 결과를 한 줄로 기록해 주세요</span>}
+          {decision === '보완 필요' ? '팀장에게 안내할 보완 사유' : '확인 메모'}
+          {needsNote && <span className="text-caution"> · 원본과 대조한 결과를 한 줄로 기록해 주세요</span>}
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000} className={cx(inputStyle, 'h-auto py-2.5 leading-relaxed')} />
+          {decision === '보완 필요' && <span>확정해 저장한 내용은 보완 요청 메일 초안에 반영됩니다. 파일과 보완할 항목을 적고 개인정보와 내부 검토 메모는 제외해 주세요.</span>}
         </label>
         <div className="team-review-decision-actions">
           {!locked && (

@@ -45,4 +45,35 @@ class MailDraftsTest {
         ((ObjectNode)row.path("info")).putNull("subject");
         assertThat(view(row).path("body").asString()).isEqualTo("담당자가 확인한 보완 항목\n월요일까지 보내 주세요.");
     }
+
+    @Test void confirmedStaffReasonIsRenderedWithoutSavingTheDraft() {
+        var row=row();
+        ((ObjectNode)row.path("source")).put("decision","보완 필요").put("note","동의서 없음");
+        ((ObjectNode)row.path("source").path("output").path("agent_decision")).putArray("확정오류");
+        var result=view(row);
+        assertThat(result.path("body").asString()).contains("동의서 없음","재제출");
+        assertThat(result.path("generation_reason").asString()).isEmpty();
+    }
+
+    @Test void noActionableContentReturnsExplanationOutsideTheMailBody() {
+        var row=row();
+        ((ObjectNode)row.path("source").path("output").path("agent_decision")).putArray("확정오류");
+        var result=view(row);
+        assertThat(result.path("body").asString()).isEmpty();
+        assertThat(result.path("generation_reason").asString()).contains("AI가","확정한 보완 항목");
+    }
+
+    @Test void savedBlankAndEditedDraftsArePreservedAfterTheStaffReasonChanges() {
+        var row=row();
+        ((ObjectNode)row.path("source")).put("decision","보완 필요").put("note","새로운 보완 사유");
+        var info=(ObjectNode)row.path("info");
+        info.put("subject","수정한 제목").put("body","");
+        var blank=view(row);
+        assertThat(blank.path("body").asString()).isEmpty();
+        assertThat(blank.path("generation_reason").asString()).contains("저장된 본문이 비어");
+        info.put("body","담당자가 직접 작성한 최종 안내");
+        var edited=view(row);
+        assertThat(edited.path("body").asString()).isEqualTo("담당자가 직접 작성한 최종 안내");
+        assertThat(edited.path("generation_reason").asString()).isEmpty();
+    }
 }

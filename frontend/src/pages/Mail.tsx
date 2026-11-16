@@ -203,6 +203,10 @@ function MailDetail({ m, emailTeamId, onSaved, onApproved }: {
           {m.state === 'recipient_check' && !emailTeamId && <RecipientCheck submission={m.submission} onSaved={onSaved} />}
           {editable ? (
             <>
+              {!view.body.trim() && <div role="status" className="flex flex-col items-start gap-2 rounded-xl border border-caution-line bg-caution-bg p-4 text-sm">
+                <p>{view.generation_reason || '본문이 비어 있습니다. 보완할 내용을 작성해 주세요.'}</p>
+                <Link to={'/teams/' + m.submission} className={buttonStyles.text}>보완 사유 확인</Link>
+              </div>}
               <label className="flex flex-col gap-1.5 text-sm font-bold">제목
                 <input className={cx(inputStyle, 'font-normal')} value={view.subject} maxLength={255} disabled={busy}
                   onChange={(e) => { setView({ ...view, subject: e.target.value }); setMessage(''); }} />

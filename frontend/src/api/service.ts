@@ -180,6 +180,7 @@ export type MailView = MailRow & {
   subject: string; body: string; revision: number; recipient: string | null; can_approve: boolean;
   approved_by?: string | null; approved_at?: number | null;
   sender_address?: string | null;
+  generation_reason?: string;
 };
 export const isMailDraft = (m: MailRow) => m.state === 'draft' || m.state === 'recipient_check';
 

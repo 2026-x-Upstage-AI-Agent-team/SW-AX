@@ -4,7 +4,7 @@ import java.util.*;
 import tools.jackson.databind.JsonNode;
 
 /** Builds the original notice from approved wording and document locations, without copying raw Studio text. */
-record MailTemplate(String subject, String body) {
+record MailTemplate(String subject, String body, String emptyReason) {
     private static final Map<String,String> INSTRUCTIONS = Map.of(
         "application","팀의 지급확인서를 확인해 제출해 주세요.", "consent","전체 팀원의 개인정보 동의서와 작성자 명단을 확인해 주세요.",
         "identity","팀 대표의 신분증·통장 사본을 확인해 주세요.", "account","지급확인서와 통장 사본의 은행·계좌·예금주 표기를 대조해 주세요.",
@@ -65,11 +65,38 @@ record MailTemplate(String subject, String body) {
                     if (!text.isBlank()) lines.add("- " + text);
                 }
             }
-            if (lines.size() == 2) return new MailTemplate(subject, "");
+            if ("보완 필요".equals(mail.path("decision").asString(""))) {
+                var confirmed = staffReason(mail.path("note").asString(""));
+                if (!confirmed.isEmpty()) {
+                    if (lines.size() > 2) lines.add("");
+                    lines.add(lines.size() > 2 ? "추가로 보완할 사항" : "보완할 사항");
+                    confirmed.forEach(line -> lines.add("- " + line));
+                }
+            }
+            if (lines.size() == 2) {
+                String reason = "보완 필요".equals(mail.path("decision").asString(""))
+                    ? "선택한 보완 항목에 연결된 안내 내용과 담당자가 확정한 보완 사유가 없습니다. 검토 화면에서 보완 사유를 저장하거나 본문을 직접 작성해 주세요."
+                    : errors.isArray() && errors.isEmpty()
+                    ? "AI가 확정한 보완 항목이 없어 초안을 생성하지 못했습니다. 담당자 검토에서 보완 사유를 확정하거나 본문을 직접 작성해 주세요."
+                    : "안내할 파일·항목·문제유형을 확인할 수 없어 초안을 생성하지 못했습니다. 판정 결과를 확인하거나 본문을 직접 작성해 주세요.";
+                return new MailTemplate(subject, "", reason);
+            }
             lines.add("");
             lines.add("위 항목을 다시 확인한 후 보완한 서류를 기존 제출 경로로 재제출해 주세요.");
         } else lines.add("제출한 서류의 검토를 완료했습니다.");
-        return new MailTemplate(subject, String.join("\n",lines));
+        return new MailTemplate(subject, String.join("\n",lines), "");
+    }
+
+    private static List<String> staffReason(String note) {
+        var lines = new LinkedHashSet<String>();
+        for (String raw : note.split("\\R")) {
+            String line = clean(raw).replaceFirst("^[-•]\\s*", "")
+                .replaceAll("(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}", "[이메일 가림]")
+                .replaceAll("(?<!\\d)\\d{6}\\s*[-‐‑–—]\\s*[0-9*＊xX●•#■_]{7}(?![0-9*＊xX●•#■_])", "[주민번호 가림]")
+                .replaceAll("(?<!\\d)\\d[\\d \\t-]{6,}\\d(?!\\d)", "[번호 가림]");
+            if (!line.replaceAll("\\[(?:이메일|주민번호|번호) 가림\\]", "").isBlank()) lines.add(line);
+        }
+        return List.copyOf(lines);
     }
 
     private static String documents(String description, JsonNode mail) {

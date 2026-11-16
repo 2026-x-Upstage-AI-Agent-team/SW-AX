@@ -31,7 +31,7 @@ class MailDrafts {
             SELECT jsonb_build_object('info',o.info||jsonb_build_object('subject',m.subject,'body',m.body,'revision',m.revision,
                     'approved_by',m.approved_by,'approved_at',extract(epoch FROM m.approved_at),'sender_address',m.sender_address),
                 'source',jsonb_build_object('name',coalesce(s.output->>'team_name',''),'kind',m.kind,'version',s.version,'verdict',s.verdict,
-                    'decision',s.decision,'issues',s.issues,'output',s.output,
+                    'decision',s.decision,'note',s.note,'issues',s.issues,'output',s.output,
                     'files',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',f.id,'name',f.name) ORDER BY sf.position),'[]')
                         FROM team_submission_file sf JOIN intake_file f ON f.id=sf.file_id WHERE sf.submission_id=s.id)),
                 'recipient',t.email,
@@ -43,14 +43,20 @@ class MailDrafts {
             JOIN award_team t ON t.id=s.team_id JOIN ops_leader_recipient r ON r.submission_id=s.id WHERE m.id=?
             """,id);
         var info=(ObjectNode)row.path("info");
+        info.put("generation_reason", "");
         boolean draft=Set.of("draft","recipient_check").contains(info.path("state").asString());
         String recipient=info.path("sent_to").asString("");
         if (draft) {
             if (info.path("body").isNull() || info.path("subject").isNull()) {
                 var template=MailTemplate.from(row.path("source"));
                 if (info.path("subject").isNull()) info.put("subject",template.subject());
-                if (info.path("body").isNull()) info.put("body",template.body());
+                if (info.path("body").isNull()) {
+                    info.put("body",template.body());
+                    info.put("generation_reason",template.emptyReason());
+                }
             }
+            if (info.path("body").asString("").isBlank() && info.path("generation_reason").asString("").isBlank())
+                info.put("generation_reason", "저장된 본문이 비어 있습니다. 보완할 내용을 직접 작성해 주세요.");
             recipient=row.path("recipient").asString("");
         }
         info.put("recipient",recipient);

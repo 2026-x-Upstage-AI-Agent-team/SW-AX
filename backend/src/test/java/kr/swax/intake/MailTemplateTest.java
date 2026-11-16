@@ -89,4 +89,51 @@ class MailTemplateTest {
             """);
         assertThat(MailTemplate.from(source).body()).contains("학생 / 서명: 누락").doesNotContain("이메일");
     }
+
+    @Test void confirmedStaffReasonCreatesDraftWhenAgentHasOnlyReviewFindings() {
+        var source=new ObjectMapper().readTree("""
+            {"name":"가상검토팀05","kind":"보완 요청","decision":"보완 필요","note":"동의서 없음",
+             "issues":["consent","other"],"output":{"agent_decision":{"확정오류":[],"확인필요":[
+               {"검사항목":"중복 제출 여부","근거":"내부 검토 정보"},{"검사항목":"사본 판독","근거":"내부 검토 정보"}]}}}
+            """);
+        var template=MailTemplate.from(source);
+        assertThat(template.body()).contains("가상검토팀05 팀장님,","보완할 사항\n- 동의서 없음","재제출")
+            .doesNotContain("내부 검토 정보","중복 제출 여부","사본 판독","제출 1차");
+        assertThat(template.emptyReason()).isEmpty();
+    }
+
+    @Test void internalNotesAreNotForwardedBeforeSupplementIsConfirmed() {
+        var source=(ObjectNode)new ObjectMapper().readTree("""
+            {"name":"Alpha","kind":"보완 요청","note":"내부 검토 메모","decision":"작성 중",
+             "output":{"agent_decision":{"확정오류":[],"확인필요":[]}}}
+            """);
+        for (String decision:java.util.List.of("작성 중","승인")) {
+            source.put("decision",decision);
+            var template=MailTemplate.from(source);
+            assertThat(template.body()).isEmpty();
+            assertThat(template.emptyReason()).contains("확정한 보완 항목이 없어");
+        }
+    }
+
+    @Test void confirmedReasonKeepsLinesAndMasksDirectIdentifiers() {
+        var source=new ObjectMapper().readTree("""
+            {"name":"Alpha","kind":"보완 요청","decision":"보완 필요",
+             "note":"동의서를 다시 제출해 주세요.【†1】\\n동의서를 다시 제출해 주세요.\\n학번 20201234, 전화 010-1234-5678, 계좌 1234-56-1234567, 이메일 student@example.test, 주민번호 010327-3******",
+             "output":{"agent_decision":{"확정오류":[],"확인필요":[]}}}
+            """);
+        var body=MailTemplate.from(source).body();
+        assertThat(body).contains("- 동의서를 다시 제출해 주세요.","[번호 가림]","[이메일 가림]","[주민번호 가림]")
+            .doesNotContain("20201234","010-1234-5678","1234-56-1234567","student@example.test","010327-3******","【†1】");
+        assertThat(body.indexOf("- 동의서를 다시 제출해 주세요.")).isEqualTo(body.lastIndexOf("- 동의서를 다시 제출해 주세요."));
+    }
+
+    @Test void emptyConfirmedReasonProvidesAnActionableExplanation() {
+        var source=new ObjectMapper().readTree("""
+            {"name":"Alpha","kind":"보완 요청","decision":"보완 필요","note":" ","issues":["consent"],
+             "output":{"agent_decision":{"확정오류":[],"확인필요":[]}}}
+            """);
+        var template=MailTemplate.from(source);
+        assertThat(template.body()).isEmpty();
+        assertThat(template.emptyReason()).contains("담당자가 확정한 보완 사유","직접 작성");
+    }
 }
