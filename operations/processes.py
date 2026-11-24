@@ -1,10 +1,16 @@
 """Keep a gated Windows converter inside a job owned by its Python parent."""
 import ctypes
 from ctypes import wintypes
+import os
+from pathlib import Path
 import subprocess
 
 
 def run_owned(command, *, timeout):
+    runner = Path(os.environ.get('AWARDS_HANCOM_DESKTOP_RUNNER') or
+                  Path(__file__).resolve().parents[1]/'pc_connector/assets/desktop-runner.exe')
+    if not runner.is_file():
+        raise FileNotFoundError('The private Hancom desktop runner is unavailable')
     class Basic(ctypes.Structure):
         _fields_=[('process_time',ctypes.c_int64),('job_time',ctypes.c_int64),('flags',wintypes.DWORD),
                   ('min_working_set',ctypes.c_size_t),('max_working_set',ctypes.c_size_t),
@@ -30,7 +36,7 @@ def run_owned(command, *, timeout):
         limits=Limits();limits.basic.flags=0x3000  # KILL_ON_JOB_CLOSE | SILENT_BREAKAWAY_OK
         if not kernel.SetInformationJobObject(job,9,ctypes.byref(limits),ctypes.sizeof(limits)):
             raise ctypes.WinError(ctypes.get_last_error())
-        process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+        process=subprocess.Popen([str(runner),*command],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                                  creationflags=subprocess.CREATE_NO_WINDOW)
         # The converter cannot create Hancom until its parent has attached this process.
         if not kernel.AssignProcessToJobObject(job,int(process._handle)):

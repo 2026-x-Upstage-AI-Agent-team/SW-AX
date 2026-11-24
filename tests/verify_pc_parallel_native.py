@@ -67,6 +67,7 @@ def main():
     home=args.guard_dir.resolve()
     if not (home/'jobs').is_dir():raise RuntimeError('Use the installed private Hancom guard directory')
     os.environ.update(AWARDS_HANCOM_GUARD_DIR=str(home),AWARDS_POWERSHELL=r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe')
+    os.environ.setdefault('AWARDS_HANCOM_DESKTOP_RUNNER',str(ROOT/'var/pc-connector-build/assets/desktop-runner.exe'))
     out=ROOT/'var/pc-parallel-native'/datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     out.mkdir(parents=True)
     source={}
@@ -113,6 +114,8 @@ def main():
                 paths=[f.result(timeout=200) for f in futures]
             records=[diagnostics[label] for label in labels]
             assert len({r['editor_pid'] for r in records})==2
+            assert len({r['editor_desktop'] for r in records})==2
+            assert all(r['editor_desktop'].startswith('SWAX-Hancom-') for r in records)
             starts=[datetime.datetime.fromisoformat(r['editor_started_at']) for r in records]
             ends=[datetime.datetime.fromisoformat(r['completed_at']) for r in records]
             overlap=(min(ends)-max(starts)).total_seconds()

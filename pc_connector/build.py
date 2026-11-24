@@ -28,6 +28,8 @@ def main():
             args.append(str(exports))
         subprocess.run([sys.executable,'-m','ziglang','cc','-target',arch+'-windows-gnu','-shared','-Os','-s',
                         str(ROOT/'operations/hancom/PathGuard.c'),*args,'-o',str(target)],check=True)
+    subprocess.run([sys.executable,'-m','ziglang','cc','-target','x86_64-windows-gnu','-Os','-s','-municode',
+                    str(ROOT/'operations/hancom/DesktopRunner.c'),'-luser32','-o',str(ASSETS/'desktop-runner.exe')],check=True)
     # Keep an existing distribution until the replacement build succeeds.
     args=[sys.executable,'-m','PyInstaller','--noconfirm','--onefile','--windowed','--name','SWAX-PC-Setup',
           '--paths',str(ROOT),'--distpath',str(DIST),'--workpath',str(BUILD/'work'),'--specpath',str(BUILD)]
@@ -36,6 +38,7 @@ def main():
                                (ROOT/'pc_connector/install-task.ps1','pc_connector'),
                                (ASSETS/'guard-32.dll','pc_connector/assets'),(ASSETS/'guard-64.dll','pc_connector/assets')]:
         args+=['--add-data',str(source)+os.pathsep+destination]
+    args+=['--add-data',str(ASSETS/'desktop-runner.exe')+os.pathsep+'pc_connector/assets']
     # This Python distribution loads its CA distrust list while creating an SSLContext.
     # Preserve that policy in a frozen runtime, where the stdlib's __file__ is relocated.
     distrust=Path(ssl.__file__).with_name('codex-rejected-cas.pem')

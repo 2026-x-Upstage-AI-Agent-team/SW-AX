@@ -42,6 +42,7 @@ try {
     } while(!$complete -and [DateTime]::UtcNow -lt $deadline)
     if(!$complete){throw 'PDF writer did not finish its output'}
     [pscustomobject]@{converter_pid=$PID;editor_pid=[AwardEditorLifetime]::EditorId;
+        editor_desktop=[AwardEditorLifetime]::EditorDesktop;
         editor_started_at=[AwardEditorLifetime]::EditorStartedAt.ToString('o');
         started_at=$started.ToString('o');completed_at=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress
 } finally {

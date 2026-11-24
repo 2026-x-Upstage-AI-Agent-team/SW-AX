@@ -16,6 +16,34 @@ from pc_connector import agent,windows
 from pc_connector.main import action_for,main
 
 class ConnectorTests(unittest.TestCase):
+    def test_missing_desktop_runner_does_not_fall_back_to_the_user_screen(self):
+        from operations.processes import run_owned
+        with TemporaryDirectory() as directory,patch.dict(windows.os.environ,{'AWARDS_HANCOM_DESKTOP_RUNNER':str(Path(directory)/'missing.exe')}),\
+                patch.object(windows.subprocess,'Popen',side_effect=AssertionError('Interactive fallback is forbidden')):
+            with self.assertRaises(FileNotFoundError):run_owned(['powershell.exe'],timeout=1)
+
+    def test_idle_prerequisite_checks_never_launch_hancom(self):
+        with TemporaryDirectory() as directory:
+            home=Path(directory);(home/'hancom/jobs').mkdir(parents=True)
+            dll=home/'hancom/guard-test-64.dll';dll.write_bytes(b'fixture')
+            with patch.object(windows,'APP_HOME',home),patch.object(windows.winreg,'OpenKey'),\
+                    patch.object(windows.winreg,'QueryValueEx',return_value=(str(dll),windows.winreg.REG_SZ)),\
+                    patch('operations.processes.run_owned',side_effect=AssertionError('Idle checks must not start an editor')),\
+                    patch.object(windows.subprocess,'Popen',side_effect=AssertionError('Idle checks must not start processes')):
+                for _ in range(10):self.assertTrue(windows.has_hancom())
+            self.assertEqual(list((home/'hancom/jobs').iterdir()),[])
+
+    def test_idle_check_requires_registered_hancom_and_a_local_guard(self):
+        with TemporaryDirectory() as directory:
+            home=Path(directory);(home/'hancom/jobs').mkdir(parents=True)
+            with patch.object(windows,'APP_HOME',home),patch.object(windows.winreg,'OpenKey',side_effect=FileNotFoundError):
+                self.assertFalse(windows.has_hancom())
+            for dll in (home/'hancom/missing.dll',home/'outside.dll'):
+                if dll.name=='outside.dll':dll.write_bytes(b'fixture')
+                with patch.object(windows,'APP_HOME',home),patch.object(windows.winreg,'OpenKey'),\
+                        patch.object(windows.winreg,'QueryValueEx',return_value=(str(dll),windows.winreg.REG_SZ)):
+                    self.assertFalse(windows.has_hancom())
+
     def test_two_slots_process_different_claims_at_the_same_time(self):
         rendezvous=threading.Barrier(2)
         processed=[]

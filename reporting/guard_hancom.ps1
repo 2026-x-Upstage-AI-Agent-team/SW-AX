@@ -7,11 +7,15 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.ComponentModel;
 using System.Threading;
+using System.Text;
 public static class AwardEditorLifetime {
     static Mutex editorOwnership;
     public static int EditorId { get; private set; }
     public static DateTime EditorStartedAt { get; private set; }
+    public static string EditorDesktop { get; private set; }
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out int id);
+    [DllImport("user32.dll")] static extern IntPtr GetThreadDesktop(uint id);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetUserObjectInformation(IntPtr handle, int index, StringBuilder value, int size, out int needed);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr attrs, string name);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job, int level, IntPtr info, uint size);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
@@ -31,13 +35,24 @@ public static class AwardEditorLifetime {
     }
     public static void Bind(IntPtr window) {
         int id;
-        if (window == IntPtr.Zero || GetWindowThreadProcessId(window, out id) == 0)
+        uint thread = GetWindowThreadProcessId(window, out id);
+        if (window == IntPtr.Zero || thread == 0)
             throw new InvalidOperationException("Cannot identify the automation editor");
         using (var process = Process.GetProcessById(id))
         using (var self = Process.GetCurrentProcess()) {
             if (!process.ProcessName.Equals("Hwp", StringComparison.OrdinalIgnoreCase)
                 || process.StartTime < self.StartTime)
                 throw new InvalidOperationException("Refusing a pre-existing editor");
+            var desktop = new StringBuilder(256);
+            int needed;
+            if (!GetUserObjectInformation(GetThreadDesktop(thread), 2, desktop, desktop.Capacity*2, out needed))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            EditorDesktop = desktop.ToString();
+            string expected = Environment.GetEnvironmentVariable("SWAX_HANCOM_DESKTOP");
+            if (!String.IsNullOrEmpty(expected) && !String.Equals(expected, EditorDesktop, StringComparison.OrdinalIgnoreCase)) {
+                process.Kill();
+                throw new InvalidOperationException("The converter editor escaped its private desktop");
+            }
             bool created;
             editorOwnership = new Mutex(true, "Local\\SWAX-Hancom-"+id+"-"+process.StartTime.ToUniversalTime().Ticks, out created);
             if (!created) {

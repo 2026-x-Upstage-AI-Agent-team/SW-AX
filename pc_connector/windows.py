@@ -8,17 +8,13 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import time
 import winreg
-from uuid import uuid4
 
-VERSION='1.1.0'
+VERSION='1.1.1'
 SERVER='https://d3nkw8bzgv8pom.cloudfront.net'
 APP_HOME=Path(os.environ['LOCALAPPDATA'])/'SWAX/PCConnector'
 RESOURCES=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[1]))
 POWERSHELL=Path(os.environ['SystemRoot'])/'System32/WindowsPowerShell/v1.0/powershell.exe'
-_probe_time=0
-_probe_ready=False
 
 class Blob(ctypes.Structure):
     _fields_=[('size',wintypes.DWORD),('data',ctypes.POINTER(ctypes.c_ubyte))]
@@ -127,29 +123,17 @@ def worker_lock():
     return handle
 
 def has_hancom():
-    global _probe_time,_probe_ready
-    if time.monotonic()-_probe_time<300:return _probe_ready
-    _probe_time=time.monotonic()
-    _probe_ready=False
-    for view in (winreg.KEY_WOW64_64KEY,winreg.KEY_WOW64_32KEY):
+    # Read prerequisites only. Idle heartbeats must never launch the editor.
+    home=APP_HOME/'hancom'
+    if not (home/'jobs').is_dir():return False
+    tag=hashlib.sha256(str(home).upper().encode('utf-8')).hexdigest()[:24].upper()
+    for bits,view in ((64,winreg.KEY_WOW64_64KEY),(32,winreg.KEY_WOW64_32KEY)):
         try:
             with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT,r'HWPFrame.HwpObject\CLSID',0,winreg.KEY_READ|view):
-                home=APP_HOME/'hancom'
-                if not (home/'jobs').is_dir():return False
-                work=home/'jobs'/uuid4().hex;work.mkdir()
-                output=work/'output.pdf'
-                tag=hashlib.sha256(str(home).upper().encode('utf-8')).hexdigest()[:24].upper()
-                try:
-                    from operations.processes import run_owned
-                    result=run_owned([str(POWERSHELL),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-                        '-File',str(RESOURCES/'pc_connector/probe.ps1'),'-Destination',str(output),'-Guard','SWAX-Reports-'+tag,
-                        '-WaitForOwner'],timeout=45)
-                    if result.returncode==0 and output.is_file():
-                        from pypdf import PdfReader
-                        _probe_ready=bool(len(PdfReader(output).pages))
-                finally:
-                    output.unlink(missing_ok=True);work.rmdir()
-                return _probe_ready
-        except FileNotFoundError:pass
-        except subprocess.SubprocessError:return False
+                pass
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,r'Software\HNC\HwpAutomation\Modules',0,winreg.KEY_READ|view) as key:
+                filename,_=winreg.QueryValueEx(key,f'SWAX-Reports-{tag}-{bits}')
+            path=Path(filename)
+            if path.parent.resolve()==home.resolve() and path.is_file():return True
+        except OSError:pass
     return False
